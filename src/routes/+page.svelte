@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { cartStore } from '$lib/stores/cartStore';
   import { fetchProducts } from '$lib/services/productService';
+  import { supabase } from '$lib/supabase';
   import type { Product } from '$lib/types';
   
   import Navbar from '$lib/components/Navbar.svelte';
@@ -19,6 +20,7 @@
   let error: string | null = null;
   let cartButton: HTMLButtonElement;
   let activeCategory: string | undefined = undefined;
+  let logoUrl = '';
 
   const categoryNames: Record<string, string> = {
     'flower': 'Flower',
@@ -33,20 +35,27 @@
     products = result.products;
     error = result.error;
     loading = false;
+
+    try {
+      const { data } = supabase.storage.from('route420').getPublicUrl('logo.png');
+      logoUrl = data.publicUrl;
+    } catch (err) {
+      console.error('Error getting logo URL:', err);
+    }
   });
 
   $: if (activeCategory) {
     filteredProducts = products.filter(product => product.category === activeCategory);
-  } else {
+    } else {
     filteredProducts = [];
-  }
+    }
 
   function addToCart(product: Product) {
     cartButton.classList.add('cart-animate');
     cartStore.addItem(product);
 
-    setTimeout(() => {
-      cartButton.classList.remove('cart-animate');
+setTimeout(() => {
+  cartButton.classList.remove('cart-animate');
     }, 500);
   }
 
@@ -59,6 +68,10 @@
     menuVisible = !menuVisible;
     if (cartVisible) cartVisible = false;
   }
+
+  function handleLogoClick() {
+    activeCategory = '';
+  }
 </script>
 
 <!-- Navbar Component -->
@@ -66,13 +79,18 @@
   bind:cartButton
   onCartToggle={toggleCart} 
   onMenuToggle={toggleMenu}
+  onLogoClick={handleLogoClick}
 />
 
 <!-- Category Navigation -->
 <CategoryNav bind:activeCategory />
 
+<!-- Watermark -->
+
+
 <!-- Main Content Area -->
 <main class="products-container">
+  <div class="watermark" style="--logo-url: url('{logoUrl}')"></div>
   {#if loading}
     <div class="loading-container">
       <LoadingSpinner size="60px" />
@@ -103,6 +121,7 @@
       <p>No products available in this category at this time.</p>
     </div>
   {:else}
+    
     <h2 class="category-title">{categoryNames[activeCategory]}</h2>
     <div class="products-grid">
       {#each filteredProducts as product (product.id)}
@@ -126,6 +145,8 @@
     max-width: 1920px;
     margin-left: auto;
     margin-right: auto;
+    position: relative;
+    z-index: 1;
   }
 
   .welcome-section {
@@ -228,7 +249,7 @@
     .products-container {
       margin-top: 220px;
       min-height: calc(100vh - 220px);
-      padding: 1.5rem;
+    padding: 1.5rem;
     }
     
     .products-grid {
@@ -249,12 +270,12 @@
       margin-top: 240px;
       min-height: calc(100vh - 240px);
       padding: 1rem;
-    }
-    
+  }
+
     .products-grid {
       grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
       gap: 1rem;
-    }
+  }
 
     .welcome-section {
       padding: 1.5rem;
@@ -263,15 +284,15 @@
 
     h1 {
       font-size: 2rem;
-    }
+  }
 
     .tagline {
       font-size: 1.2rem;
-    }
+  }
 
     .message p {
-      font-size: 1rem;
-    }
+    font-size: 1rem;
+  }
   }
 
   @media (max-width: 480px) {
@@ -279,12 +300,12 @@
       margin-top: 260px;
       min-height: calc(100vh - 260px);
       padding: 0.5rem;
-    }
+  }
 
     .welcome-section {
       padding: 1rem;
       margin: 0 0.5rem;
-    }
+  }
   }
 
   :global(.category-nav) {
@@ -292,6 +313,33 @@
     top: 60px;
     left: 0;
     right: 0;
-    z-index: 5;
+    z-index: 10;
+    background-color: #f8f9fa;
+  }
+
+  .watermark {
+    position: fixed;
+    top: 200px;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-image: var(--logo-url);
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: 50%;
+    opacity: 0.1;
+    z-index: 0;
+    pointer-events: none;
+  }
+
+  :global(body) {
+    margin: 0;
+    padding: 0;
+    overflow-x: hidden;
+  }
+
+  :global(*) {
+    position: relative;
+    z-index: 1;
   }
 </style>

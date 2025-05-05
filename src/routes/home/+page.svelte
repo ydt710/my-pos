@@ -11,7 +11,7 @@
   function toggleMenu() {
     menuVisible = !menuVisible;
   }
-
+  
   function toggleCart() {
     cartVisible = !cartVisible;
   }
@@ -20,7 +20,7 @@
 <!-- Navbar Component -->
 <Navbar 
   bind:cartButton
-  onCartToggle={toggleCart}
+  onCartToggle={toggleCart} 
   onMenuToggle={toggleMenu}
 />
 
@@ -34,10 +34,10 @@
         <p>At Route 420, we're more than just a dispensary – we're a family-run farm dedicated to cultivating the finest cannabis products. Our journey began with a simple passion for quality and a commitment to sustainable farming practices.</p>
         <p>Every product in our store is grown, harvested, and processed with the same care and attention we give to our own family. We believe in transparency, quality, and the power of nature's gifts.</p>
         <p>Join us on this journey and experience the difference that family-grown cannabis can make.</p>
-      </div>
+    </div>
       <a href="/products" class="explore-btn">Explore Our Products</a>
     </div>
-  </div>
+    </div>
 </main>
 
 <!-- Side Menu Component -->
@@ -88,7 +88,7 @@
     color: #555;
     margin-bottom: 1rem;
   }
-
+  
   .explore-btn {
     display: inline-block;
     padding: 1rem 2rem;
@@ -107,12 +107,12 @@
     transform: translateY(-2px);
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
   }
-
+  
   @media (max-width: 768px) {
     .welcome-section {
       padding: 1.5rem;
     }
-
+    
     h1 {
       font-size: 2rem;
     }
@@ -120,7 +120,7 @@
     .tagline {
       font-size: 1.2rem;
     }
-
+    
     .message p {
       font-size: 1rem;
     }

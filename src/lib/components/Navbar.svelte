@@ -4,6 +4,7 @@
   
   export let onCartToggle: () => void;
   export let onMenuToggle: () => void;
+  export let onLogoClick: () => void;
   
   export let cartButton: HTMLButtonElement;
   
@@ -21,11 +22,17 @@
 
 <div class="navbar" role="navigation" aria-label="Main navigation">
   <div class="center">
-    {#if logoUrl}
-      <img src={logoUrl} alt="Route 420 Logo" class="logo" />
-    {:else}
-      <span class="fallback-logo">🪴</span>
-    {/if}
+    <button 
+      class="logo-button" 
+      on:click={onLogoClick}
+      aria-label="Return to home"
+    >
+      {#if logoUrl}
+        <img src={logoUrl} alt="Route 420 Logo" class="logo" />
+      {:else}
+        <span class="fallback-logo">🪴</span>
+      {/if}
+    </button>
   </div>
   <div class="right">
     <button 
@@ -158,5 +165,22 @@
     .logo {
       height: 35px;
     }
+  }
+
+  .logo-button {
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    transition: transform 0.2s ease;
+  }
+
+  .logo-button:hover {
+    transform: scale(1.05);
+  }
+
+  .logo-button:focus {
+    outline: 2px solid white;
+    outline-offset: 2px;
   }
 </style> 
