@@ -32,23 +32,21 @@
   }
   
   const menuItems = [
-    { label: 'Home', href: '#' },
-    { label: 'Products', href: '#' },
-    { label: 'Orders', href: '#' },
-    { label: 'Settings', href: '#' },
-    { label: 'Contact', href: '#' }
+    { label: 'Home', href: '/' },
+    { label: 'Products', href: '/products' },
+    { label: 'Orders', href: '/orders' },
+    { label: 'Settings', href: '/settings' },
+    { label: 'Contact', href: '/contact' }
     // Admin will be conditionally rendered below
   ];
 
   async function logout() {
     await supabase.auth.signOut();
-    goto('/login');
+    user = null;
+    isAdmin = false;
+    toggleVisibility(); // Close the menu
+    goto('/');
   }
-
-  onMount(async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) goto('/');
-  });
 </script>
 
 <div 
@@ -59,7 +57,6 @@
   aria-modal="true"
   aria-label="Side menu"
   on:keydown={handleKeydown}
-  on:mouseleave={toggleVisibility}
 >
   <div class="menu-header">
     <button 

@@ -153,7 +153,7 @@
     .category-nav {
       flex-wrap: wrap;
       gap: 0.5rem;
-      padding: 0.75rem;
+      
       height: auto;
       min-height: 120px;
       align-content: flex-start;

@@ -2,7 +2,7 @@
   import { tick } from 'svelte';
   import { cartStore } from '$lib/stores/cartStore';
   import type { CartItem } from '$lib/types';
-  import { createOrder } from '$lib/services/orderService';
+  import { goto } from '$app/navigation';
   
   export let visible = false;
   export let toggleVisibility: () => void;
@@ -12,29 +12,10 @@
   let success = '';
   let cartSidebar: HTMLDivElement;
   
-  async function checkout() {
+  function goToCheckout() {
     if ($cartStore.length === 0) return;
-    
-    loading = true;
-    error = '';
-    success = '';
-    
-    const total = cartStore.getTotal($cartStore);
-    const result = await createOrder(total, $cartStore);
-    
-    loading = false;
-    
-    if (result.success) {
-      success = `✅ Sale complete — Total: R${total}`;
-      cartStore.clearCart();
-      // Close cart after a short delay
-      setTimeout(() => {
-        visible = false;
-        success = '';
-      }, 2000);
-    } else {
-      error = result.error || 'An error occurred during checkout';
-    }
+    toggleVisibility();
+    goto('/checkout');
   }
 
   function updateQuantity(item: CartItem, newQuantity: number) {
@@ -126,12 +107,11 @@
     <div class="cart-footer">
       <h3>Total: R{cartStore.getTotal($cartStore)}</h3>
       <button 
-        on:click={checkout} 
+        on:click={goToCheckout} 
         class="checkout-btn" 
-        disabled={$cartStore.length === 0 || loading}
-        aria-busy={loading}
+        disabled={$cartStore.length === 0}
       >
-        {loading ? 'Processing...' : 'Checkout'}
+        Proceed to Checkout
       </button>
     </div>
   {:else}

@@ -6,10 +6,19 @@ export async function createOrder(
   items: CartItem[]
 ): Promise<{ success: boolean; error: string | null }> {
   try {
+    // Get current user
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      return { success: false, error: 'User not authenticated' };
+    }
+
     // Start a transaction
     const { data: order, error: orderError } = await supabase
       .from('orders')
-      .insert({ total })
+      .insert({ 
+        total,
+        user_id: user.id
+      })
       .select()
       .single();
 
@@ -20,7 +29,7 @@ export async function createOrder(
 
     // Process each item in the cart
     for (const item of items) {
-      // Get current product quantity with a lock
+      // Get current product quantity
       const { data: product, error: fetchError } = await supabase
         .from('products')
         .select('quantity')
@@ -43,7 +52,7 @@ export async function createOrder(
       }
 
       // Calculate new quantity and check stock
-      const newQuantity = product.quantity - item.quantity;
+      const newQuantity = Math.max(0, product.quantity - item.quantity);
       if (newQuantity < 0) {
         return { 
           success: false, 
@@ -67,21 +76,21 @@ export async function createOrder(
         };
       }
 
-      // Update product quantity with optimistic locking
+      // Update product quantity
       const { error: updateError } = await supabase
         .from('products')
-        .update({ 
-          quantity: newQuantity,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', item.id)
-        .eq('quantity', product.quantity); // Ensure quantity hasn't changed
+        .update({ quantity: newQuantity })
+        .eq('id', item.id);
         
       if (updateError) {
-        console.error('Error updating product quantity:', updateError);
+        console.error('Error updating product quantity:', {
+          error: updateError,
+          productId: item.id,
+          newQuantity
+        });
         return { 
           success: false, 
-          error: 'Failed to update product quantities. Please try again.' 
+          error: `Failed to update quantity for ${item.name}. Please try again.` 
         };
       }
     }
