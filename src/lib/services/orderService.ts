@@ -2,22 +2,25 @@ import { supabase } from '../supabase';
 import type { CartItem } from '../types';
 import type { Order, OrderItem, GuestInfo, OrderStatus, OrderFilters } from '../types/orders';
 
+// Helper function to generate formatted order number
+function generateOrderNumber(timestamp: Date): string {
+  const year = timestamp.getFullYear().toString().slice(-2);
+  const month = (timestamp.getMonth() + 1).toString().padStart(2, '0');
+  const day = timestamp.getDate().toString().padStart(2, '0');
+  const hours = timestamp.getHours().toString().padStart(2, '0');
+  const minutes = timestamp.getMinutes().toString().padStart(2, '0');
+  const seconds = timestamp.getSeconds().toString().padStart(2, '0');
+  
+  // Format: YYMMDDHHmmss
+  return `${year}${month}${day}${hours}${minutes}${seconds}`;
+}
+
 export async function createOrder(
   total: number, 
   items: CartItem[],
   guestInfo?: GuestInfo
 ): Promise<{ success: boolean; error: string | null; orderId?: string }> {
   try {
-    // Get current user if not a guest order
-    let userId = null;
-    if (!guestInfo) {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        return { success: false, error: 'User not authenticated and no guest info provided' };
-      }
-      userId = user.id;
-    }
-
     // Validate items before proceeding
     if (!items || items.length === 0) {
       return { success: false, error: 'No items in cart' };
@@ -28,16 +31,35 @@ export async function createOrder(
       return { success: false, error: 'Invalid order total' };
     }
 
+    // Get current user if not a guest order
+    let userId = null;
+    if (!guestInfo) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        return { success: false, error: 'User not authenticated and no guest info provided' };
+      }
+      userId = user.id;
+    }
+
     // Start a transaction by creating the order first
+    const orderTimestamp = new Date();
+    const orderNumber = generateOrderNumber(orderTimestamp);
+    
     const { data: order, error: orderError } = await supabase
       .from('orders')
       .insert({
         total: total,
         status: 'pending',
         user_id: userId,
-        guest_info: guestInfo || null,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        guest_info: guestInfo ? {
+          email: guestInfo.email.toLowerCase().trim(),
+          name: guestInfo.name.trim(),
+          phone: guestInfo.phone.trim(),
+          address: guestInfo.address.trim()
+        } : null,
+        created_at: orderTimestamp.toISOString(),
+        updated_at: orderTimestamp.toISOString(),
+        order_number: orderNumber
       })
       .select()
       .single();
@@ -131,6 +153,14 @@ export async function createOrder(
         };
       }
     }
+
+    // Log successful order creation
+    console.log('Order created successfully:', {
+      orderId: order.id,
+      orderNumber: order.order_number,
+      isGuest: !!guestInfo,
+      guestEmail: guestInfo?.email
+    });
 
     return { success: true, error: null, orderId: order.id };
   } catch (err) {
@@ -233,7 +263,8 @@ export async function getAllOrders(filters?: OrderFilters): Promise<{ orders: Or
         const searchTerm = `%${filters.search}%`;
         query = query.or(
           `guest_info->>'email'.ilike.${searchTerm},` +
-          `guest_info->>'name'.ilike.${searchTerm}`
+          `guest_info->>'name'.ilike.${searchTerm},` +
+          `user_id.in.(select id from profiles where email ilike ${searchTerm} or display_name ilike ${searchTerm})`
         );
       }
 
@@ -261,7 +292,7 @@ export async function getAllOrders(filters?: OrderFilters): Promise<{ orders: Or
       .filter(order => order.user_id)
       .map(order => order.user_id);
 
-    // If we have user IDs, fetch their profiles
+    // Fetch profiles for registered users
     let profilesMap = new Map();
     if (userIds.length > 0) {
       const { data: profiles, error: profilesError } = await supabase
@@ -276,46 +307,9 @@ export async function getAllOrders(filters?: OrderFilters): Promise<{ orders: Or
           profiles.map(profile => [profile.id, profile])
         );
       }
-
-      // If search term matches profiles that weren't in the initial orders query
-      if (filters?.search) {
-        const searchTerm = `%${filters.search}%`;
-        const { data: additionalProfiles, error: searchError } = await supabase
-          .from('profiles')
-          .select('id')
-          .or(
-            `email.ilike.${searchTerm},` +
-            `display_name.ilike.${searchTerm}`
-          )
-          .in('id', userIds);
-
-        if (!searchError && additionalProfiles) {
-          const additionalOrderIds = additionalProfiles.map(p => p.id);
-          if (additionalOrderIds.length > 0) {
-            const { data: additionalOrders, error: addOrdersError } = await supabase
-              .from('orders')
-              .select(`
-                *,
-                order_items (
-                  *,
-                  products (
-                    name,
-                    image_url
-                  )
-                )
-              `)
-              .in('user_id', additionalOrderIds)
-              .order('created_at', { ascending: false });
-
-            if (!addOrdersError && additionalOrders) {
-              orders.push(...additionalOrders);
-            }
-          }
-        }
-      }
     }
 
-    // Transform orders to include profile data
+    // Transform orders to include user data in the expected format
     const transformedOrders = orders.map(order => {
       if (order.user_id && profilesMap.has(order.user_id)) {
         const profile = profilesMap.get(order.user_id);

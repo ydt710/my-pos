@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { supabase } from '$lib/supabase';
+  import { goto } from '$app/navigation';
   import Navbar from '$lib/components/Navbar.svelte';
   import SideMenu from '$lib/components/SideMenu.svelte';
   
@@ -22,6 +23,7 @@
   bind:cartButton
   onCartToggle={toggleCart} 
   onMenuToggle={toggleMenu}
+  onLogoClick={() => goto('/')}
 />
 
 <!-- Main Content Area -->
@@ -52,6 +54,8 @@
     justify-content: center;
     padding: 2rem;
     background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+    position: relative;
+    z-index: 1;
   }
 
   .welcome-section {
@@ -61,6 +65,8 @@
     background: white;
     border-radius: 16px;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    position: relative;
+    z-index: 2;
   }
 
   h1 {

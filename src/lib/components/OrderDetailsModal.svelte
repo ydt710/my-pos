@@ -87,7 +87,7 @@
         <div class="info-grid">
           <div class="info-item">
             <span class="label">Order ID:</span>
-            <span class="value">{order.id}</span>
+            <span class="value">{order.order_number || order.id}</span>
           </div>
           <div class="info-item">
             <span class="label">Date:</span>

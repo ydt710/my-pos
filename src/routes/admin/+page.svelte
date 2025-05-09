@@ -28,6 +28,9 @@
       quantity: 1,
       category: 'flower' // Default category
     };
+    let imageFile: File | null = null;
+    let uploadProgress = 0;
+    let isUploading = false;
     let user: any = null;
     let isAdmin = false;
     let adminStatus = '';
@@ -62,18 +65,34 @@
       { id: 'edibles', name: 'Edibles' }
     ];
   
-    // Check if user is admin
-    onMount(async () => {
-      const { data } = await supabase.auth.getUser();
-      user = data.user;
-      console.log('User data:', user);
-      console.log('User metadata:', user?.user_metadata);
-      isAdmin = !!user?.user_metadata?.is_admin;
-      console.log('Is admin:', isAdmin);
-      if (!user) goto('/login');
-      if (!isAdmin) goto('/');
-      await fetchProducts();
-      await fetchStats();
+    let statsInterval: ReturnType<typeof setInterval>;
+  
+    let showImageModal = false;
+    let tempImageUrl = '';
+    let activeImageTab = 'upload'; // 'upload' or 'url'
+  
+    onMount(() => {
+      // Check if user is admin
+      supabase.auth.getUser().then(({ data }) => {
+        user = data.user;
+        isAdmin = !!user?.user_metadata?.is_admin;
+        
+        if (!user) goto('/login');
+        if (!isAdmin) goto('/');
+        
+        // Initial load
+        Promise.all([
+          fetchProducts(),
+          fetchStats()
+        ]).catch(console.error);
+        
+        // Set up auto-refresh
+        statsInterval = setInterval(fetchStats, 30000);
+      });
+      
+      return () => {
+        if (statsInterval) clearInterval(statsInterval);
+      };
     });
   
     async function fetchProducts() {
@@ -84,31 +103,119 @@
       else products = data;
     }
   
+    async function handleImageUpload(event: Event) {
+        const input = event.target as HTMLInputElement;
+        if (!input.files?.length) return;
+        
+        const file = input.files[0];
+        if (!file) return;
+        
+        // Validate file type
+        if (!file.type.startsWith('image/')) {
+            error = 'Please upload an image file';
+            return;
+        }
+        
+        // Validate file size (max 5MB)
+        if (file.size > 5 * 1024 * 1024) {
+            error = 'Image size should be less than 5MB';
+            return;
+        }
+        
+        imageFile = file;
+        
+        // If you want to show a preview
+        if (editing) {
+            editing.image_url = URL.createObjectURL(file);
+        } else {
+            newProduct.image_url = URL.createObjectURL(file);
+        }
+    }
+  
+    async function uploadImageToStorage(file: File): Promise<string> {
+        isUploading = true;
+        uploadProgress = 0;
+        
+        try {
+            const fileExt = file.name.split('.').pop();
+            const fileName = `${Date.now()}.${fileExt}`;
+            const filePath = `product-images/${fileName}`;
+            
+            const { data, error: uploadError } = await supabase.storage
+                .from('products')
+                .upload(filePath, file, {
+                    cacheControl: '3600',
+                    upsert: false
+                });
+                
+            if (uploadError) throw uploadError;
+            
+            // Get the public URL
+            const { data: { publicUrl } } = supabase.storage
+                .from('products')
+                .getPublicUrl(filePath);
+                
+            uploadProgress = 100;
+            return publicUrl;
+        } catch (err) {
+            console.error('Error uploading image:', err);
+            throw err;
+        } finally {
+            isUploading = false;
+        }
+    }
+  
     async function saveProduct() {
-      loading = true;
-      error = '';
-      if (editing) {
-        // Update
-        const { error: err } = await supabase
-          .from('products')
-          .update(editing)
-          .eq('id', editing.id);
-        if (err) error = err.message;
-        editing = null;
-      } else {
-        // Insert
-        const { error: err } = await supabase.from('products').insert([newProduct]);
-        if (err) error = err.message;
-        newProduct = { 
-          name: '', 
-          price: 0, 
-          image_url: '', 
-          quantity: 1,
-          category: 'flower'
-        };
-      }
-      await fetchProducts();
-      loading = false;
+        loading = true;
+        error = '';
+        try {
+            let imageUrl = editing ? editing.image_url : newProduct.image_url;
+            
+            // If there's a new file to upload
+            if (imageFile) {
+                try {
+                    imageUrl = await uploadImageToStorage(imageFile);
+                } catch (err) {
+                    error = 'Failed to upload image. Please try again.';
+                    loading = false;
+                    return;
+                }
+            }
+            
+            if (editing) {
+                // Update
+                const { error: err } = await supabase
+                    .from('products')
+                    .update({ ...editing, image_url: imageUrl })
+                    .eq('id', editing.id);
+                if (err) error = err.message;
+                editing = null;
+            } else {
+                // Insert
+                const { error: err } = await supabase
+                    .from('products')
+                    .insert([{ ...newProduct, image_url: imageUrl }]);
+                if (err) error = err.message;
+                newProduct = { 
+                    name: '', 
+                    price: 0, 
+                    image_url: '', 
+                    quantity: 1,
+                    category: 'flower'
+                };
+            }
+            
+            // Reset file input
+            imageFile = null;
+            uploadProgress = 0;
+            
+            await fetchProducts();
+        } catch (err) {
+            console.error('Error saving product:', err);
+            error = 'An unexpected error occurred';
+        } finally {
+            loading = false;
+        }
     }
   
     function editProduct(product: Product) {
@@ -148,7 +255,8 @@
                 price
               )
             )
-          `);
+          `)
+          .order('created_at', { ascending: false });
 
         if (ordersError) {
           console.error('Error fetching orders:', ordersError);
@@ -164,46 +272,32 @@
           return;
         }
 
-        // Then fetch profiles separately
-        const userIds = ordersData.map(order => order.user_id).filter(Boolean);
-        
-        // If no valid user IDs, don't try to fetch profiles
-        let profileMap = new Map();
+        // Get unique user IDs from orders
+        const userIds = ordersData
+          .filter(order => order.user_id)
+          .map(order => order.user_id);
 
+        // Fetch profiles for registered users
+        let profilesMap = new Map();
         if (userIds.length > 0) {
-          // Fetch profiles with proper error handling
-          try {
-            const { data: profilesData, error: profilesError } = await supabase
-              .from('profiles')
-              .select('id, email, display_name')
-              .in('id', userIds);
+          const { data: profiles, error: profilesError } = await supabase
+            .from('profiles')
+            .select('id, email, display_name')
+            .in('id', userIds);
 
-            if (profilesError) throw profilesError;
-
-            // Create a map of user profiles
-            profileMap = new Map(
-              (profilesData || []).map((profile: Profile) => [
-                profile.id, 
-                { 
-                  ...profile,
-                  // Fallback to email if no display name
-                  display_name: profile.display_name || profile.email?.split('@')[0] || 'Unknown User'
-                }
-              ])
+          if (profilesError) {
+            console.error('Error fetching profiles:', profilesError);
+          } else if (profiles) {
+            profilesMap = new Map(
+              profiles.map(profile => [profile.id, profile])
             );
-          } catch (err) {
-            console.error('Error fetching profiles:', err);
-            // Continue with empty profile map rather than breaking the whole stats
-            profileMap = new Map();
           }
         }
 
         // Calculate total orders and revenue
         stats.totalOrders = ordersData.length;
         stats.totalRevenue = ordersData.reduce((total, order) => {
-          return total + (order.order_items?.reduce((itemTotal: number, item: any) => {
-            return itemTotal + (item.quantity * item.price);
-          }, 0) || 0);
+          return total + (order.total || 0);
         }, 0);
 
         // Calculate top products
@@ -232,22 +326,34 @@
 
         // Get recent orders with formatted IDs and customer names
         stats.recentOrders = ordersData
-          .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
           .slice(0, 5)
           .map(order => {
-            const profile = profileMap.get(order.user_id);
-            
-            // Use display name or fall back to email or Guest
-            const username = profile
-              ? profile.display_name || profile.email
-              : 'Guest';
+            let username;
+            if (order.guest_info) {
+              username = `${order.guest_info.name} (Guest)`;
+            } else if (order.user_id && profilesMap.has(order.user_id)) {
+              const profile = profilesMap.get(order.user_id);
+              username = profile.display_name || profile.email.split('@')[0];
+            } else {
+              username = 'Unknown';
+            }
 
             return {
               ...order,
-              shortId: `#${order.id.toString().padStart(4, '0')}`,
+              shortId: order.order_number || `#${order.id.toString().padStart(4, '0')}`,
               username
             };
           });
+
+        console.log('Stats updated:', {
+          totalOrders: stats.totalOrders,
+          totalRevenue: stats.totalRevenue,
+          recentOrders: stats.recentOrders.map(o => ({
+            id: o.shortId,
+            username: o.username,
+            isGuest: !!o.guest_info
+          }))
+        });
 
       } catch (err) {
         console.error('Error fetching stats:', err);
@@ -350,6 +456,18 @@
         phone: 'N/A',
         address: 'N/A'
       };
+    }
+  
+    function handleImageSubmit() {
+        if (activeImageTab === 'url' && tempImageUrl) {
+            if (editing) {
+                editing.image_url = tempImageUrl;
+            } else {
+                newProduct.image_url = tempImageUrl;
+            }
+            showImageModal = false;
+            tempImageUrl = '';
+        }
     }
   
     $: if (activeTab === 'orders') {
@@ -517,22 +635,28 @@
                             {/if}
                         </div>
                         <div class="form-group">
-                            <label for="image">Image URL</label>
-                            {#if editing}
-                                <input 
-                                    id="image"
-                                    bind:value={editing.image_url}
-                                    placeholder="Image URL" 
-                                    required 
-                                />
-                            {:else}
-                                <input 
-                                    id="image"
-                                    bind:value={newProduct.image_url}
-                                    placeholder="Image URL" 
-                                    required 
-                                />
-                            {/if}
+                            <label for="image">Product Image</label>
+                            <div class="image-input-container">
+                                {#if (editing?.image_url || newProduct.image_url)}
+                                    <div class="image-preview">
+                                        <img 
+                                            src={editing ? editing.image_url : newProduct.image_url} 
+                                            alt="Product preview" 
+                                            class="preview-image"
+                                        />
+                                    </div>
+                                {/if}
+                                <button 
+                                    type="button" 
+                                    class="image-btn"
+                                    on:click={() => {
+                                        showImageModal = true;
+                                        tempImageUrl = (editing ? editing.image_url : newProduct.image_url) || '';
+                                    }}
+                                >
+                                    Add Image
+                                </button>
+                            </div>
                         </div>
                         <div class="form-group">
                             <label for="quantity">Quantity</label>
@@ -780,6 +904,80 @@
             onStatusUpdate={handleStatusUpdate}
         />
     {/if}
+
+    {#if showImageModal}
+        <div class="modal-backdrop" on:click={() => showImageModal = false}>
+            <div class="modal-content" on:click|stopPropagation>
+                <h3>Add Product Image</h3>
+                
+                <div class="modal-tabs">
+                    <button 
+                        class="tab-btn" 
+                        class:active={activeImageTab === 'upload'}
+                        on:click={() => activeImageTab = 'upload'}
+                    >
+                        Upload Image
+                    </button>
+                    <button 
+                        class="tab-btn" 
+                        class:active={activeImageTab === 'url'}
+                        on:click={() => activeImageTab = 'url'}
+                    >
+                        Image URL
+                    </button>
+                </div>
+
+                {#if activeImageTab === 'upload'}
+                    <div class="upload-area">
+                        <label for="modal-image-upload" class="upload-label">
+                            <div class="upload-icon">📁</div>
+                            <span>Click to upload or drag and drop</span>
+                            <span class="upload-hint">PNG, JPG up to 5MB</span>
+                            <input 
+                                type="file"
+                                id="modal-image-upload"
+                                accept="image/*"
+                                on:change={handleImageUpload}
+                                class="file-input"
+                            />
+                        </label>
+                        {#if isUploading}
+                            <div class="upload-progress">
+                                <div 
+                                    class="progress-bar" 
+                                    style="width: {uploadProgress}%"
+                                ></div>
+                            </div>
+                        {/if}
+                    </div>
+                {:else}
+                    <form on:submit|preventDefault={handleImageSubmit}>
+                        <div class="modal-form-group">
+                            <input 
+                                type="url"
+                                bind:value={tempImageUrl}
+                                placeholder="https://example.com/image.jpg"
+                                autofocus
+                            />
+                        </div>
+                        <div class="modal-actions">
+                            <button type="submit" class="submit-btn">
+                                Add Image
+                            </button>
+                        </div>
+                    </form>
+                {/if}
+
+                <button 
+                    type="button" 
+                    class="close-btn" 
+                    on:click={() => showImageModal = false}
+                >
+                    ×
+                </button>
+            </div>
+        </div>
+    {/if}
   </div>
   
   <style>
@@ -901,15 +1099,21 @@
         border-radius: 12px;
         padding: 1.5rem;
         box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        overflow-x: auto;
+        max-height: 400px;
+        overflow-y: auto;
     }
 
     .table-container {
         overflow-x: auto;
+        max-height: 400px;
+        overflow-y: auto;
     }
 
     table {
         width: 100%;
         border-collapse: collapse;
+        min-width: 600px;
     }
 
     th, td {
@@ -1122,25 +1326,393 @@
         color: #6c757d;
     }
 
+    .image-input-container {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        align-items: center;
+    }
+
+    .image-preview {
+        width: 100%;
+        max-width: 300px;
+        height: 200px;
+        border: 2px dashed #dee2e6;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        background: #f8f9fa;
+        margin: 0 auto;
+    }
+
+    .preview-image {
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: contain;
+    }
+
+    .image-upload-options {
+        width: 100%;
+        max-width: 300px;
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .upload-buttons {
+        display: flex;
+        gap: 0.5rem;
+    }
+
+    .upload-btn, .url-btn {
+        flex: 1;
+        padding: 0.75rem;
+        border: none;
+        border-radius: 6px;
+        font-size: 0.9rem;
+        cursor: pointer;
+        transition: all 0.2s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+    }
+
+    .upload-btn {
+        background: #007bff;
+        color: white;
+    }
+
+    .upload-btn:hover {
+        background: #0056b3;
+    }
+
+    .url-btn {
+        background: #6c757d;
+        color: white;
+    }
+
+    .url-btn:hover {
+        background: #5a6268;
+    }
+
+    .file-input {
+        position: absolute;
+        width: 0.1px;
+        height: 0.1px;
+        opacity: 0;
+        overflow: hidden;
+        z-index: -1;
+    }
+
+    .upload-progress {
+        width: 100%;
+        height: 4px;
+        background: #dee2e6;
+        border-radius: 2px;
+        overflow: hidden;
+    }
+
+    .progress-bar {
+        height: 100%;
+        background: #28a745;
+        transition: width 0.3s ease;
+    }
+
     @media (max-width: 768px) {
         .admin-container {
-            padding: 1rem;
+            padding: 0.5rem;
         }
 
         .stats-details {
             grid-template-columns: 1fr;
         }
 
-        .form-grid {
-            grid-template-columns: 1fr;
+        .stats-card, .form-card, .table-card, .filters-card {
+            margin-bottom: 1rem;
+            padding: 1rem;
+            max-height: none;
+            overflow: visible;
         }
 
-        .action-buttons {
+        .table-container {
+            max-height: none;
+            overflow-y: visible;
+            margin: 0 -1rem;
+            padding: 0 1rem;
+        }
+
+        .table-responsive {
+            display: block;
+            width: 100%;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            -ms-overflow-style: -ms-autohiding-scrollbar;
+        }
+
+        .stats-card table {
+            min-width: unset;
+        }
+
+        .stats-card tr {
+            display: flex;
             flex-direction: column;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid #dee2e6;
+        }
+
+        .stats-card td {
+            padding: 0.25rem 0;
+            border: none;
+            text-align: left;
+        }
+
+        .stats-card th {
+            display: none;
+        }
+
+        .form-grid {
+            grid-template-columns: 1fr;
+            gap: 0.75rem;
+        }
+
+        input, select, textarea {
+            width: 100%;
+            max-width: none;
         }
 
         .filters {
             grid-template-columns: 1fr;
+            gap: 0.75rem;
         }
+
+        .action-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .action-buttons button {
+            width: 100%;
+        }
+
+        .status-select {
+            width: 100%;
+            max-width: none;
+        }
+
+        .product-thumbnail {
+            width: 40px;
+            height: 40px;
+        }
+
+        .modal-content {
+            padding: 1rem;
+            width: 95%;
+        }
+
+        .tab-button {
+            padding: 0.75rem 1rem;
+        }
+
+        .stat-card {
+            padding: 1rem;
+        }
+
+        .stat-value {
+            font-size: 1.5rem;
+        }
+
+        .customer-info {
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+
+        .section-header {
+            flex-direction: column;
+            gap: 1rem;
+            align-items: stretch;
+            text-align: center;
+        }
+
+        .section-header button {
+            width: 100%;
+        }
+    }
+
+    .modal-backdrop {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+    }
+
+    .modal-content {
+        background: white;
+        padding: 2rem;
+        border-radius: 12px;
+        width: 90%;
+        max-width: 500px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+
+    .modal-content h3 {
+        margin: 0 0 1.5rem;
+        color: #333;
+        font-size: 1.25rem;
+    }
+
+    .modal-form-group {
+        margin-bottom: 1.5rem;
+    }
+
+    .modal-form-group input {
+        width: 100%;
+        padding: 0.75rem;
+        border: 1px solid #dee2e6;
+        border-radius: 6px;
+        font-size: 1rem;
+    }
+
+    .modal-form-group input:focus {
+        outline: none;
+        border-color: #007bff;
+        box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+    }
+
+    .modal-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 1rem;
+    }
+
+    .cancel-btn, .submit-btn {
+        padding: 0.75rem 1.5rem;
+        border: none;
+        border-radius: 6px;
+        font-size: 1rem;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .cancel-btn {
+        background: #e9ecef;
+        color: #495057;
+    }
+
+    .cancel-btn:hover {
+        background: #dee2e6;
+    }
+
+    .submit-btn {
+        background: #007bff;
+        color: white;
+    }
+
+    .submit-btn:hover {
+        background: #0056b3;
+    }
+
+    .image-btn {
+        width: 100%;
+        max-width: 300px;
+        padding: 0.75rem;
+        background: #007bff;
+        color: white;
+        border: none;
+        border-radius: 6px;
+        font-size: 1rem;
+        cursor: pointer;
+        transition: all 0.2s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+    }
+
+    .image-btn:hover {
+        background: #0056b3;
+    }
+
+    .modal-tabs {
+        display: flex;
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+        border-bottom: 1px solid #dee2e6;
+        padding-bottom: 1rem;
+    }
+
+    .tab-btn {
+        padding: 0.5rem 1rem;
+        background: none;
+        border: none;
+        color: #6c757d;
+        cursor: pointer;
+        font-size: 1rem;
+        transition: all 0.2s;
+        border-bottom: 2px solid transparent;
+        margin-bottom: -1rem;
+    }
+
+    .tab-btn.active {
+        color: #007bff;
+        border-bottom-color: #007bff;
+    }
+
+    .upload-area {
+        border: 2px dashed #dee2e6;
+        border-radius: 8px;
+        padding: 2rem;
+        text-align: center;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .upload-area:hover {
+        border-color: #007bff;
+        background: #f8f9fa;
+    }
+
+    .upload-label {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.5rem;
+        cursor: pointer;
+    }
+
+    .upload-icon {
+        font-size: 2rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .upload-hint {
+        font-size: 0.875rem;
+        color: #6c757d;
+    }
+
+    .close-btn {
+        position: absolute;
+        top: 1rem;
+        right: 1rem;
+        background: none;
+        border: none;
+        font-size: 1.5rem;
+        color: #6c757d;
+        cursor: pointer;
+        padding: 0.25rem 0.5rem;
+        line-height: 1;
+    }
+
+    .close-btn:hover {
+        color: #343a40;
     }
   </style>
