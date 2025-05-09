@@ -6,9 +6,17 @@
   export let onMenuToggle: () => void;
   export let onLogoClick: () => void;
   
-  export let cartButton: HTMLButtonElement;
+  let isCartAnimating = false;
+  let previousCartCount = 0;
   
   $: cartCount = $cartStore.reduce((sum, item) => sum + item.quantity, 0);
+  $: if (cartCount > previousCartCount) {
+    isCartAnimating = true;
+    setTimeout(() => {
+      isCartAnimating = false;
+    }, 500);
+    previousCartCount = cartCount;
+  }
 
   // Get the public URL for the logo
   let logoUrl = '';
@@ -36,14 +44,14 @@
   </div>
   <div class="right">
     <button 
-      bind:this={cartButton} 
       on:click={onCartToggle}
       aria-label="Shopping cart"
       class="cart-button"
+      class:cart-animate={isCartAnimating}
     >
       🛒
       {#if cartCount > 0}
-        <span class="cart-badge">{cartCount}</span>
+        <span class="cart-badge" class:cart-animate={isCartAnimating}>{cartCount}</span>
       {/if}
     </button>
     <button 
@@ -143,18 +151,54 @@
     align-items: center;
     justify-content: center;
     font-weight: bold;
+    transition: transform 0.2s, background-color 0.3s;
   }
   
   @keyframes pop {
-    0% { transform: scale(1.5); }
-    25% { transform: scale(1.3); }
-    50% { transform: scale(0.9); }
-    75% { transform: scale(1.1); }
-    100% { transform: scale(1); }
+    0% {
+      transform: scale(1);
+    }
+    25% {
+      transform: scale(1.5);
+      background: #28a745;
+    }
+    50% {
+      transform: scale(0.8);
+    }
+    75% {
+      transform: scale(1.2);
+      background: #dc3545;
+    }
+    100% {
+      transform: scale(1);
+      background: #dc3545;
+    }
   }
 
-  .cart-animate {
-    animation: pop 0.5s ease;
+  .cart-animate .cart-badge {
+    animation: pop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  @keyframes cartBounce {
+    0% {
+      transform: scale(1);
+    }
+    25% {
+      transform: scale(1.15) rotate(10deg);
+    }
+    50% {
+      transform: scale(0.95) rotate(-5deg);
+    }
+    75% {
+      transform: scale(1.05) rotate(2deg);
+    }
+    100% {
+      transform: scale(1) rotate(0);
+    }
+  }
+
+  .cart-animate.cart-button {
+    animation: cartBounce 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
   }
 
   @media (max-width: 768px) {

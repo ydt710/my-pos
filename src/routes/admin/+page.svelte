@@ -71,6 +71,39 @@
     let tempImageUrl = '';
     let activeImageTab = 'upload'; // 'upload' or 'url'
   
+    let activeSection = 'stats'; // For highlighting active nav item
+  
+    function scrollToSection(sectionId: string) {
+        const element = document.getElementById(sectionId);
+        if (element) {
+            const navHeight = 60; // Height of the sticky nav
+            const elementPosition = element.getBoundingClientRect().top;
+            const offsetPosition = elementPosition + window.pageYOffset - navHeight;
+            
+            window.scrollTo({
+                top: offsetPosition,
+                behavior: "smooth"
+            });
+        }
+    }
+
+    // Update active section based on scroll position
+    function updateActiveSection() {
+        const sections = ['stats', 'products', 'orders'];
+        const navHeight = 60;
+        
+        for (const section of sections) {
+            const element = document.getElementById(section);
+            if (element) {
+                const rect = element.getBoundingClientRect();
+                if (rect.top <= navHeight && rect.bottom > navHeight) {
+                    activeSection = section;
+                    break;
+                }
+            }
+        }
+    }
+  
     onMount(() => {
       // Check if user is admin
       supabase.auth.getUser().then(({ data }) => {
@@ -83,15 +116,20 @@
         // Initial load
         Promise.all([
           fetchProducts(),
-          fetchStats()
+          fetchStats(),
+          loadOrders()
         ]).catch(console.error);
         
         // Set up auto-refresh
         statsInterval = setInterval(fetchStats, 30000);
+        
+        // Add scroll event listener
+        window.addEventListener('scroll', updateActiveSection);
       });
       
       return () => {
         if (statsInterval) clearInterval(statsInterval);
+        window.removeEventListener('scroll', updateActiveSection);
       };
     });
   
@@ -476,25 +514,31 @@
   </script>
   
   <div class="admin-container">
-    <header class="admin-header">
-        <h1>Admin Dashboard</h1>
-        <div class="tabs">
-            <button 
-                class="tab-button" 
-                class:active={activeTab === 'products'} 
-                on:click={() => activeTab = 'products'}
-            >
-                Products
-            </button>
-            <button 
-                class="tab-button" 
-                class:active={activeTab === 'orders'} 
-                on:click={() => activeTab = 'orders'}
-            >
-                Orders
-            </button>
+    <nav class="admin-nav">
+        <div class="nav-content">
+            <h1>Admin Dashboard</h1>
+            <div class="nav-links">
+                <button 
+                    class:active={activeSection === 'stats'} 
+                    on:click={() => scrollToSection('stats')}
+                >
+                    Statistics
+                </button>
+                <button 
+                    class:active={activeSection === 'products'} 
+                    on:click={() => scrollToSection('products')}
+                >
+                    Products
+                </button>
+                <button 
+                    class:active={activeSection === 'orders'} 
+                    on:click={() => scrollToSection('orders')}
+                >
+                    Orders
+                </button>
+            </div>
         </div>
-    </header>
+    </nav>
 
     {#if error}
         <div class="alert error" transition:fade>{error}</div>
@@ -505,7 +549,7 @@
     {/if}
 
     <!-- Statistics Section -->
-    <section class="stats-section">
+    <section id="stats" class="stats-section">
         <div class="section-header">
             <h2>Sales Statistics</h2>
             <button 
@@ -581,191 +625,307 @@
     </section>
 
     <!-- Product Management Section -->
-    {#if activeTab === 'products'}
-        <section class="product-management">
-            <div class="section-header">
-                <h2>Product Management</h2>
-            </div>
-            
-            <!-- Product Form -->
-            <div class="form-card">
-                <h3>{editing ? 'Edit Product' : 'Add Product'}</h3>
-                <form on:submit|preventDefault={saveProduct}>
-                    <div class="form-grid">
-                        <div class="form-group">
-                            <label for="name">Name</label>
-                            {#if editing}
-                                <input 
-                                    id="name"
-                                    bind:value={editing.name}
-                                    placeholder="Product name" 
-                                    required 
-                                />
-                            {:else}
-                                <input 
-                                    id="name"
-                                    bind:value={newProduct.name}
-                                    placeholder="Product name" 
-                                    required 
-                                />
-                            {/if}
-                        </div>
-                        <div class="form-group">
-                            <label for="price">Price</label>
-                            {#if editing}
-                                <input 
-                                    id="price"
-                                    type="number" 
-                                    min="0" 
-                                    step="0.01"
-                                    bind:value={editing.price}
-                                    placeholder="Price" 
-                                    required 
-                                />
-                            {:else}
-                                <input 
-                                    id="price"
-                                    type="number" 
-                                    min="0" 
-                                    step="0.01"
-                                    bind:value={newProduct.price}
-                                    placeholder="Price" 
-                                    required 
-                                />
-                            {/if}
-                        </div>
-                        <div class="form-group">
-                            <label for="image">Product Image</label>
-                            <div class="image-input-container">
-                                {#if (editing?.image_url || newProduct.image_url)}
-                                    <div class="image-preview">
-                                        <img 
-                                            src={editing ? editing.image_url : newProduct.image_url} 
-                                            alt="Product preview" 
-                                            class="preview-image"
-                                        />
-                                    </div>
-                                {/if}
-                                <button 
-                                    type="button" 
-                                    class="image-btn"
-                                    on:click={() => {
-                                        showImageModal = true;
-                                        tempImageUrl = (editing ? editing.image_url : newProduct.image_url) || '';
-                                    }}
-                                >
-                                    Add Image
-                                </button>
-                            </div>
-                        </div>
-                        <div class="form-group">
-                            <label for="quantity">Quantity</label>
-                            {#if editing}
-                                <input 
-                                    id="quantity"
-                                    type="number" 
-                                    min="0" 
-                                    bind:value={editing.quantity}
-                                    placeholder="Quantity" 
-                                    required 
-                                />
-                            {:else}
-                                <input 
-                                    id="quantity"
-                                    type="number" 
-                                    min="0" 
-                                    bind:value={newProduct.quantity}
-                                    placeholder="Quantity" 
-                                    required 
-                                />
-                            {/if}
-                        </div>
-                        <div class="form-group">
-                            <label for="category">Category</label>
-                            {#if editing}
-                                <select 
-                                    id="category"
-                                    bind:value={editing.category}
-                                    required
-                                >
-                                    {#each categories as category}
-                                        <option value={category.id}>{category.name}</option>
-                                    {/each}
-                                </select>
-                            {:else}
-                                <select 
-                                    id="category"
-                                    bind:value={newProduct.category}
-                                    required
-                                >
-                                    {#each categories as category}
-                                        <option value={category.id}>{category.name}</option>
-                                    {/each}
-                                </select>
-                            {/if}
-                        </div>
-                    </div>
-                    <div class="form-actions">
+    <section id="products" class="product-management">
+        <div class="section-header">
+            <h2>Product Management</h2>
+        </div>
+        
+        <!-- Product Form -->
+        <div class="form-card">
+            <h3>{editing ? 'Edit Product' : 'Add Product'}</h3>
+            <form on:submit|preventDefault={saveProduct}>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="name">Name</label>
                         {#if editing}
-                            <button type="submit" class="primary-btn" disabled={loading}>
-                                Update Product
-                            </button>
-                            <button 
-                                type="button" 
-                                class="secondary-btn" 
-                                on:click={() => editing = null}
-                            >
-                                Cancel
-                            </button>
+                            <input 
+                                id="name"
+                                bind:value={editing.name}
+                                placeholder="Product name" 
+                                required 
+                            />
                         {:else}
-                            <button type="submit" class="primary-btn" disabled={loading}>
-                                Add Product
-                            </button>
+                            <input 
+                                id="name"
+                                bind:value={newProduct.name}
+                                placeholder="Product name" 
+                                required 
+                            />
                         {/if}
                     </div>
-                </form>
+                    <div class="form-group">
+                        <label for="price">Price</label>
+                        {#if editing}
+                            <input 
+                                id="price"
+                                type="number" 
+                                min="0" 
+                                step="0.01"
+                                bind:value={editing.price}
+                                placeholder="Price" 
+                                required 
+                            />
+                        {:else}
+                            <input 
+                                id="price"
+                                type="number" 
+                                min="0" 
+                                step="0.01"
+                                bind:value={newProduct.price}
+                                placeholder="Price" 
+                                required 
+                            />
+                        {/if}
+                    </div>
+                    <div class="form-group">
+                        <label for="image">Product Image</label>
+                        <div class="image-input-container">
+                            {#if (editing?.image_url || newProduct.image_url)}
+                                <div class="image-preview">
+                                    <img 
+                                        src={editing ? editing.image_url : newProduct.image_url} 
+                                        alt="Product preview" 
+                                        class="preview-image"
+                                    />
+                                </div>
+                            {/if}
+                            <button 
+                                type="button" 
+                                class="image-btn"
+                                on:click={() => {
+                                    showImageModal = true;
+                                    tempImageUrl = (editing ? editing.image_url : newProduct.image_url) || '';
+                                }}
+                            >
+                                Add Image
+                            </button>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="quantity">Quantity</label>
+                        {#if editing}
+                            <input 
+                                id="quantity"
+                                type="number" 
+                                min="0" 
+                                bind:value={editing.quantity}
+                                placeholder="Quantity" 
+                                required 
+                            />
+                        {:else}
+                            <input 
+                                id="quantity"
+                                type="number" 
+                                min="0" 
+                                bind:value={newProduct.quantity}
+                                placeholder="Quantity" 
+                                required 
+                            />
+                        {/if}
+                    </div>
+                    <div class="form-group">
+                        <label for="category">Category</label>
+                        {#if editing}
+                            <select 
+                                id="category"
+                                bind:value={editing.category}
+                                required
+                            >
+                                {#each categories as category}
+                                    <option value={category.id}>{category.name}</option>
+                                {/each}
+                            </select>
+                        {:else}
+                            <select 
+                                id="category"
+                                bind:value={newProduct.category}
+                                required
+                            >
+                                {#each categories as category}
+                                    <option value={category.id}>{category.name}</option>
+                                {/each}
+                            </select>
+                        {/if}
+                    </div>
+                </div>
+                <div class="form-actions">
+                    {#if editing}
+                        <button type="submit" class="primary-btn" disabled={loading}>
+                            Update Product
+                        </button>
+                        <button 
+                            type="button" 
+                            class="secondary-btn" 
+                            on:click={() => editing = null}
+                        >
+                            Cancel
+                        </button>
+                    {:else}
+                        <button type="submit" class="primary-btn" disabled={loading}>
+                            Add Product
+                        </button>
+                    {/if}
+                </div>
+            </form>
+        </div>
+        
+        <!-- Product List -->
+        <div class="table-card">
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Image</th>
+                            <th>Name</th>
+                            <th>Price</th>
+                            <th>Quantity</th>
+                            <th>Category</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {#each products as p}
+                            <tr>
+                                <td>
+                                    <img 
+                                        src={p.image_url} 
+                                        alt={p.name} 
+                                        class="product-thumbnail"
+                                    />
+                                </td>
+                                <td>{p.name}</td>
+                                <td>R{p.price}</td>
+                                <td>{p.quantity}</td>
+                                <td>{categories.find(c => c.id === p.category)?.name || p.category}</td>
+                                <td class="action-buttons">
+                                    <button 
+                                        class="edit-btn" 
+                                        on:click={() => editProduct(p)}
+                                    >
+                                        Edit
+                                    </button>
+                                    <button 
+                                        class="delete-btn" 
+                                        on:click={() => deleteProduct(p.id)}
+                                    >
+                                        Delete
+                                    </button>
+                                </td>
+                            </tr>
+                        {/each}
+                    </tbody>
+                </table>
             </div>
-            
-            <!-- Product List -->
+        </div>
+    </section>
+
+    <!-- Orders Section -->
+    <section id="orders" class="orders-section" transition:fade>
+        <div class="section-header">
+            <h2>Order Management</h2>
+        </div>
+        
+        {#if orderError}
+            <div class="alert error" transition:fade>{orderError}</div>
+        {/if}
+        
+        <div class="filters-card">
+            <div class="filters">
+                <div class="filter-group">
+                    <label for="status">Status</label>
+                    <select id="status" bind:value={filters.status} on:change={loadOrders}>
+                        <option value={undefined}>All</option>
+                        <option value="pending">Pending</option>
+                        <option value="processing">Processing</option>
+                        <option value="completed">Completed</option>
+                        <option value="cancelled">Cancelled</option>
+                    </select>
+                </div>
+                
+                <div class="filter-group">
+                    <label for="dateFrom">From</label>
+                    <input 
+                        type="date" 
+                        id="dateFrom" 
+                        bind:value={filters.dateFrom} 
+                        on:change={loadOrders}
+                    />
+                </div>
+                
+                <div class="filter-group">
+                    <label for="dateTo">To</label>
+                    <input 
+                        type="date" 
+                        id="dateTo" 
+                        bind:value={filters.dateTo} 
+                        on:change={loadOrders}
+                    />
+                </div>
+                
+                <div class="filter-group">
+                    <label for="search">Search</label>
+                    <input 
+                        type="text" 
+                        id="search" 
+                        placeholder="Search by email or name..." 
+                        bind:value={filters.search} 
+                        on:input={loadOrders}
+                    />
+                </div>
+            </div>
+        </div>
+        
+        {#if loadingOrders}
+            <div class="loading-spinner">Loading orders...</div>
+        {:else}
             <div class="table-card">
                 <div class="table-container">
                     <table>
                         <thead>
                             <tr>
-                                <th>Image</th>
-                                <th>Name</th>
-                                <th>Price</th>
-                                <th>Quantity</th>
-                                <th>Category</th>
+                                <th>Order ID</th>
+                                <th>Date</th>
+                                <th>Customer</th>
+                                <th>Total</th>
+                                <th>Status</th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {#each products as p}
+                            {#each orders as order}
+                                {@const customer = getCustomerInfo(order)}
                                 <tr>
+                                    <td>{order.id}</td>
+                                    <td>{formatDate(order.created_at)}</td>
                                     <td>
-                                        <img 
-                                            src={p.image_url} 
-                                            alt={p.name} 
-                                            class="product-thumbnail"
-                                        />
+                                        <div class="customer-info">
+                                            <strong>{customer.name}</strong>
+                                            <span>{customer.email}</span>
+                                        </div>
                                     </td>
-                                    <td>{p.name}</td>
-                                    <td>R{p.price}</td>
-                                    <td>{p.quantity}</td>
-                                    <td>{categories.find(c => c.id === p.category)?.name || p.category}</td>
-                                    <td class="action-buttons">
-                                        <button 
-                                            class="edit-btn" 
-                                            on:click={() => editProduct(p)}
+                                    <td>R{order.total}</td>
+                                    <td>
+                                        <select 
+                                            value={order.status}
+                                            class="status-select"
+                                            class:pending={order.status === 'pending'}
+                                            class:processing={order.status === 'processing'}
+                                            class:completed={order.status === 'completed'}
+                                            class:cancelled={order.status === 'cancelled'}
+                                            on:change={(e) => handleStatusUpdate(order.id, e.currentTarget.value as OrderStatus)}
                                         >
-                                            Edit
-                                        </button>
+                                            <option value="pending">Pending</option>
+                                            <option value="processing">Processing</option>
+                                            <option value="completed">Completed</option>
+                                            <option value="cancelled">Cancelled</option>
+                                        </select>
+                                    </td>
+                                    <td>
                                         <button 
-                                            class="delete-btn" 
-                                            on:click={() => deleteProduct(p.id)}
+                                            class="view-details-btn"
+                                            on:click={() => selectedOrder = order}
                                         >
-                                            Delete
+                                            View Details
                                         </button>
                                     </td>
                                 </tr>
@@ -774,128 +934,8 @@
                     </table>
                 </div>
             </div>
-        </section>
-    {/if}
-
-    <!-- Orders Section -->
-    {#if activeTab === 'orders'}
-        <section class="orders-section" transition:fade>
-            <div class="section-header">
-                <h2>Order Management</h2>
-            </div>
-            
-            {#if orderError}
-                <div class="alert error" transition:fade>{orderError}</div>
-            {/if}
-            
-            <div class="filters-card">
-                <div class="filters">
-                    <div class="filter-group">
-                        <label for="status">Status</label>
-                        <select id="status" bind:value={filters.status} on:change={loadOrders}>
-                            <option value={undefined}>All</option>
-                            <option value="pending">Pending</option>
-                            <option value="processing">Processing</option>
-                            <option value="completed">Completed</option>
-                            <option value="cancelled">Cancelled</option>
-                        </select>
-                    </div>
-                    
-                    <div class="filter-group">
-                        <label for="dateFrom">From</label>
-                        <input 
-                            type="date" 
-                            id="dateFrom" 
-                            bind:value={filters.dateFrom} 
-                            on:change={loadOrders}
-                        />
-                    </div>
-                    
-                    <div class="filter-group">
-                        <label for="dateTo">To</label>
-                        <input 
-                            type="date" 
-                            id="dateTo" 
-                            bind:value={filters.dateTo} 
-                            on:change={loadOrders}
-                        />
-                    </div>
-                    
-                    <div class="filter-group">
-                        <label for="search">Search</label>
-                        <input 
-                            type="text" 
-                            id="search" 
-                            placeholder="Search by email or name..." 
-                            bind:value={filters.search} 
-                            on:input={loadOrders}
-                        />
-                    </div>
-                </div>
-            </div>
-            
-            {#if loadingOrders}
-                <div class="loading-spinner">Loading orders...</div>
-            {:else}
-                <div class="table-card">
-                    <div class="table-container">
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Order ID</th>
-                                    <th>Date</th>
-                                    <th>Customer</th>
-                                    <th>Total</th>
-                                    <th>Status</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {#each orders as order}
-                                    {@const customer = getCustomerInfo(order)}
-                                    <tr>
-                                        <td>{order.id}</td>
-                                        <td>{formatDate(order.created_at)}</td>
-                                        <td>
-                                            <div class="customer-info">
-                                                <strong>{customer.name}</strong>
-                                                <span>{customer.email}</span>
-                                            </div>
-                                        </td>
-                                        <td>R{order.total}</td>
-                                        <td>
-                                            <select 
-                                                value={order.status}
-                                                class="status-select"
-                                                class:pending={order.status === 'pending'}
-                                                class:processing={order.status === 'processing'}
-                                                class:completed={order.status === 'completed'}
-                                                class:cancelled={order.status === 'cancelled'}
-                                                on:change={(e) => handleStatusUpdate(order.id, e.currentTarget.value as OrderStatus)}
-                                            >
-                                                <option value="pending">Pending</option>
-                                                <option value="processing">Processing</option>
-                                                <option value="completed">Completed</option>
-                                                <option value="cancelled">Cancelled</option>
-                                            </select>
-                                        </td>
-                                        <td>
-                                            <button 
-                                                class="view-details-btn"
-                                                on:click={() => selectedOrder = order}
-                                            >
-                                                View Details
-                                            </button>
-                                        </td>
-                                    </tr>
-                                {/each}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            {/if}
-        </section>
-    {/if}
+        {/if}
+    </section>
 
     {#if selectedOrder}
         <OrderDetailsModal
@@ -989,42 +1029,63 @@
         min-height: 100vh;
     }
 
-    .admin-header {
-        margin-bottom: 2rem;
-        text-align: center;
+    .admin-nav {
+        position: sticky;
+        top: 0;
+        background: white;
+        z-index: 100;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        margin: -2rem -2rem 2rem -2rem;
+        padding: 1rem 2rem;
     }
 
-    .admin-header h1 {
-        margin: 0 0 1rem;
-        color: #333;
-        font-size: 2rem;
-    }
-
-    .tabs {
+    .nav-content {
+        max-width: 1400px;
+        margin: 0 auto;
         display: flex;
-        justify-content: center;
-        gap: 1rem;
-        margin-bottom: 2rem;
+        justify-content: space-between;
+        align-items: center;
     }
 
-    .tab-button {
-        padding: 0.75rem 2rem;
+    .nav-content h1 {
+        margin: 0;
+        font-size: 1.5rem;
+        color: #333;
+    }
+
+    .nav-links {
+        display: flex;
+        gap: 1rem;
+    }
+
+    .nav-links button {
+        padding: 0.5rem 1rem;
         border: none;
-        border-radius: 8px;
-        background: #e9ecef;
-        color: #495057;
+        background: none;
+        color: #6c757d;
         font-size: 1rem;
         cursor: pointer;
         transition: all 0.2s;
+        border-bottom: 2px solid transparent;
     }
 
-    .tab-button:hover {
-        background: #dee2e6;
+    .nav-links button:hover {
+        color: #007bff;
     }
 
-    .tab-button.active {
-        background: #007bff;
-        color: white;
+    .nav-links button.active {
+        color: #007bff;
+        border-bottom-color: #007bff;
+    }
+
+    section {
+        scroll-margin-top: 80px; /* Accounts for sticky nav */
+        padding: 2rem 0;
+    }
+
+    section:not(:last-child) {
+        border-bottom: 1px solid #dee2e6;
+        margin-bottom: 2rem;
     }
 
     .alert {
@@ -1222,7 +1283,7 @@
 
     .product-thumbnail {
         width: 50px;
-        height: 50px;
+        
         object-fit: cover;
         border-radius: 4px;
     }
@@ -1331,6 +1392,9 @@
         flex-direction: column;
         gap: 1rem;
         align-items: center;
+        
+        max-width: 300px;
+        margin: 0 auto;
     }
 
     .image-preview {
@@ -1345,12 +1409,16 @@
         overflow: hidden;
         background: #f8f9fa;
         margin: 0 auto;
+        position: relative;
     }
 
     .preview-image {
-        max-width: 100%;
-        max-height: 100%;
+        width: 100%;
+        height: 100%;
         object-fit: contain;
+        object-position: center;
+        background: #fff;
+        padding: 0.5rem;
     }
 
     .image-upload-options {
@@ -1419,6 +1487,29 @@
         height: 100%;
         background: #28a745;
         transition: width 0.3s ease;
+    }
+
+    /* Add aspect ratio container for product thumbnails in table */
+    td .product-thumbnail {
+        width: 60px;
+        height: 60px;
+        object-fit: cover;
+        object-position: center;
+        border-radius: 4px;
+        background: #fff;
+        padding: 2px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+
+    /* Style for the image preview modal */
+    .modal-image-preview {
+        max-width: 90%;
+        max-height: 80vh;
+        object-fit: contain;
+        border-radius: 8px;
+        background: #fff;
+        padding: 1rem;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
     }
 
     @media (max-width: 768px) {
@@ -1539,6 +1630,27 @@
 
         .section-header button {
             width: 100%;
+        }
+
+        .nav-content {
+            flex-direction: column;
+            gap: 1rem;
+            text-align: center;
+        }
+
+        .nav-links {
+            width: 100%;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .nav-links button {
+            flex: 1;
+            min-width: 120px;
+        }
+
+        section {
+            scroll-margin-top: 120px; /* Accounts for larger nav on mobile */
         }
     }
 
