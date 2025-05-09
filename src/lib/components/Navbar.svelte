@@ -1,6 +1,7 @@
 <script lang="ts">
   import { cartStore } from '$lib/stores/cartStore';
   import { supabase } from '$lib/supabase';
+  import { onMount } from 'svelte';
   
   export let onCartToggle: () => void;
   export let onMenuToggle: () => void;
@@ -8,6 +9,8 @@
   
   let isCartAnimating = false;
   let previousCartCount = 0;
+  let logoUrl = '';
+  let backgroundUrl = '';
   
   $: cartCount = $cartStore.reduce((sum, item) => sum + item.quantity, 0);
   $: if (cartCount > previousCartCount) {
@@ -18,17 +21,22 @@
     previousCartCount = cartCount;
   }
 
-  // Get the public URL for the logo
-  let logoUrl = '';
-  try {
-    const { data } = supabase.storage.from('route420').getPublicUrl('logo.png');
-    logoUrl = data.publicUrl;
-  } catch (err) {
-    console.error('Error getting logo URL:', err);
-  }
+  onMount(async () => {
+    try {
+      // Get the public URL for the logo
+      const logoData = supabase.storage.from('route420').getPublicUrl('logo.png');
+      logoUrl = logoData.data.publicUrl;
+      
+      // Get the public URL for the background
+      const bgData = supabase.storage.from('route420').getPublicUrl('field.jpeg');
+      backgroundUrl = bgData.data.publicUrl;
+    } catch (err) {
+      console.error('Error getting URLs:', err);
+    }
+  });
 </script>
 
-<div class="navbar" role="navigation" aria-label="Main navigation">
+<div class="navbar" role="navigation" aria-label="Main navigation" style="background-image: url('{backgroundUrl}')">
   <div class="center">
     <button 
       class="logo-button" 
@@ -68,12 +76,25 @@
     left: 0;
     right: 0;
     background: #333;
+    background-position: center;
+    background-size: cover;
     color: white;
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: 1rem 2rem;
     z-index: 10;
+  }
+
+  .navbar::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(51, 51, 51, 0.85);
+    z-index: -1;
   }
 
   .navbar .center,

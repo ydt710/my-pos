@@ -10,6 +10,7 @@
   let menuSidebar: HTMLDivElement;
   let user: any = null;
   let isAdmin = false;
+  let backgroundUrl = '';
 
   // When the menu becomes visible, focus it for accessibility
   $: if (visible) {
@@ -23,6 +24,15 @@
       isAdmin = !!data.user?.user_metadata?.is_admin;
     });
   }
+
+  onMount(async () => {
+    try {
+      const bgData = supabase.storage.from('route420').getPublicUrl('field.jpeg');
+      backgroundUrl = bgData.data.publicUrl;
+    } catch (err) {
+      console.error('Error getting background URL:', err);
+    }
+  });
   
   // Handle Escape key to close menu
   function handleKeydown(e: KeyboardEvent) {
@@ -57,6 +67,7 @@
   aria-modal="true"
   aria-label="Side menu"
   on:keydown={handleKeydown}
+  style="background-image: url('{backgroundUrl}')"
 >
   <div class="menu-header">
     <button 
@@ -93,6 +104,8 @@
     width: 250px;
     height: 100%;
     background: #333;
+    background-position: center;
+    background-size: cover;
     color: white;
     padding: 2rem;
     box-shadow: -2px 0 10px rgba(0,0,0,0.1);
@@ -101,6 +114,17 @@
     transition: transform 0.3s ease-in-out;
     display: flex;
     flex-direction: column;
+  }
+
+  .side-menu::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(51, 51, 51, 0.85);
+    z-index: -1;
   }
 
   .side-menu.show {
@@ -115,6 +139,8 @@
     display: flex;
     justify-content: flex-end;
     margin-bottom: 2rem;
+    position: relative;
+    z-index: 1;
   }
   
   .close-btn {
@@ -130,33 +156,39 @@
     align-items: center;
     justify-content: center;
     border-radius: 50%;
+    position: relative;
+    z-index: 1;
   }
   
   .close-btn:hover {
-    background: #444;
+    background: rgba(255, 255, 255, 0.1);
   }
   
   nav {
     display: flex;
     flex-direction: column;
+    position: relative;
+    z-index: 1;
   }
 
   .menu-item {
     color: white;
     text-decoration: none;
     padding: 1rem 0;
-    border-bottom: 1px solid #444;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.2);
     transition: 0.2s;
     font-size: 1.1rem;
+    position: relative;
+    z-index: 1;
   }
 
   .menu-item:hover {
-    background: #444;
+    background: rgba(255, 255, 255, 0.1);
     padding-left: 10px;
   }
   
   .menu-item:focus {
-    outline: 2px solid white;
+    outline: 2px solid rgba(255, 255, 255, 0.5);
     outline-offset: 2px;
   }
 </style> 

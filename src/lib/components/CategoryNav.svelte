@@ -5,26 +5,22 @@
     { 
       id: 'joints', 
       name: 'Joints', 
-      icon: '🌿',
-      image: 'https://cdn-icons-png.flaticon.com/512/1021/1021001.png'
+      icon: 'fa-joint'
     },
     { 
       id: 'concentrate', 
       name: 'Concentrate', 
-      icon: '💧',
-      image: 'https://cdn-icons-png.flaticon.com/512/1021/1021002.png'
+      icon: 'fa-droplet'
     },
     { 
       id: 'flower', 
       name: 'Flower', 
-      icon: '🌸',
-      image: 'https://cdn-icons-png.flaticon.com/512/1021/1021003.png'
+      icon: 'fa-cannabis'
     },
     { 
       id: 'edibles', 
       name: 'Edibles', 
-      icon: '🍬',
-      image: 'https://cdn-icons-png.flaticon.com/512/1021/1021004.png'
+      icon: 'fa-cookie'
     }
   ];
 
@@ -45,8 +41,7 @@
       aria-controls={`category-${category.id}`}
     >
       <div class="image-container">
-        <img src={category.image} alt={category.name} class="category-image" />
-        <span class="icon">{category.icon}</span>
+        <i class="fa-solid {category.icon}"></i>
       </div>
       <span class="name">{category.name}</span>
     </button>
@@ -103,11 +98,6 @@
     box-shadow: 0 4px 12px rgba(0,0,0,0.15);
   }
 
-  .category-button.active .icon {
-    background: #007bff;
-    color: white;
-  }
-
   .image-container {
     position: relative;
     width: 60px;
@@ -117,28 +107,13 @@
     justify-content: center;
   }
 
-  .category-image {
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));
+  .image-container i {
+    font-size: 2rem;
     transition: transform 0.2s ease;
   }
 
-  .category-button:hover .category-image {
+  .category-button:hover .image-container i {
     transform: scale(1.1);
-  }
-
-  .icon {
-    position: absolute;
-    bottom: -5px;
-    right: -5px;
-    background: white;
-    border-radius: 50%;
-    padding: 4px;
-    font-size: 1.2rem;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    transition: all 0.2s ease;
   }
 
   .name {
@@ -153,7 +128,6 @@
     .category-nav {
       flex-wrap: wrap;
       gap: 0.5rem;
-      
       height: auto;
       min-height: 120px;
       align-content: flex-start;
@@ -171,9 +145,8 @@
       height: 40px;
     }
 
-    .icon {
-      font-size: 0.9rem;
-      padding: 2px;
+    .image-container i {
+      font-size: 1.5rem;
     }
 
     .name {
@@ -194,6 +167,10 @@
     .image-container {
       width: 35px;
       height: 35px;
+    }
+
+    .image-container i {
+      font-size: 1.25rem;
     }
   }
 </style> 

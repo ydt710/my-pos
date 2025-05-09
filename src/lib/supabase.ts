@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { browser } from '$app/environment';
 
 const supabaseUrl = 'https://wglybohfygczpapjxwwz.supabase.co';
 const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndnbHlib2hmeWdjenBhcGp4d3d6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYyMDI2OTYsImV4cCI6MjA2MTc3ODY5Nn0.F9Ja7Npo2aj-1EzgmG275aF_nkm6BvY7MprqQKhpFp0';
@@ -9,17 +10,19 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
-    storage: window?.localStorage // Use localStorage for session persistence
+    storage: browser ? window.localStorage : undefined
   }
 });
 
-// Listen for auth state changes
-supabase.auth.onAuthStateChange((event, session) => {
-  if (event === 'SIGNED_OUT' || event === 'TOKEN_REFRESHED') {
-    // Handle auth state changes if needed
-    console.log('Auth state changed:', event);
-  }
-});
+// Only set up auth state listener in the browser
+if (browser) {
+  supabase.auth.onAuthStateChange((event, session) => {
+    if (event === 'SIGNED_OUT' || event === 'TOKEN_REFRESHED') {
+      // Handle auth state changes if needed
+      console.log('Auth state changed:', event);
+    }
+  });
+}
 
 // Function to make a user an admin
 export async function makeUserAdmin(userId: string) {
