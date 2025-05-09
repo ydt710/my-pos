@@ -60,6 +60,17 @@
 
       if (updateError) throw updateError;
 
+      // Update profiles table
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({
+          display_name: displayName,
+          phone_number: phoneNumber
+        })
+        .eq('id', user.id);
+
+      if (profileError) throw profileError;
+
       success = 'Settings saved successfully!';
     } catch (err) {
       console.error('Error saving settings:', err);

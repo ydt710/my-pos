@@ -4,6 +4,8 @@
   
     let email = '';
     let password = '';
+    let displayName = '';
+    let phoneNumber = '';
     let error = '';
     let loading = false;
     let success = '';
@@ -12,15 +14,47 @@
       loading = true;
       error = '';
       success = '';
-      const { error: err } = await supabase.auth.signUp({ email, password });
-      loading = false;
+      const { data: signUpData, error: err } = await supabase.auth.signUp({ 
+        email, 
+        password,
+        options: {
+          data: {
+            display_name: displayName,
+            phone_number: phoneNumber
+          }
+        }
+      });
+      
       if (err) {
         error = err.message;
-      } else {
-        success = 'Account created! Please check your email to confirm your account.';
-        // Optionally redirect after a delay:
-        // setTimeout(() => goto('/login'), 2000);
+        loading = false;
+        return;
       }
+
+      // Create a profile in the profiles table
+      if (signUpData.user) {
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .insert([
+            {
+              id: signUpData.user.id,
+              display_name: displayName,
+              phone_number: phoneNumber,
+              email: email
+            }
+          ]);
+
+        if (profileError) {
+          error = 'Failed to create profile. Please contact support.';
+          loading = false;
+          return;
+        }
+      }
+
+      loading = false;
+      success = 'Account created! Please check your email to confirm your account.';
+      // Optionally redirect after a delay:
+      // setTimeout(() => goto('/login'), 2000);
     }
   </script>
   
@@ -37,6 +71,28 @@
       {/if}
 
       <form on:submit|preventDefault={signup}>
+        <div class="form-group">
+          <label for="displayName">Display Name</label>
+          <input
+            id="displayName"
+            type="text"
+            bind:value={displayName}
+            placeholder="Enter your display name"
+            required
+          />
+        </div>
+
+        <div class="form-group">
+          <label for="phoneNumber">Phone Number</label>
+          <input
+            id="phoneNumber"
+            type="tel"
+            bind:value={phoneNumber}
+            placeholder="Enter your phone number"
+            required
+          />
+        </div>
+
         <div class="form-group">
           <label for="email">Email</label>
           <input

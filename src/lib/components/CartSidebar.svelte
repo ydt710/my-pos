@@ -1,6 +1,6 @@
 <script lang="ts">
   import { tick } from 'svelte';
-  import { cartStore } from '$lib/stores/cartStore';
+  import { cartStore, cartNotification } from '$lib/stores/cartStore';
   import type { CartItem } from '$lib/types';
   import { goto } from '$app/navigation';
   
@@ -18,8 +18,10 @@
     goto('/checkout');
   }
 
-  function updateQuantity(item: CartItem, newQuantity: number) {
-    cartStore.updateQuantity(item.id, newQuantity);
+  async function updateQuantity(item: CartItem, newQuantity: number) {
+    loading = true;
+    await cartStore.updateQuantity(item.id, newQuantity);
+    loading = false;
   }
   
   // When the cart becomes visible, focus it for accessibility
@@ -55,12 +57,17 @@
     >×</button>
   </div>
   
-  {#if error}
-    <div class="error-message">{error}</div>
+  {#if $cartNotification}
+    <div 
+      class="notification {$cartNotification.type}" 
+      role="alert"
+    >
+      {$cartNotification.message}
+    </div>
   {/if}
   
-  {#if success}
-    <div class="success-message">{success}</div>
+  {#if loading}
+    <div class="loading">Updating cart...</div>
   {/if}
   
   {#if $cartStore.length > 0}
@@ -76,22 +83,22 @@
                 class="quantity-btn" 
                 aria-label="Decrease quantity" 
                 on:click={() => updateQuantity(item, item.quantity - 1)}
-                disabled={item.quantity <= 1}
+                disabled={item.quantity <= 1 || loading}
               >-</button>
               <input
                 type="number"
                 min="1"
-                max="99"
                 class="quantity-input"
                 bind:value={item.quantity}
                 aria-label="Quantity"
+                disabled={loading}
                 on:change={(e) => updateQuantity(item, Number(e.currentTarget.value))}
               />
               <button 
                 class="quantity-btn" 
                 aria-label="Increase quantity" 
                 on:click={() => updateQuantity(item, item.quantity + 1)}
-                disabled={item.quantity >= 99}
+                disabled={loading}
               >+</button>
             </div>
           </div>
@@ -99,6 +106,7 @@
             on:click={() => cartStore.removeItem(item.id)} 
             class="remove-btn"
             aria-label={`Remove ${item.name} from cart`}
+            disabled={loading}
           >×</button>
         </div>
       {/each}
@@ -109,7 +117,7 @@
       <button 
         on:click={goToCheckout} 
         class="checkout-btn" 
-        disabled={$cartStore.length === 0}
+        disabled={$cartStore.length === 0 || loading}
       >
         Proceed to Checkout
       </button>
@@ -382,5 +390,47 @@
     .cart-items {
       max-height: calc(50vh - 150px);
     }
+  }
+
+  .notification {
+    padding: 0.75rem;
+    margin-bottom: 1rem;
+    border-radius: 6px;
+    font-size: 0.9rem;
+  }
+
+  .notification.error {
+    background-color: #fee2e2;
+    color: #991b1b;
+    border: 1px solid #fecaca;
+  }
+
+  .notification.warning {
+    background-color: #fef3c7;
+    color: #92400e;
+    border: 1px solid #fde68a;
+  }
+
+  .notification.success {
+    background-color: #d1fae5;
+    color: #065f46;
+    border: 1px solid #a7f3d0;
+  }
+
+  .loading {
+    text-align: center;
+    padding: 0.5rem;
+    color: #666;
+    font-size: 0.9rem;
+  }
+
+  button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  input:disabled {
+    background-color: #f3f4f6;
+    cursor: not-allowed;
   }
 </style> 

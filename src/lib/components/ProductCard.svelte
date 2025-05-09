@@ -1,20 +1,69 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import type { Product } from '$lib/types';
-  import { cartStore } from '$lib/stores/cartStore';
+  import { cartStore, cartNotification } from '$lib/stores/cartStore';
+  import { supabase } from '$lib/supabase';
   
   export let product: Product;
-  export let onAddToCart: (product: Product) => void;
-  
-  // Ensure quantity is always between 1 and 99
-  $: if (product.quantity < 1) {
-    product.quantity = 1;
-  } else if (product.quantity > 99) {
-    product.quantity = 99;
+  let loading = false;
+  let currentStock = product.quantity;
+  let displayStock = currentStock; // New variable for display purposes
+  let stockStatus = '';
+  let selectedQuantity = 1;
+
+  // Subscribe to cart store to track items of this product
+  $: cartItemQuantity = $cartStore.find(item => item.id === product.id)?.quantity || 0;
+  $: displayStock = currentStock - cartItemQuantity;
+  $: updateStockStatus(displayStock);
+
+  // Check current stock level
+  async function checkStock() {
+    const { data, error } = await supabase
+      .from('products')
+      .select('quantity')
+      .eq('id', product.id)
+      .single();
+
+    if (!error && data) {
+      currentStock = data.quantity;
+      displayStock = currentStock - cartItemQuantity;
+      updateStockStatus(displayStock);
+    }
   }
 
-  function handleQuantityChange(newQuantity: number) {
-    product.quantity = Math.min(99, Math.max(1, newQuantity));
+  function updateStockStatus(stock: number) {
+    if (stock <= 0) {
+      stockStatus = 'Out of Stock';
+    } else if (stock <= 5) {
+      stockStatus = `Low Stock: ${stock} left`;
+    } else {
+      stockStatus = `In Stock: ${stock} available`;
+    }
+  }
+
+  onMount(() => {
+    checkStock();
+  });
+
+  async function handleAddToCart() {
+    if (loading) return;
+    
+    loading = true;
+    product.quantity = selectedQuantity;
+    const success = await cartStore.addItem(product);
+    if (success) {
+      // Reset selected quantity after successful add
+      selectedQuantity = 1;
+    }
+    loading = false;
+  }
+
+  function handleQuantityChange(change: number) {
+    const newQuantity = selectedQuantity + change;
+    // Check against displayStock instead of currentStock
+    if (newQuantity >= 1 && newQuantity <= displayStock) {
+      selectedQuantity = newQuantity;
+    }
   }
 </script>
 
@@ -28,35 +77,43 @@
   <div class="product-info">
     <h3>{product.name}</h3>
     <p>R{product.price}</p>
+    
+    <div class="stock-status" 
+      class:out-of-stock={displayStock <= 0} 
+      class:low-stock={displayStock > 0 && displayStock <= 5}
+    >
+      {stockStatus}
+    </div>
+
     <div class="quantity-controls">
       <button 
         class="quantity-btn" 
         aria-label="Decrease quantity" 
-        on:click={() => handleQuantityChange(product.quantity - 1)}
-        disabled={product.quantity <= 1}
+        on:click={() => handleQuantityChange(-1)}
+        disabled={selectedQuantity <= 1 || loading || displayStock <= 0}
       >-</button>
-      <input
-        type="number"
-        min="1"
-        max="99"
-        class="quantity-input"
-        bind:value={product.quantity}
-        aria-label="Quantity"
-        on:change={(e) => handleQuantityChange(Number(e.currentTarget.value))}
-      />
+      <span class="quantity-display">{selectedQuantity}</span>
       <button 
         class="quantity-btn" 
         aria-label="Increase quantity" 
-        on:click={() => handleQuantityChange(product.quantity + 1)}
-        disabled={product.quantity >= 99}
+        on:click={() => handleQuantityChange(1)}
+        disabled={selectedQuantity >= displayStock || loading || displayStock <= 0}
       >+</button>
     </div>
     <button 
-      on:click={() => onAddToCart(product)} 
+      on:click={handleAddToCart} 
       class="add-to-cart-btn"
+      class:loading
+      disabled={loading || displayStock <= 0 || selectedQuantity > displayStock}
       aria-label={`Add ${product.name} to cart`}
     >
-      Add to Cart
+      {#if loading}
+        Adding...
+      {:else if displayStock <= 0}
+        Out of Stock
+      {:else}
+        Add to Cart
+      {/if}
     </button>
   </div>
 </div>
@@ -129,7 +186,7 @@
     transition: background-color 0.2s;
   }
 
-  .quantity-btn:hover {
+  .quantity-btn:hover:not(:disabled) {
     background: #e0e0e0;
   }
 
@@ -138,46 +195,58 @@
     cursor: not-allowed;
   }
 
-  .quantity-input {
-    width: 50px;
-    padding: 6px;
-    border: 1px solid #ccc;
-    border-radius: 6px;
-    text-align: center;
+  .quantity-display {
+    min-width: 40px;
     font-size: 1.1rem;
     font-weight: 500;
+    color: #333;
+    text-align: center;
   }
 
-  .quantity-input::-webkit-inner-spin-button,
-  .quantity-input::-webkit-outer-spin-button {
-    -webkit-appearance: none;
-    margin: 0;
+  .stock-status {
+    margin: 0.5rem 0;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.9rem;
+    background: #e8f5e9;
+    color: #2e7d32;
   }
 
-  .quantity-input {
-    -moz-appearance: textfield;
+  .stock-status.out-of-stock {
+    background: #ffebee;
+    color: #c62828;
+  }
+
+  .stock-status.low-stock {
+    background: #fff3e0;
+    color: #ef6c00;
   }
 
   .add-to-cart-btn {
     background: #007bff;
-    border: none;
     color: white;
+    border: none;
     padding: 10px 20px;
     border-radius: 30px;
-    cursor: pointer;
     font-size: 1.1rem;
     font-weight: 500;
     width: 100%;
+    cursor: pointer;
     transition: background-color 0.2s;
   }
 
-  .add-to-cart-btn:hover {
+  .add-to-cart-btn:hover:not(:disabled) {
     background: #0056b3;
   }
 
-  .add-to-cart-btn:focus {
-    outline: 2px solid #007bff;
-    outline-offset: 2px;
+  .add-to-cart-btn:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+  }
+
+  .add-to-cart-btn.loading {
+    background: #ccc;
+    cursor: not-allowed;
   }
 
   @media (max-width: 1440px) {
@@ -199,8 +268,7 @@
       font-size: 1.1rem;
     }
 
-    .quantity-input {
-      width: 45px;
+    .quantity-display {
       font-size: 1rem;
     }
 
@@ -233,8 +301,7 @@
       font-size: 1rem;
     }
 
-    .quantity-input {
-      width: 40px;
+    .quantity-display {
       font-size: 0.95rem;
     }
 

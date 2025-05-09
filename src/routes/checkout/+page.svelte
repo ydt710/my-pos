@@ -3,13 +3,36 @@
   import { cartStore } from '$lib/stores/cartStore';
   import { createOrder } from '$lib/services/orderService';
   import { goto } from '$app/navigation';
-  import type { CartItem } from '$lib/types';
+  import type { CartItem, GuestInfo } from '$lib/types';
   import { fade, slide } from 'svelte/transition';
+  import { supabase } from '$lib/supabase';
   
   let loading = false;
   let error = '';
   let success = '';
   let paymentMethod = 'cash'; // Default payment method
+  let isGuest = true;
+  let guestInfo: GuestInfo = {
+    email: '',
+    name: '',
+    phone: '',
+    address: ''
+  };
+  
+  // Check if user is logged in
+  onMount(async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      isGuest = false;
+      // Pre-fill guest info with user data if available
+      guestInfo = {
+        email: user.email || '',
+        name: user.user_metadata?.name || '',
+        phone: user.user_metadata?.phone || '',
+        address: user.user_metadata?.address || ''
+      };
+    }
+  });
   
   // Redirect if cart is empty
   $: if ($cartStore.length === 0 && !success) {
@@ -19,36 +42,85 @@
   function updateQuantity(item: CartItem, newQuantity: number) {
     cartStore.updateQuantity(item.id, newQuantity);
   }
+
+  function validateGuestInfo(): string | null {
+    if (isGuest) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!guestInfo.email || !emailRegex.test(guestInfo.email)) {
+        return 'Please enter a valid email address';
+      }
+      if (!guestInfo.name || guestInfo.name.trim().length < 2) {
+        return 'Please enter your full name (minimum 2 characters)';
+      }
+      if (!guestInfo.phone || !/^\+?[\d\s-]{10,}$/.test(guestInfo.phone)) {
+        return 'Please enter a valid phone number (minimum 10 digits)';
+      }
+      if (!guestInfo.address || guestInfo.address.trim().length < 10) {
+        return 'Please enter your complete delivery address (minimum 10 characters)';
+      }
+    }
+    return null;
+  }
   
   async function processPayment() {
     if ($cartStore.length === 0) return;
     
-    loading = true;
     error = '';
+    
+    // Validate guest info if user is not logged in
+    const validationError = validateGuestInfo();
+    if (validationError) {
+      error = validationError;
+      return;
+    }
+    
+    loading = true;
     success = '';
     
     const total = cartStore.getTotal($cartStore);
-    console.log('Processing payment for total:', total);
     
     try {
       // Here you would integrate with your payment gateway
       // For now, we'll just simulate a successful payment
-      const result = await createOrder(total, $cartStore);
-      console.log('Order result:', result);
+      const result = await createOrder(
+        total, 
+        $cartStore, 
+        isGuest ? {
+          ...guestInfo,
+          email: guestInfo.email.toLowerCase().trim(),
+          name: guestInfo.name.trim(),
+          phone: guestInfo.phone.trim(),
+          address: guestInfo.address.trim()
+        } : undefined
+      );
       
       if (result.success) {
-        console.log('Order successful, showing success message');
         success = '🎉 Order placed successfully! Thank you for your purchase.';
+        if (isGuest) {
+          success += ' We\'ll send your order details to ' + guestInfo.email;
+        }
         cartStore.clearCart();
         // Show success message for longer and make it more prominent
         setTimeout(() => {
-          console.log('Clearing success message and redirecting');
           success = '';
           goto('/');
         }, 5000);
       } else {
-        console.log('Order failed:', result.error);
         error = result.error || 'Payment failed. Please try again.';
+        if (error.includes('quantity') || error.includes('stock')) {
+          // Refresh cart quantities
+          await Promise.all($cartStore.map(async (item) => {
+            const { data } = await supabase
+              .from('products')
+              .select('quantity')
+              .eq('id', item.id)
+              .single();
+            
+            if (data && data.quantity < item.quantity) {
+              cartStore.updateQuantity(item.id, data.quantity);
+            }
+          }));
+        }
       }
     } catch (err) {
       console.error('Payment error:', err);
@@ -72,7 +144,7 @@
   {/if}
   
   {#if error}
-    <div class="error-message">{error}</div>
+    <div class="error-message" transition:fade>{error}</div>
   {/if}
   
   <div class="checkout-content">
@@ -116,6 +188,55 @@
     </div>
     
     <div class="payment-section">
+      {#if isGuest}
+        <div class="guest-info">
+          <h2>Guest Information</h2>
+          <div class="form-group">
+            <label for="email">Email*</label>
+            <input 
+              type="email" 
+              id="email" 
+              bind:value={guestInfo.email} 
+              placeholder="your@email.com"
+              required
+            />
+          </div>
+          <div class="form-group">
+            <label for="name">Full Name*</label>
+            <input 
+              type="text" 
+              id="name" 
+              bind:value={guestInfo.name} 
+              placeholder="John Doe"
+              required
+            />
+          </div>
+          <div class="form-group">
+            <label for="phone">Phone Number*</label>
+            <input 
+              type="tel" 
+              id="phone" 
+              bind:value={guestInfo.phone} 
+              placeholder="+1234567890"
+              required
+            />
+          </div>
+          <div class="form-group">
+            <label for="address">Delivery Address*</label>
+            <textarea 
+              id="address" 
+              bind:value={guestInfo.address} 
+              placeholder="Enter your full delivery address"
+              required
+            ></textarea>
+          </div>
+          <p class="login-prompt">
+            Already have an account? 
+            <a href="/login?redirect=/checkout">Login here</a>
+          </p>
+        </div>
+      {/if}
+
       <h2>Payment Method</h2>
       <div class="payment-options">
         <label class="payment-option">
@@ -184,11 +305,64 @@
     gap: 2rem;
   }
   
-  .order-review {
+  .order-review, .payment-section {
     background: white;
     border-radius: 12px;
     padding: 1.5rem;
     box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  }
+  
+  .guest-info {
+    margin-bottom: 2rem;
+    padding-bottom: 1.5rem;
+    border-bottom: 1px solid #eee;
+  }
+
+  .form-group {
+    margin-bottom: 1rem;
+  }
+
+  .form-group label {
+    display: block;
+    margin-bottom: 0.5rem;
+    color: #333;
+    font-weight: 500;
+  }
+
+  .form-group input,
+  .form-group textarea {
+    width: 100%;
+    padding: 0.75rem;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    font-size: 1rem;
+    transition: border-color 0.2s;
+  }
+
+  .form-group input:focus,
+  .form-group textarea:focus {
+    outline: none;
+    border-color: #007bff;
+  }
+
+  .form-group textarea {
+    min-height: 100px;
+    resize: vertical;
+  }
+
+  .login-prompt {
+    margin-top: 1rem;
+    text-align: center;
+    color: #666;
+  }
+
+  .login-prompt a {
+    color: #007bff;
+    text-decoration: none;
+  }
+
+  .login-prompt a:hover {
+    text-decoration: underline;
   }
   
   .cart-items {
@@ -278,15 +452,6 @@
     background: #bd2130;
   }
   
-  .payment-section {
-    background: white;
-    border-radius: 12px;
-    padding: 1.5rem;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-    position: sticky;
-    top: 2rem;
-  }
-  
   .payment-options {
     margin: 1rem 0;
   }
@@ -364,7 +529,6 @@
     align-items: center;
     justify-content: center;
     z-index: 1000;
-    animation: fadeIn 0.3s ease-in;
   }
 
   .success-message {
@@ -377,34 +541,12 @@
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     max-width: 90%;
     width: 400px;
-    position: relative;
-    animation: slideIn 0.5s ease-out;
   }
 
   .success-icon {
     font-size: 3rem;
     color: #28a745;
     margin: 1rem 0;
-  }
-
-  @keyframes slideIn {
-    from {
-      transform: translateY(-20px);
-      opacity: 0;
-    }
-    to {
-      transform: translateY(0);
-      opacity: 1;
-    }
-  }
-
-  @keyframes fadeIn {
-    from {
-      opacity: 0;
-    }
-    to {
-      opacity: 1;
-    }
   }
   
   @media (max-width: 768px) {

@@ -1,23 +1,43 @@
 import { supabase } from '../supabase';
-import type { CartItem, Order, OrderItem } from '../types';
+import type { CartItem } from '../types';
+import type { Order, OrderItem, GuestInfo, OrderStatus, OrderFilters } from '../types/orders';
 
 export async function createOrder(
   total: number, 
-  items: CartItem[]
-): Promise<{ success: boolean; error: string | null }> {
+  items: CartItem[],
+  guestInfo?: GuestInfo
+): Promise<{ success: boolean; error: string | null; orderId?: string }> {
   try {
-    // Get current user
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      return { success: false, error: 'User not authenticated' };
+    // Get current user if not a guest order
+    let userId = null;
+    if (!guestInfo) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        return { success: false, error: 'User not authenticated and no guest info provided' };
+      }
+      userId = user.id;
     }
 
-    // Start a transaction
+    // Validate items before proceeding
+    if (!items || items.length === 0) {
+      return { success: false, error: 'No items in cart' };
+    }
+
+    // Validate total
+    if (total <= 0) {
+      return { success: false, error: 'Invalid order total' };
+    }
+
+    // Start a transaction by creating the order first
     const { data: order, error: orderError } = await supabase
       .from('orders')
-      .insert({ 
-        total,
-        user_id: user.id
+      .insert({
+        total: total,
+        status: 'pending',
+        user_id: userId,
+        guest_info: guestInfo || null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
       })
       .select()
       .single();
@@ -25,6 +45,10 @@ export async function createOrder(
     if (orderError) {
       console.error('Checkout error:', orderError);
       return { success: false, error: 'Failed to create order. Please try again.' };
+    }
+
+    if (!order) {
+      return { success: false, error: 'Failed to create order record' };
     }
 
     // Process each item in the cart
@@ -38,6 +62,8 @@ export async function createOrder(
 
       if (fetchError) {
         console.error('Error fetching product:', fetchError);
+        // Rollback by deleting the order
+        await supabase.from('orders').delete().eq('id', order.id);
         return { 
           success: false, 
           error: 'Failed to fetch product details. Please try again.' 
@@ -45,6 +71,8 @@ export async function createOrder(
       }
 
       if (!product) {
+        // Rollback by deleting the order
+        await supabase.from('orders').delete().eq('id', order.id);
         return { 
           success: false, 
           error: `Product ${item.name} not found. Please try again.` 
@@ -52,8 +80,10 @@ export async function createOrder(
       }
 
       // Calculate new quantity and check stock
-      const newQuantity = Math.max(0, product.quantity - item.quantity);
+      const newQuantity = product.quantity - item.quantity;
       if (newQuantity < 0) {
+        // Rollback by deleting the order
+        await supabase.from('orders').delete().eq('id', order.id);
         return { 
           success: false, 
           error: `Insufficient quantity for ${item.name}. Only ${product.quantity} available.` 
@@ -61,15 +91,20 @@ export async function createOrder(
       }
 
       // Insert order item
-      const { error: itemError } = await supabase.from('order_items').insert({
-        order_id: order.id,
-        product_id: item.id,
-        quantity: item.quantity,
-        price: item.price
-      });
+      const { error: itemError } = await supabase
+        .from('order_items')
+        .insert({
+          order_id: order.id,
+          product_id: item.id,
+          quantity: item.quantity,
+          price: item.price,
+          created_at: new Date().toISOString()
+        });
       
       if (itemError) {
         console.error('Error adding order item:', itemError);
+        // Rollback by deleting the order
+        await supabase.from('orders').delete().eq('id', order.id);
         return { 
           success: false, 
           error: 'Failed to add items to order. Please contact support.' 
@@ -88,6 +123,8 @@ export async function createOrder(
           productId: item.id,
           newQuantity
         });
+        // Rollback by deleting the order
+        await supabase.from('orders').delete().eq('id', order.id);
         return { 
           success: false, 
           error: `Failed to update quantity for ${item.name}. Please try again.` 
@@ -95,12 +132,236 @@ export async function createOrder(
       }
     }
 
-    return { success: true, error: null };
+    return { success: true, error: null, orderId: order.id };
   } catch (err) {
     console.error('Unexpected error in checkout:', err);
     return { 
       success: false, 
       error: 'An unexpected error occurred. Please try again later.' 
     };
+  }
+}
+
+export async function getOrder(orderId: string): Promise<{ order?: Order, error: string | null }> {
+  try {
+    const { data, error } = await supabase
+      .from('orders')
+      .select(`
+        *,
+        order_items (
+          *,
+          product:products (
+            name,
+            image_url
+          )
+        )
+      `)
+      .eq('id', orderId)
+      .single();
+
+    if (error) {
+      console.error('Error fetching order:', error);
+      return { error: 'Failed to fetch order details.' };
+    }
+
+    return { order: data as Order, error: null };
+  } catch (err) {
+    console.error('Unexpected error fetching order:', err);
+    return { error: 'An unexpected error occurred.' };
+  }
+}
+
+export async function getOrdersByEmail(email: string): Promise<{ orders: Order[], error: string | null }> {
+  try {
+    const { data, error } = await supabase
+      .from('orders')
+      .select(`
+        *,
+        order_items (
+          *,
+          product:products (
+            name,
+            image_url
+          )
+        )
+      `)
+      .or(`guest_info->>'email'.eq.${email},user_id.eq.(select id from auth.users where email = ${email})`)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching orders:', error);
+      return { orders: [], error: 'Failed to fetch orders.' };
+    }
+
+    return { orders: data as Order[], error: null };
+  } catch (err) {
+    console.error('Unexpected error fetching orders:', err);
+    return { orders: [], error: 'An unexpected error occurred.' };
+  }
+}
+
+export async function getAllOrders(filters?: OrderFilters): Promise<{ orders: Order[], error: string | null }> {
+  try {
+    let query = supabase
+      .from('orders')
+      .select(`
+        *,
+        order_items (
+          *,
+          products (
+            name,
+            image_url
+          )
+        )
+      `);
+
+    // Apply filters
+    if (filters) {
+      if (filters.status) {
+        query = query.eq('status', filters.status);
+      }
+      
+      if (filters.dateFrom) {
+        query = query.gte('created_at', filters.dateFrom);
+      }
+      
+      if (filters.dateTo) {
+        query = query.lte('created_at', filters.dateTo);
+      }
+      
+      if (filters.search) {
+        const searchTerm = `%${filters.search}%`;
+        query = query.or(
+          `guest_info->>'email'.ilike.${searchTerm},` +
+          `guest_info->>'name'.ilike.${searchTerm}`
+        );
+      }
+
+      // Apply sorting
+      if (filters.sortBy) {
+        query = query.order(filters.sortBy, { 
+          ascending: filters.sortOrder === 'asc'
+        });
+      } else {
+        query = query.order('created_at', { ascending: false });
+      }
+    } else {
+      query = query.order('created_at', { ascending: false });
+    }
+
+    const { data: orders, error: ordersError } = await query;
+
+    if (ordersError) {
+      console.error('Error fetching orders:', ordersError);
+      return { orders: [], error: 'Failed to fetch orders.' };
+    }
+
+    // Get unique user IDs from orders
+    const userIds = orders
+      .filter(order => order.user_id)
+      .map(order => order.user_id);
+
+    // If we have user IDs, fetch their profiles
+    let profilesMap = new Map();
+    if (userIds.length > 0) {
+      const { data: profiles, error: profilesError } = await supabase
+        .from('profiles')
+        .select('id, email, display_name, phone_number, address')
+        .in('id', userIds);
+
+      if (profilesError) {
+        console.error('Error fetching profiles:', profilesError);
+      } else if (profiles) {
+        profilesMap = new Map(
+          profiles.map(profile => [profile.id, profile])
+        );
+      }
+
+      // If search term matches profiles that weren't in the initial orders query
+      if (filters?.search) {
+        const searchTerm = `%${filters.search}%`;
+        const { data: additionalProfiles, error: searchError } = await supabase
+          .from('profiles')
+          .select('id')
+          .or(
+            `email.ilike.${searchTerm},` +
+            `display_name.ilike.${searchTerm}`
+          )
+          .in('id', userIds);
+
+        if (!searchError && additionalProfiles) {
+          const additionalOrderIds = additionalProfiles.map(p => p.id);
+          if (additionalOrderIds.length > 0) {
+            const { data: additionalOrders, error: addOrdersError } = await supabase
+              .from('orders')
+              .select(`
+                *,
+                order_items (
+                  *,
+                  products (
+                    name,
+                    image_url
+                  )
+                )
+              `)
+              .in('user_id', additionalOrderIds)
+              .order('created_at', { ascending: false });
+
+            if (!addOrdersError && additionalOrders) {
+              orders.push(...additionalOrders);
+            }
+          }
+        }
+      }
+    }
+
+    // Transform orders to include profile data
+    const transformedOrders = orders.map(order => {
+      if (order.user_id && profilesMap.has(order.user_id)) {
+        const profile = profilesMap.get(order.user_id);
+        return {
+          ...order,
+          user: {
+            email: profile.email,
+            user_metadata: {
+              name: profile.display_name,
+              phone: profile.phone_number,
+              address: profile.address
+            }
+          }
+        };
+      }
+      return order;
+    });
+
+    return { orders: transformedOrders, error: null };
+  } catch (err) {
+    console.error('Unexpected error fetching orders:', err);
+    return { orders: [], error: 'An unexpected error occurred.' };
+  }
+}
+
+export async function updateOrderStatus(
+  orderId: string, 
+  status: OrderStatus
+): Promise<{ success: boolean; error: string | null }> {
+  try {
+    const { error } = await supabase
+      .from('orders')
+      .update({ 
+        status,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', orderId);
+
+    if (error) {
+      console.error('Error updating order status:', error);
+      return { success: false, error: 'Failed to update order status.' };
+    }
+
+    return { success: true, error: null };
+  } catch (err) {
+    console.error('Unexpected error updating order status:', err);
+    return { success: false, error: 'An unexpected error occurred.' };
   }
 } 
