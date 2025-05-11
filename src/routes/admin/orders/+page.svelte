@@ -34,7 +34,11 @@
           *,
           order_items (
             *,
-            product:products (*)
+            product:products (
+              name,
+              price,
+              image_url
+            )
           ),
           user:profiles (
             email,

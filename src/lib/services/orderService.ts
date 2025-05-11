@@ -18,7 +18,10 @@ function generateOrderNumber(timestamp: Date): string {
 export async function createOrder(
   total: number, 
   items: CartItem[],
-  guestInfo?: GuestInfo
+  guestInfo?: GuestInfo,
+  userIdOverride?: string,
+  paymentMethod: string = 'cash',
+  debt: number = 0
 ): Promise<{ success: boolean; error: string | null; orderId?: string }> {
   try {
     // Validate items before proceeding
@@ -33,7 +36,9 @@ export async function createOrder(
 
     // Get current user if not a guest order
     let userId = null;
-    if (!guestInfo) {
+    if (userIdOverride) {
+      userId = userIdOverride;
+    } else if (!guestInfo) {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         return { success: false, error: 'User not authenticated and no guest info provided' };
@@ -59,7 +64,9 @@ export async function createOrder(
         } : null,
         created_at: orderTimestamp.toISOString(),
         updated_at: orderTimestamp.toISOString(),
-        order_number: orderNumber
+        order_number: orderNumber,
+        payment_method: paymentMethod,
+        debt: debt
       })
       .select()
       .single();
@@ -161,6 +168,17 @@ export async function createOrder(
       isGuest: !!guestInfo,
       guestEmail: guestInfo?.email
     });
+
+    // Insert a credit ledger entry if there is debt
+    if (debt && userId) {
+      await supabase.from('credit_ledger').insert({
+        user_id: userId,
+        type: 'order',
+        amount: -debt, // negative for debt
+        order_id: order.id,
+        note: 'Order placed'
+      });
+    }
 
     return { success: true, error: null, orderId: order.id };
   } catch (err) {
@@ -358,4 +376,28 @@ export async function updateOrderStatus(
     console.error('Unexpected error updating order status:', err);
     return { success: false, error: 'An unexpected error occurred.' };
   }
+}
+
+export async function logPaymentToLedger(userId: string, paymentAmount: number, orderId?: string, note?: string) {
+  return await supabase.from('credit_ledger').insert({
+    user_id: userId,
+    type: 'payment',
+    amount: paymentAmount, // positive for payment
+    order_id: orderId,
+    note: note || 'Payment received'
+  });
+}
+
+export async function getUserBalance(userId: string): Promise<number> {
+  const { data, error } = await supabase
+    .from('credit_ledger')
+    .select('amount')
+    .eq('user_id', userId);
+
+  if (error || !data) {
+    console.error('Error fetching ledger:', error);
+    return 0;
+  }
+
+  return data.reduce((sum, entry) => sum + entry.amount, 0);
 } 

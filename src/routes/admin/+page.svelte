@@ -8,6 +8,8 @@
     import { getAllOrders, updateOrderStatus } from '$lib/services/orderService';
     import { fade, slide } from 'svelte/transition';
     import OrderDetailsModal from '$lib/components/OrderDetailsModal.svelte';
+    import { showSnackbar } from '$lib/stores/snackbarStore';
+    import ConfirmModal from '$lib/components/ConfirmModal.svelte';
   
     // Add Profile type
     interface Profile {
@@ -72,6 +74,28 @@
     let activeImageTab = 'upload'; // 'upload' or 'url'
   
     let activeSection = 'stats'; // For highlighting active nav item
+  
+    let showConfirmModal = false;
+    let orderIdToDelete: string | null = null;
+  
+    let showProductConfirmModal = false;
+    let productIdToDelete: number | null = null;
+  
+    let cashIn = {
+      today: 0,
+      week: 0,
+      month: 0,
+      year: 0,
+      all: 0
+    };
+    let debtIn = 0;
+    let debtCreated = {
+      today: 0,
+      week: 0,
+      month: 0,
+      year: 0,
+      all: 0
+    };
   
     function scrollToSection(sectionId: string) {
         const element = document.getElementById(sectionId);
@@ -261,11 +285,21 @@
     }
   
     async function deleteProduct(id: number) {
-      if (!confirm('Delete this product?')) return;
       loading = true;
-      await supabase.from('products').delete().eq('id', id);
-      await fetchProducts();
-      loading = false;
+      error = '';
+      try {
+        const { error: err } = await supabase.from('products').delete().eq('id', id);
+        if (err) throw err;
+        products = products.filter(p => p.id !== id);
+        showSnackbar('Product deleted successfully.');
+        await fetchProducts();
+      } catch (err) {
+        console.error('Error deleting product:', err);
+        error = 'Failed to delete product. Please try again.';
+        showSnackbar(error);
+      } finally {
+        loading = false;
+      }
     }
   
     async function testMakeAdmin() {
@@ -332,15 +366,17 @@
           }
         }
 
+        // Filter to only non-deleted, completed orders for revenue and stats
+        const validOrders = (ordersData || []).filter(order => !order.deleted_at && order.status === 'completed');
         // Calculate total orders and revenue
-        stats.totalOrders = ordersData.length;
-        stats.totalRevenue = ordersData.reduce((total, order) => {
+        stats.totalOrders = validOrders.length;
+        stats.totalRevenue = validOrders.reduce((total, order) => {
+          // Include guest orders (no user_id) as well
           return total + (order.total || 0);
         }, 0);
-
         // Calculate top products
         const productStats = new Map();
-        ordersData.forEach(order => {
+        validOrders.forEach(order => {
           order.order_items?.forEach((item: any) => {
             if (!item.product) return; // Skip if product is missing
             const key = item.product.name;
@@ -352,7 +388,6 @@
             stats.revenue += item.quantity * item.price;
           });
         });
-
         stats.topProducts = Array.from(productStats.entries())
           .map(([name, data]) => ({
             name,
@@ -361,9 +396,9 @@
           }))
           .sort((a, b) => b.revenue - a.revenue)
           .slice(0, 5);
-
-        // Get recent orders with formatted IDs and customer names
-        stats.recentOrders = ordersData
+        // Get recent orders (can include all, or only completed if you prefer)
+        stats.recentOrders = (ordersData || [])
+          .filter(order => !order.deleted_at)
           .slice(0, 5)
           .map(order => {
             let username;
@@ -375,7 +410,6 @@
             } else {
               username = 'Unknown';
             }
-
             return {
               ...order,
               shortId: order.order_number || `#${order.id.toString().padStart(4, '0')}`,
@@ -393,6 +427,66 @@
           }))
         });
 
+        // --- LEDGER-BASED CASH IN & DEBT CALCULATION ---
+        const now = new Date();
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const startOfWeek = new Date(now);
+        startOfWeek.setDate(now.getDate() - now.getDay());
+        startOfWeek.setHours(0,0,0,0);
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        const startOfYear = new Date(now.getFullYear(), 0, 1);
+
+        // Helper to get ISO string for Supabase
+        function iso(date: Date): string { return date.toISOString(); }
+
+        // Fetch all payment (cash in) ledger entries
+        const { data: ledgerPayments, error: ledgerPaymentsError } = await supabase
+          .from('credit_ledger')
+          .select('amount, created_at, user_id')
+          .eq('type', 'payment');
+        if (ledgerPaymentsError) throw ledgerPaymentsError;
+
+        cashIn = { today: 0, week: 0, month: 0, year: 0, all: 0 };
+        for (const entry of ledgerPayments) {
+          const created = new Date(entry.created_at);
+          if (created >= startOfToday) cashIn.today += entry.amount;
+          if (created >= startOfWeek) cashIn.week += entry.amount;
+          if (created >= startOfMonth) cashIn.month += entry.amount;
+          if (created >= startOfYear) cashIn.year += entry.amount;
+          cashIn.all += entry.amount;
+        }
+
+        // Fetch all debt (order) ledger entries
+        const { data: ledgerDebts, error: ledgerDebtsError } = await supabase
+          .from('credit_ledger')
+          .select('amount, created_at')
+          .eq('type', 'order');
+        if (ledgerDebtsError) throw ledgerDebtsError;
+
+        debtCreated = { today: 0, week: 0, month: 0, year: 0, all: 0 };
+        for (const entry of ledgerDebts) {
+          const created = new Date(entry.created_at);
+          const debt = Math.abs(entry.amount); // debts are negative
+          if (created >= startOfToday) debtCreated.today += debt;
+          if (created >= startOfWeek) debtCreated.week += debt;
+          if (created >= startOfMonth) debtCreated.month += debt;
+          if (created >= startOfYear) debtCreated.year += debt;
+          debtCreated.all += debt;
+        }
+
+        // Calculate current total outstanding debt (sum of all ledger amounts < 0)
+        const { data: allLedger, error: allLedgerError } = await supabase
+          .from('credit_ledger')
+          .select('user_id, amount');
+        if (allLedgerError) throw allLedgerError;
+        // Group by user, sum, then sum all negative balances
+        const userBalances: Record<string, number> = {};
+        for (const entry of allLedger) {
+          if (!userBalances[entry.user_id]) userBalances[entry.user_id] = 0;
+          userBalances[entry.user_id] += entry.amount;
+        }
+        debtIn = Object.values(userBalances).reduce((sum, bal) => (sum as number) + ((bal as number) < 0 ? Math.abs(bal as number) : 0), 0);
+
       } catch (err) {
         console.error('Error fetching stats:', err);
         error = 'Failed to load statistics';
@@ -405,9 +499,12 @@
     }
 
     async function deleteAllOrders() {
-      if (!confirm('WARNING: This will delete ALL orders and order items. This action cannot be undone. Are you sure?')) {
-        return;
-      }
+      // TODO: Replace with a proper confirmation modal
+      showSnackbar('Delete all orders confirmation not implemented. Please add a modal.');
+      return;
+      // if (!confirm('WARNING: This will delete ALL orders and order items. This action cannot be undone. Are you sure?')) {
+      //   return;
+      // }
 
       loading = true;
       error = '';
@@ -508,12 +605,66 @@
         }
     }
   
+    async function deleteOrder(orderId: string) {
+      loadingOrders = true;
+      orderError = null;
+      try {
+        // Fetch the order to check if it's already deleted
+        const { data: orderCheck, error: fetchCheckError } = await supabase
+          .from('orders')
+          .select('deleted_at')
+          .eq('id', orderId)
+          .single();
+        if (fetchCheckError) throw fetchCheckError;
+        if (orderCheck.deleted_at) {
+          showSnackbar('Order has already been deleted.');
+          return;
+        }
+        // Fetch the order and its items
+        const { data: orderData, error: fetchError } = await supabase
+          .from('orders')
+          .select('id, order_items (product_id, quantity)')
+          .eq('id', orderId)
+          .single();
+        if (fetchError) throw fetchError;
+        // Reapply stock for each product in the order
+        for (const item of orderData.order_items) {
+          await supabase.rpc('increment_product_quantity', {
+            product_id: item.product_id,
+            amount: item.quantity
+          });
+        }
+        // Soft delete the order and set status to 'cancelled', deleted_by, and deleted_by_role
+        const { error: updateError } = await supabase
+          .from('orders')
+          .update({ 
+            deleted_at: new Date().toISOString(), 
+            status: 'cancelled', 
+            deleted_by: user?.id, 
+            deleted_by_role: 'admin' 
+          })
+          .eq('id', orderId);
+        if (updateError) throw updateError;
+        // After successful soft delete
+        orders = orders.filter(o => o.id !== orderId);
+        showSnackbar('Order deleted (soft delete) and stock reapplied.');
+        // Optionally, refresh in the background
+        loadOrders();
+      } catch (err) {
+        console.error('Error deleting order:', err);
+        orderError = 'Failed to delete order. Please try again.';
+        showSnackbar(orderError);
+      } finally {
+        loadingOrders = false;
+      }
+    }
+  
     $: if (activeTab === 'orders') {
       loadOrders();
     }
-  </script>
+</script>
   
-  <div class="admin-container">
+<div class="admin-container">
     <nav class="admin-nav">
         <div class="nav-content">
             <h1>Admin Dashboard</h1>
@@ -568,6 +719,30 @@
             <div class="stat-card">
                 <h3>Total Revenue</h3>
                 <p class="stat-value">R{stats.totalRevenue.toFixed(2)}</p>
+            </div>
+            <div class="stat-card">
+                <h3>Cash In</h3>
+                <ul class="stat-list">
+                  <li>Today: <strong>R{cashIn.today.toFixed(2)}</strong></li>
+                  <li>This Week: <strong>R{cashIn.week.toFixed(2)}</strong></li>
+                  <li>This Month: <strong>R{cashIn.month.toFixed(2)}</strong></li>
+                  <li>This Year: <strong>R{cashIn.year.toFixed(2)}</strong></li>
+                  <li>All Time: <strong>R{cashIn.all.toFixed(2)}</strong></li>
+                </ul>
+            </div>
+            <div class="stat-card">
+                <h3>Debt In</h3>
+                <p class="stat-value">R{debtIn.toFixed(2)}</p>
+            </div>
+            <div class="stat-card">
+                <h3>Debt Created</h3>
+                <ul class="stat-list">
+                  <li>Today: <strong>R{debtCreated.today.toFixed(2)}</strong></li>
+                  <li>This Week: <strong>R{debtCreated.week.toFixed(2)}</strong></li>
+                  <li>This Month: <strong>R{debtCreated.month.toFixed(2)}</strong></li>
+                  <li>This Year: <strong>R{debtCreated.year.toFixed(2)}</strong></li>
+                  <li>All Time: <strong>R{debtCreated.all.toFixed(2)}</strong></li>
+                </ul>
             </div>
         </div>
 
@@ -784,8 +959,8 @@
                         </tr>
                     </thead>
                     <tbody>
-                        {#each products as p}
-                            <tr>
+                        {#each products as p (p.id)}
+                            <tr out:fade>
                                 <td>
                                     <img 
                                         src={p.image_url} 
@@ -806,7 +981,7 @@
                                     </button>
                                     <button 
                                         class="delete-btn" 
-                                        on:click={() => deleteProduct(p.id)}
+                                        on:click={() => { showProductConfirmModal = true; productIdToDelete = p.id; }}
                                     >
                                         Delete
                                     </button>
@@ -883,26 +1058,36 @@
                     <table>
                         <thead>
                             <tr>
-                                <th>Order ID</th>
+                                <th>Order #</th>
                                 <th>Date</th>
                                 <th>Customer</th>
+                                <th>Email</th>
+                                <th>Type</th>
+                                <th>Payment</th>
                                 <th>Total</th>
                                 <th>Status</th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {#each orders as order}
-                                {@const customer = getCustomerInfo(order)}
-                                <tr>
-                                    <td>{order.id}</td>
+                            {#each orders as order (order.id)}
+                                <tr out:fade class:guest-order={order.guest_info}>
+                                    <td>{order.order_number || order.id}</td>
                                     <td>{formatDate(order.created_at)}</td>
                                     <td>
                                         <div class="customer-info">
-                                            <strong>{customer.name}</strong>
-                                            <span>{customer.email}</span>
+                                            <strong>{getCustomerInfo(order).name}</strong>
                                         </div>
                                     </td>
+                                    <td>{getCustomerInfo(order).email}</td>
+                                    <td>
+                                        {#if order.guest_info}
+                                            <span class="badge guest">Guest</span>
+                                        {:else}
+                                            <span class="badge registered">Registered</span>
+                                        {/if}
+                                    </td>
+                                    <td>{order.payment_method || '-'}</td>
                                     <td>R{order.total}</td>
                                     <td>
                                         <select 
@@ -927,6 +1112,13 @@
                                         >
                                             View Details
                                         </button>
+                                        <button
+                                            class="delete-btn"
+                                            on:click={() => { showConfirmModal = true; orderIdToDelete = order.id; }}
+                                            style="margin-left: 0.5rem;"
+                                        >
+                                            Delete
+                                        </button>
                                     </td>
                                 </tr>
                             {/each}
@@ -946,7 +1138,11 @@
     {/if}
 
     {#if showImageModal}
-        <div class="modal-backdrop" on:click={() => showImageModal = false}>
+        <div class="modal-backdrop"
+             role="button"
+             tabindex="0"
+             on:click={() => showImageModal = false}
+             on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && (showImageModal = false)}>
             <div class="modal-content" on:click|stopPropagation>
                 <h3>Add Product Image</h3>
                 
@@ -997,7 +1193,6 @@
                                 type="url"
                                 bind:value={tempImageUrl}
                                 placeholder="https://example.com/image.jpg"
-                                autofocus
                             />
                         </div>
                         <div class="modal-actions">
@@ -1018,9 +1213,25 @@
             </div>
         </div>
     {/if}
-  </div>
+
+    {#if showConfirmModal}
+        <ConfirmModal
+            message="Are you sure you want to delete this order?"
+            onConfirm={() => { if (orderIdToDelete) deleteOrder(orderIdToDelete); showConfirmModal = false; orderIdToDelete = null; }}
+            onCancel={() => { showConfirmModal = false; orderIdToDelete = null; }}
+        />
+    {/if}
+
+    {#if showProductConfirmModal}
+        <ConfirmModal
+            message="Are you sure you want to delete this product?"
+            onConfirm={() => { if (productIdToDelete !== null) deleteProduct(productIdToDelete); showProductConfirmModal = false; productIdToDelete = null; }}
+            onCancel={() => { showProductConfirmModal = false; productIdToDelete = null; }}
+        />
+    {/if}
+</div>
   
-  <style>
+<style>
     .admin-container {
         max-width: 1400px;
         margin: 0 auto;
@@ -1827,4 +2038,32 @@
     .close-btn:hover {
         color: #343a40;
     }
-  </style>
+
+    .stat-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+    }
+    .stat-list li {
+        font-size: 1rem;
+        margin-bottom: 0.25rem;
+    }
+
+    .badge {
+        display: inline-block;
+        padding: 0.25em 0.75em;
+        border-radius: 12px;
+        font-size: 0.85em;
+        font-weight: 600;
+        color: #fff;
+    }
+    .badge.guest {
+        background: #6c757d;
+    }
+    .badge.registered {
+        background: #007bff;
+    }
+    tr.guest-order {
+        background: #f8f9fa;
+    }
+</style>

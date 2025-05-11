@@ -18,9 +18,9 @@
   let menuVisible = false;
   let loading = true;
   let error: string | null = null;
-  let cartButton: HTMLButtonElement;
   let activeCategory: string | undefined = undefined;
   let logoUrl = '';
+  let isPosUser = false;
 
   const categoryNames: Record<string, string> = {
     'flower': 'Flower',
@@ -42,6 +42,19 @@
     } catch (err) {
       console.error('Error getting logo URL:', err);
     }
+
+    // Fetch current user's profile to check for POS role
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('auth_user_id', user.id)
+        .single();
+      if (profile && profile.role === 'pos') {
+        isPosUser = true;
+      }
+    }
   });
 
   $: if (activeCategory) {
@@ -50,13 +63,9 @@
     filteredProducts = [];
     }
 
-  function addToCart(product: Product) {
-    cartButton.classList.add('cart-animate');
+  function addToCart(e: CustomEvent) {
+    const product = e.detail;
     cartStore.addItem(product);
-
-setTimeout(() => {
-  cartButton.classList.remove('cart-animate');
-    }, 500);
   }
 
   function toggleCart() {
@@ -76,7 +85,6 @@ setTimeout(() => {
 
 <!-- Navbar Component -->
 <Navbar 
-  bind:cartButton
   onCartToggle={toggleCart} 
   onMenuToggle={toggleMenu}
   onLogoClick={handleLogoClick}
@@ -105,7 +113,11 @@ setTimeout(() => {
     </div>
   {:else if !activeCategory}
     <div class="welcome-section">
-      <h1>Welcome to Route 420</h1>
+      {#if isPosUser}
+        <h1>Welcome POS User</h1>
+      {:else}
+        <h1>Welcome to Route 420</h1>
+      {/if}
       <div class="content">
         <p class="tagline">Family-Grown Cannabis, Crafted with Care</p>
         <div class="message">
@@ -125,14 +137,14 @@ setTimeout(() => {
     <h2 class="category-title">{categoryNames[activeCategory]}</h2>
     <div class="products-grid">
       {#each filteredProducts as product (product.id)}
-        <ProductCard {product} onAddToCart={addToCart} />
+        <ProductCard {product} on:addToCart={addToCart} />
       {/each}
     </div>
   {/if}
 </main>
 
 <!-- Cart Sidebar Component -->
-<CartSidebar visible={cartVisible} toggleVisibility={toggleCart} />
+<CartSidebar visible={cartVisible} toggleVisibility={toggleCart} isPosUser={isPosUser} />
 
 <!-- Side Menu Component -->
 <SideMenu visible={menuVisible} toggleVisibility={toggleMenu} />

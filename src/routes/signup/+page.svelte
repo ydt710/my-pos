@@ -31,25 +31,7 @@
         return;
       }
 
-      // Create a profile in the profiles table
-      if (signUpData.user) {
-        const { error: profileError } = await supabase
-          .from('profiles')
-          .insert([
-            {
-              id: signUpData.user.id,
-              display_name: displayName,
-              phone_number: phoneNumber,
-              email: email
-            }
-          ]);
-
-        if (profileError) {
-          error = 'Failed to create profile. Please contact support.';
-          loading = false;
-          return;
-        }
-      }
+      // Profile creation is now handled after login
 
       loading = false;
       success = 'Account created! Please check your email to confirm your account.';

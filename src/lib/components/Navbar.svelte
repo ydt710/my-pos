@@ -37,6 +37,7 @@
 </script>
 
 <div class="navbar" role="navigation" aria-label="Main navigation" style="background-image: url('{backgroundUrl}')">
+  <div class="left"></div>
   <div class="center">
     <button 
       class="logo-button" 
@@ -97,10 +98,11 @@
     z-index: -1;
   }
 
-  .navbar .center,
-  .navbar .right {
+  .navbar .left {
+    flex: 1;
     display: flex;
     align-items: center;
+    justify-content: flex-start;
   }
 
   .navbar .center {
@@ -110,6 +112,16 @@
     height: 100%;
     display: flex;
     align-items: center;
+    z-index: 2;
+  }
+
+  .navbar .right {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    z-index: 2;
   }
 
   .logo {
@@ -122,12 +134,6 @@
   .fallback-logo {
     font-size: 2rem;
     line-height: 1;
-  }
-
-  .brand {
-    font-size: 1.5rem;
-    font-weight: bold;
-    color: white;
   }
 
   .navbar button {
@@ -223,10 +229,6 @@
   }
 
   @media (max-width: 768px) {
-    .brand {
-      display: none;
-    }
-    
     .logo {
       height: 35px;
     }

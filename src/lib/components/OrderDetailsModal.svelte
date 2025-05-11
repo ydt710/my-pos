@@ -2,6 +2,9 @@
   import { fade, scale } from 'svelte/transition';
   import type { Order, OrderStatus } from '$lib/types/orders';
   import { updateOrderStatus } from '$lib/services/orderService';
+  import { supabase } from '$lib/supabase';
+  import type { CreditLedgerEntry } from '$lib/types/ledger';
+  import { getUserBalance } from '$lib/services/orderService';
 
   export let order: Order;
   export let onClose: () => void;
@@ -9,6 +12,10 @@
 
   let loading = false;
   let error: string | null = null;
+  let ledgerEntries: CreditLedgerEntry[] = [];
+  let loadingLedger = false;
+  let ledgerError: string | null = null;
+  let userBalance: number | null = null;
 
   function formatDate(dateString: string) {
     return new Date(dateString).toLocaleString();
@@ -64,9 +71,43 @@
   }
 
   $: customer = getCustomerInfo();
+
+  $: if (order && order.id) {
+    fetchLedgerEntries(order.id);
+  }
+
+  $: if (order && order.user_id) {
+    fetchUserBalance(order.user_id);
+  }
+
+  async function fetchLedgerEntries(orderId: string) {
+    loadingLedger = true;
+    ledgerError = null;
+    const { data, error } = await supabase
+      .from('credit_ledger')
+      .select('*')
+      .eq('order_id', orderId)
+      .order('created_at', { ascending: true });
+    if (error) {
+      ledgerError = 'Failed to load ledger entries.';
+      ledgerEntries = [];
+    } else {
+      ledgerEntries = data || [];
+    }
+    loadingLedger = false;
+  }
+
+  async function fetchUserBalance(userId: string) {
+    userBalance = await getUserBalance(userId);
+  }
 </script>
 
-<div class="modal-backdrop" on:click={onClose} transition:fade>
+<div class="modal-backdrop"
+     role="button"
+     tabindex="0"
+     on:click={onClose}
+     on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && onClose()}
+     transition:fade>
   <div 
     class="modal-content" 
     on:click|stopPropagation 
@@ -132,6 +173,14 @@
             <span class="label">Address:</span>
             <span class="value">{customer.address}</span>
           </div>
+          {#if order.user_id}
+            <div class="info-item">
+              <span class="label">Current Balance:</span>
+              <span class="value" style="color: {userBalance === null ? '#666' : userBalance < 0 ? '#dc3545' : userBalance > 0 ? '#28a745' : '#333'};">
+                {userBalance === null ? 'Loading...' : userBalance < 0 ? `Debt: R${Math.abs(userBalance).toFixed(2)}` : userBalance > 0 ? `Credit: R${userBalance.toFixed(2)}` : 'R0.00'}
+              </span>
+            </div>
+          {/if}
         </div>
       </div>
 
@@ -152,15 +201,15 @@
                 <tr>
                   <td>
                     <div class="product-info">
-                      {#if item.product?.image_url}
+                      {#if item.products?.image_url}
                         <img 
-                          src={item.product.image_url} 
-                          alt={item.product.name}
+                          src={item.products.image_url} 
+                          alt={item.products.name}
                           width="40"
                           height="40"
                         />
                       {/if}
-                      <span>{item.product?.name || 'Unknown Product'}</span>
+                      <span>{item.products?.name || 'Unknown Product'}</span>
                     </div>
                   </td>
                   <td>{formatCurrency(item.price)}</td>
@@ -177,6 +226,40 @@
             </tfoot>
           </table>
         </div>
+      </div>
+
+      <div class="info-section">
+        <h3>Ledger Entries</h3>
+        {#if loadingLedger}
+          <div>Loading ledger entries...</div>
+        {:else if ledgerError}
+          <div class="error-message">{ledgerError}</div>
+        {:else if ledgerEntries.length === 0}
+          <div>No ledger entries for this order.</div>
+        {:else}
+          <div class="ledger-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Type</th>
+                  <th>Amount</th>
+                  <th>Note</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each ledgerEntries as entry}
+                  <tr>
+                    <td>{formatDate(entry.created_at)}</td>
+                    <td>{entry.type}</td>
+                    <td>{formatCurrency(entry.amount)}</td>
+                    <td>{entry.note}</td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+        {/if}
       </div>
     </div>
   </div>

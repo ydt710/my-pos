@@ -1,14 +1,58 @@
 <script lang="ts">
   import { tick } from 'svelte';
-  import { cartStore, cartNotification } from '$lib/stores/cartStore';
+  import { cartStore, cartNotification, selectedPosUser } from '$lib/stores/cartStore';
   import { goto } from '$app/navigation';
   import CartItem from './CartItem.svelte';
+  import { supabase } from '$lib/supabase';
+  import { fade } from 'svelte/transition';
+  import { getUserBalance } from '$lib/services/orderService';
   
   export let visible = false;
   export let toggleVisibility: () => void;
+  export let isPosUser = false;
   
   let loading = false;
   let cartSidebar: HTMLDivElement;
+  
+  // POS user search state
+  let userSearch = '';
+  type UserSearch = { id: string; display_name: string | null; email: string };
+  let userResults: UserSearch[] = [];
+  let selectedUser: UserSearch | null = null;
+  let userLoading = false;
+  let showAddAccountModal = false;
+  let newAccount = { display_name: '', phone_number: '', email: '' };
+  let addAccountError = '';
+  let addAccountLoading = false;
+  let selectedUserBalance: number | null = null;
+  
+  async function searchUsers() {
+    if (userSearch.length < 2) {
+      userResults = [];
+      return;
+    }
+    userLoading = true;
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id, display_name, email')
+      .or(`display_name.ilike.%${userSearch}%,email.ilike.%${userSearch}%`)
+      .limit(10);
+    userResults = data || [];
+    userLoading = false;
+  }
+  
+  function selectUser(user: UserSearch) {
+    selectedUser = user;
+    userResults = [];
+    userSearch = user.display_name || user.email;
+    selectedPosUser.set(user);
+    // Fetch and display balance for selected user
+    fetchUserBalance(user.id);
+  }
+  
+  async function fetchUserBalance(userId: string) {
+    selectedUserBalance = await getUserBalance(userId);
+  }
   
   function goToCheckout() {
     if ($cartStore.length === 0) return;
@@ -26,6 +70,44 @@
     if (e.key === 'Escape') {
       toggleVisibility();
     }
+  }
+  
+  // Clear selected user when cart is closed
+  $: if (!visible && isPosUser) {
+    selectedUser = null;
+    userSearch = '';
+    userResults = [];
+  }
+  
+  async function addAccount() {
+    addAccountError = '';
+    if (!newAccount.display_name.trim()) {
+      addAccountError = 'Display name is required.';
+      return;
+    }
+    addAccountLoading = true;
+    // Insert into profiles (email can be empty)
+    const { data, error } = await supabase
+      .from('profiles')
+      .insert([
+        {
+          display_name: newAccount.display_name.trim(),
+          phone_number: newAccount.phone_number.trim(),
+          email: newAccount.email.trim() || null,
+          balance: 0 // Ensure balance is initialized
+        }
+      ])
+      .select()
+      .single();
+    addAccountLoading = false;
+    if (error) {
+      addAccountError = error.message || 'Failed to add account.';
+      return;
+    }
+    // Auto-select the new user
+    selectUser(data);
+    showAddAccountModal = false;
+    newAccount = { display_name: '', phone_number: '', email: '' };
   }
 </script>
 
@@ -46,6 +128,75 @@
       on:click={toggleVisibility}
     >×</button>
   </div>
+  
+  {#if isPosUser}
+    <div class="pos-user-search">
+      <label for="user-search">Assign to Customer</label>
+      <input
+        id="user-search"
+        type="text"
+        placeholder="Search name or email..."
+        bind:value={userSearch}
+        on:input={searchUsers}
+        autocomplete="off"
+      />
+      <button class="add-account-btn" type="button" on:click={() => showAddAccountModal = true}>+ Add Account</button>
+      {#if userLoading}
+        <div class="user-loading">Searching...</div>
+      {/if}
+      {#if userResults.length > 0}
+        <ul class="user-results">
+          {#each userResults as user}
+            <li>
+              <button type="button" class="user-select-btn" on:click={() => selectUser(user)}>
+                {user.display_name || user.email} <span class="user-email">({user.email})</span>
+              </button>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+      {#if selectedUser}
+        <div class="selected-user">
+          Assigned to: <strong>{selectedUser.display_name || selectedUser.email}</strong>
+          <br />
+          <span>
+            Balance: <span style="color: {(selectedUserBalance ?? 0) > 0 ? '#28a745' : (selectedUserBalance ?? 0) < 0 ? '#dc3545' : '#666'};">
+              R{selectedUserBalance ?? 0}
+            </span>
+          </span>
+        </div>
+      {/if}
+    </div>
+    {#if showAddAccountModal}
+      <div class="modal-backdrop" transition:fade></div>
+      <div class="modal add-account-modal" transition:fade>
+        <h3>Add New Account</h3>
+        <form on:submit|preventDefault={addAccount}>
+          <div class="form-group">
+            <label for="new-display-name">Display Name*</label>
+            <input id="new-display-name" type="text" bind:value={newAccount.display_name} required />
+          </div>
+          <div class="form-group">
+            <label for="new-phone-number">Phone Number (optional)</label>
+            <input id="new-phone-number" type="text" bind:value={newAccount.phone_number} />
+          </div>
+          <div class="form-group">
+            <label for="new-email">Email (optional)</label>
+            <input id="new-email" type="email" bind:value={newAccount.email} />
+          </div>
+          {#if addAccountError}
+            <div class="error-message">{addAccountError}</div>
+          {/if}
+          <div class="modal-actions">
+            <button type="button" on:click={() => showAddAccountModal = false} class="cancel-btn">Cancel</button>
+            <button type="submit" class="submit-btn" disabled={addAccountLoading}>
+              {addAccountLoading ? 'Adding...' : 'Add Account'}
+            </button>
+          </div>
+        </form>
+      </div>
+    {/if}
+  {/if}
   
   {#if $cartNotification}
     <div 
@@ -185,6 +336,169 @@
     text-align: center;
     color: #666;
     padding: 1rem;
+  }
+
+  .pos-user-search {
+    margin-bottom: 1rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid #eee;
+  }
+  .pos-user-search label {
+    font-weight: 500;
+    display: block;
+    margin-bottom: 0.25rem;
+  }
+  .pos-user-search input {
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    margin-bottom: 0.25rem;
+  }
+  .user-results {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    background: #fff;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    max-height: 180px;
+    overflow-y: auto;
+    position: absolute;
+    width: 90%;
+    z-index: 10;
+  }
+  .user-results li {
+    padding: 0.5rem;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .user-results li:hover {
+    background: #f0f0f0;
+  }
+  .user-email {
+    color: #888;
+    font-size: 0.9em;
+  }
+  .selected-user {
+    margin-top: 0.5rem;
+    font-size: 0.95em;
+    color: #007bff;
+  }
+  .user-loading {
+    font-size: 0.95em;
+    color: #888;
+    margin-bottom: 0.25rem;
+  }
+
+  .add-account-btn {
+    margin-top: 0.5rem;
+    padding: 0.5rem 1rem;
+    background: #007bff;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 1rem;
+    margin-bottom: 0.5rem;
+    transition: background 0.2s;
+  }
+  .add-account-btn:hover {
+    background: #0056b3;
+  }
+  .modal-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,0.4);
+    z-index: 1001;
+  }
+  .modal.add-account-modal {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: white;
+    padding: 2rem 1.5rem;
+    border-radius: 12px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+    z-index: 1002;
+    min-width: 320px;
+    max-width: 95vw;
+  }
+  .modal.add-account-modal h3 {
+    margin-top: 0;
+    margin-bottom: 1rem;
+    font-size: 1.3rem;
+    color: #333;
+    text-align: center;
+  }
+  .modal.add-account-modal .form-group {
+    margin-bottom: 1rem;
+  }
+  .modal.add-account-modal label {
+    display: block;
+    margin-bottom: 0.25rem;
+    color: #555;
+    font-weight: 500;
+  }
+  .modal.add-account-modal input {
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 1rem;
+  }
+  .modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 1rem;
+    margin-top: 1rem;
+  }
+  .cancel-btn {
+    background: #ccc;
+    color: #333;
+    border: none;
+    border-radius: 4px;
+    padding: 0.5rem 1rem;
+    cursor: pointer;
+    font-size: 1rem;
+  }
+  .submit-btn {
+    background: #28a745;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 0.5rem 1rem;
+    cursor: pointer;
+    font-size: 1rem;
+  }
+  .submit-btn:disabled {
+    background: #b7e0c2;
+    cursor: not-allowed;
+  }
+  .error-message {
+    color: #dc3545;
+    margin-bottom: 0.5rem;
+    text-align: center;
+  }
+
+  .user-select-btn {
+    width: 100%;
+    background: none;
+    border: none;
+    text-align: left;
+    padding: 0.5rem;
+    cursor: pointer;
+    font-size: 1rem;
+    color: #333;
+    transition: background 0.15s;
+  }
+  .user-select-btn:hover, .user-select-btn:focus {
+    background: #f0f0f0;
+    outline: none;
   }
 
   @media (max-width: 768px) {

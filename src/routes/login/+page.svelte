@@ -10,11 +10,42 @@
   async function login() {
     loading = true;
     error = '';
-    const { error: err } = await supabase.auth.signInWithPassword({ email, password });
+    const { data: signInData, error: err } = await supabase.auth.signInWithPassword({ email, password });
     loading = false;
     if (err) {
       error = err.message;
     } else {
+      // After successful login, check if profile exists
+      const user = signInData.user;
+      if (user) {
+        const { data: profile, error: profileFetchError } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('auth_user_id', user.id)
+          .single();
+        if (profileFetchError && profileFetchError.code !== 'PGRST116') {
+          // PGRST116: No rows found (acceptable, means profile doesn't exist)
+          error = 'Failed to check profile. Please contact support.';
+          return;
+        }
+        if (!profile) {
+          // Create profile if it doesn't exist
+          const { error: profileInsertError } = await supabase
+            .from('profiles')
+            .insert([
+              {
+                id: user.id,
+                display_name: user.user_metadata?.display_name || '',
+                phone_number: user.user_metadata?.phone_number || '',
+                email: user.email
+              }
+            ]);
+          if (profileInsertError) {
+            error = 'Failed to create profile. Please contact support.';
+            return;
+          }
+        }
+      }
       goto('/'); // or goto('/admin') if you want to redirect admins
     }
   }

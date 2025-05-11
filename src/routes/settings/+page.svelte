@@ -4,6 +4,7 @@
   import { goto } from '$app/navigation';
   import Navbar from '$lib/components/Navbar.svelte';
   import SideMenu from '$lib/components/SideMenu.svelte';
+  import { showSnackbar } from '$lib/stores/snackbarStore';
 
   let user: any = null;
   let loading = true;
@@ -30,14 +31,27 @@
     user = currentUser;
     email = currentUser.email || '';
     
-    // Load user preferences from metadata
-    const preferences = currentUser.user_metadata || {};
-    displayName = preferences.display_name || '';
-    phoneNumber = preferences.phone_number || '';
-    address = preferences.address || '';
-    notifications = preferences.notifications ?? true;
-    darkMode = preferences.dark_mode ?? false;
-
+    // Fetch profile by auth_user_id
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('auth_user_id', user.id)
+      .single();
+    if (profile) {
+      displayName = profile.display_name || '';
+      phoneNumber = profile.phone_number || '';
+      address = profile.address || '';
+      notifications = profile.notifications ?? true;
+      darkMode = profile.dark_mode ?? false;
+    } else {
+      // fallback to user_metadata
+      const preferences = currentUser.user_metadata || {};
+      displayName = preferences.display_name || '';
+      phoneNumber = preferences.phone_number || '';
+      address = preferences.address || '';
+      notifications = preferences.notifications ?? true;
+      darkMode = preferences.dark_mode ?? false;
+    }
     loading = false;
   });
 
@@ -67,7 +81,7 @@
           display_name: displayName,
           phone_number: phoneNumber
         })
-        .eq('id', user.id);
+        .eq('auth_user_id', user.id);
 
       if (profileError) throw profileError;
 
@@ -108,9 +122,12 @@
   }
 
   async function deleteAccount() {
-    if (!confirm('Are you sure you want to delete your account? This action cannot be undone.')) {
-      return;
-    }
+    // TODO: Replace with a proper confirmation modal
+    showSnackbar('Account deletion confirmation not implemented. Please add a modal.');
+    return;
+    // if (!confirm('Are you sure you want to delete your account? This action cannot be undone.')) {
+    //   return;
+    // }
 
     loading = true;
     error = '';

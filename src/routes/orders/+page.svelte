@@ -4,7 +4,10 @@
   import { goto } from '$app/navigation';
   import Navbar from '$lib/components/Navbar.svelte';
   import SideMenu from '$lib/components/SideMenu.svelte';
-  import type { Order, OrderItem } from '$lib/types';
+  import type { Order, OrderItem } from '$lib/types/orders';
+  import { showSnackbar } from '$lib/stores/snackbarStore';
+  import { fade } from 'svelte/transition';
+  import ConfirmModal from '$lib/components/ConfirmModal.svelte';
 
   let user: any = null;
   let orders: Order[] = [];
@@ -13,6 +16,8 @@
   let menuVisible = false;
   let cartVisible = false;
   let cartButton: HTMLButtonElement;
+  let showConfirmModal = false;
+  let orderIdToDelete: string | null = null;
 
   onMount(async () => {
     const { data: { user: currentUser } } = await supabase.auth.getUser();
@@ -43,6 +48,7 @@
             )
           )
         `)
+        .is('deleted_at', null)
         .order('created_at', { ascending: false });
 
       if (ordersError) throw ordersError;
@@ -56,33 +62,38 @@
     }
   }
 
-  async function deleteOrder(orderId: number) {
-    if (!confirm('Are you sure you want to delete this order? This action cannot be undone.')) {
-      return;
-    }
-
+  async function deleteOrder(orderId: string) {
     loading = true;
     error = '';
-
     try {
-      // First delete the order items
-      const { error: itemsError } = await supabase
-        .from('order_items')
-        .delete()
-        .eq('order_id', orderId);
-
-      if (itemsError) throw itemsError;
-
-      // Then delete the order
-      const { error: orderError } = await supabase
+      // Fetch the order and its items
+      const { data: orderData, error: fetchOrderError } = await supabase
         .from('orders')
-        .delete()
+        .select('id, order_items (product_id, quantity)')
+        .eq('id', orderId)
+        .single();
+      if (fetchOrderError) throw fetchOrderError;
+      // Reapply stock for each product in the order
+      for (const item of orderData.order_items ?? []) {
+        await supabase.rpc('increment_product_quantity', {
+          product_id: item.product_id,
+          amount: item.quantity
+        });
+      }
+      // Soft delete the order and set status to 'cancelled', deleted_by, and deleted_by_role
+      const { error: updateError } = await supabase
+        .from('orders')
+        .update({ 
+          deleted_at: new Date().toISOString(), 
+          status: 'cancelled', 
+          deleted_by: user?.id, 
+          deleted_by_role: 'user' 
+        })
         .eq('id', orderId);
-
-      if (orderError) throw orderError;
-
-      // Refresh the orders list
-      await fetchOrders();
+      if (updateError) throw updateError;
+      orders = orders.filter(o => o.id !== orderId);
+      showSnackbar('Order deleted (soft delete) and stock reapplied.');
+      fetchOrders();
     } catch (err) {
       console.error('Error deleting order:', err);
       error = 'Failed to delete order. Please try again.';
@@ -117,7 +128,6 @@
 </script>
 
 <Navbar 
-  bind:cartButton
   onCartToggle={toggleCart} 
   onMenuToggle={toggleMenu}
   onLogoClick={() => goto('/')}
@@ -140,7 +150,7 @@
   {:else}
     <div class="orders-list">
       {#each orders as order (order.id)}
-        <div class="order-card">
+        <div class="order-card" out:fade>
           <div class="order-header">
             <div class="order-info">
               <h3>Order #{order.id}</h3>
@@ -149,11 +159,11 @@
           </div>
 
           <div class="order-items">
-            {#each order.order_items as item}
+            {#each order.order_items ?? [] as item}
               <div class="order-item">
-                <img src={item.product.image_url} alt={item.product.name} />
+                <img src={item.product?.image_url} alt={item.product?.name} />
                 <div class="item-details">
-                  <h4>{item.product.name}</h4>
+                  <h4>{item.product?.name}</h4>
                   <p class="item-quantity">Quantity: {item.quantity}</p>
                   <p class="item-price">R{item.price} each</p>
                 </div>
@@ -167,7 +177,7 @@
           <div class="order-footer">
             <div class="order-total">
               <span>Total:</span>
-              <span>R{calculateTotal(order.order_items)}</span>
+              <span>R{calculateTotal(order.order_items ?? [])}</span>
             </div>
             <div class="order-actions">
               <button class="reorder-btn" on:click={() => goto('/')}>
@@ -175,8 +185,9 @@
               </button>
               <button 
                 class="delete-btn" 
-                on:click={() => deleteOrder(order.id)}
+                on:click={() => { showConfirmModal = true; orderIdToDelete = order.id.toString(); }}
                 aria-label="Delete order"
+                disabled={order.status === 'completed' || order.status === 'cancelled'}
               >
                 Delete
               </button>
@@ -189,6 +200,14 @@
 </main>
 
 <SideMenu visible={menuVisible} toggleVisibility={toggleMenu} />
+
+{#if showConfirmModal}
+  <ConfirmModal
+    message="Are you sure you want to delete this order?"
+    onConfirm={() => { if (orderIdToDelete) deleteOrder(orderIdToDelete); showConfirmModal = false; orderIdToDelete = null; }}
+    onCancel={() => { showConfirmModal = false; orderIdToDelete = null; }}
+  />
+{/if}
 
 <style>
   .orders-container {

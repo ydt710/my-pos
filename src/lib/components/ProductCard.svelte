@@ -76,7 +76,6 @@
 <div 
   class="product-card" 
   bind:this={cardElement}
-  tabindex="0" 
   aria-label={`Product: ${product.name}`}
 >
   <img 
@@ -160,71 +159,6 @@
       transform: translateY(-4px);
       box-shadow: 0 6px 16px rgba(0,0,0,0.12);
     }
-  }
-
-  .product-card.added-to-cart::before {
-    content: '✓';
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    background: rgba(40, 167, 69, 0.9);
-    color: white;
-    width: 60px;
-    height: 60px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 2rem;
-    animation: checkmarkPop 0.5s ease forwards;
-    z-index: 2;
-  }
-
-  .product-card.added-to-cart::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(255, 255, 255, 0.8);
-    animation: fadeOut 0.7s ease forwards;
-    z-index: 1;
-  }
-
-  @keyframes checkmarkPop {
-    0% {
-      transform: translate(-50%, -50%) scale(0);
-      opacity: 0;
-    }
-    50% {
-      transform: translate(-50%, -50%) scale(1.2);
-      opacity: 1;
-    }
-    70% {
-      transform: translate(-50%, -50%) scale(0.9);
-    }
-    100% {
-      transform: translate(-50%, -50%) scale(1);
-      opacity: 0;
-    }
-  }
-
-  @keyframes fadeOut {
-    0% {
-      opacity: 0;
-    }
-    20% {
-      opacity: 1;
-    }
-    100% {
-      opacity: 0;
-    }
-  }
-
-  .product-card.added-to-cart {
-    animation: addToCartSuccess 0.7s ease;
   }
 
   .product-card:hover {

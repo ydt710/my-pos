@@ -1,36 +1,67 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { cartStore } from '$lib/stores/cartStore';
-  import { createOrder } from '$lib/services/orderService';
+  import { onMount, onDestroy } from 'svelte';
+  import { cartStore, selectedPosUser } from '$lib/stores/cartStore';
+  import { createOrder, logPaymentToLedger, getUserBalance, updateOrderStatus } from '$lib/services/orderService';
   import { goto } from '$app/navigation';
-  import type { CartItem, GuestInfo } from '$lib/types';
+  import type { CartItem } from '$lib/types';
+  import type { PosUser } from '$lib/stores/cartStore';
+  import type { GuestInfo } from '$lib/types/index';
   import { fade, slide } from 'svelte/transition';
   import { supabase } from '$lib/supabase';
+  import { get } from 'svelte/store';
   
   let loading = false;
   let error = '';
   let success = '';
   let paymentMethod = 'cash'; // Default payment method
   let isGuest = true;
+  let isPosUser = false;
   let guestInfo: GuestInfo = {
-    email: '',
-    name: '',
+    email: 'Guest@gmail.com',
+    name: 'Guest',
     phone: '',
     address: ''
   };
+  let cashGiven: number | '' = '';
+  let posUserBalance: number | null = null;
+  let selectedCustomer: PosUser = null;
   
   // Check if user is logged in
   onMount(async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
+      // Fetch profile to check for POS role
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('auth_user_id', user.id)
+        .single();
+      if (profile && profile.role === 'pos') {
+        isPosUser = true;
+      }
       isGuest = false;
-      // Pre-fill guest info with user data if available
-      guestInfo = {
-        email: user.email || '',
-        name: user.user_metadata?.name || '',
-        phone: user.user_metadata?.phone || '',
-        address: user.user_metadata?.address || ''
-      };
+      // Only pre-fill guestInfo if NOT POS user
+      if (!isPosUser) {
+        guestInfo = {
+          email: user.email || '',
+          name: user.user_metadata?.name || '',
+          phone: user.user_metadata?.phone || '',
+          address: user.user_metadata?.address || ''
+        };
+      } else {
+        guestInfo = {
+          email: 'Guest@gmail.com',
+          name: 'Guest',
+          phone: '',
+          address: ''
+        };
+      }
+    }
+
+    // If POS user selected, fetch their balance from the ledger
+    const posUser = get(selectedPosUser);
+    if (posUser && posUser.id) {
+      posUserBalance = await getUserBalance(posUser.id);
     }
   });
   
@@ -64,43 +95,111 @@
   
   async function processPayment() {
     if ($cartStore.length === 0) return;
-    
     error = '';
-    
+
     // Validate guest info if user is not logged in
     const validationError = validateGuestInfo();
     if (validationError) {
       error = validationError;
       return;
     }
-    
+
+    // POS: Require a user to be selected if selectedPosUser is set (i.e. POS mode)
+    const posUser = get(selectedPosUser);
+    if (!isGuest && posUser && !posUser.id) {
+      error = 'Please select a customer for this POS order.';
+      return;
+    }
+
+    // If POS, require cashGiven
+    if (!isGuest && posUser && posUser.id) {
+      if (cashGiven === '' || isNaN(Number(cashGiven))) {
+        error = 'Please enter the cash given by the customer.';
+        return;
+      }
+    }
+
     loading = true;
     success = '';
-    
+
     const total = cartStore.getTotal($cartStore);
-    
+
+    // If POS mode and no customer selected, treat as guest
+    const useGuest = isGuest || (!isGuest && (!posUser || !posUser.id));
+    let debt = 0;
+    let paymentAmount = 0;
+    let paymentUserId = null;
+    if (!isGuest && posUser && posUser.id) {
+      const cash = Number(cashGiven) || 0;
+      debt = total - cash;
+      paymentAmount = cash;
+      paymentUserId = posUser.id;
+    }
+
+    // Enforce: Cannot track debt for guest orders (no selected customer) only in POS mode
+    if (isPosUser && useGuest && Number(cashGiven) < total) {
+      error = 'Cannot track debt for guest orders. Please select or create a customer account.';
+      return;
+    }
+
     try {
-      // Here you would integrate with your payment gateway
-      // For now, we'll just simulate a successful payment
       const result = await createOrder(
-        total, 
-        $cartStore, 
-        isGuest ? {
-          ...guestInfo,
-          email: guestInfo.email.toLowerCase().trim(),
-          name: guestInfo.name.trim(),
-          phone: guestInfo.phone.trim(),
-          address: guestInfo.address.trim()
-        } : undefined
+        total,
+        $cartStore,
+        useGuest
+          ? {
+              ...guestInfo,
+              email: guestInfo.email.toLowerCase().trim(),
+              name: guestInfo.name.trim(),
+              phone: guestInfo.phone.trim(),
+              address: guestInfo.address.trim()
+            }
+          : undefined,
+        (!isGuest && posUser && posUser.id) ? posUser.id : undefined,
+        paymentMethod,
+        debt
       );
-      
+
       if (result.success) {
+        // POS: Log payment to ledger if cash was given
+        if (!isGuest && posUser && posUser.id && paymentAmount > 0) {
+          await logPaymentToLedger(posUser.id, paymentAmount, result.orderId, 'POS payment');
+        }
+        // Guest POS: Log payment to ledger if cash was given
+        if (useGuest && Number(cashGiven) > 0) {
+          console.log('Logging guest payment to ledger', { cashGiven, orderId: result.orderId });
+          const { error: ledgerError } = await supabase.from('credit_ledger').insert({
+            user_id: null,
+            type: 'payment',
+            amount: Number(cashGiven),
+            order_id: result.orderId,
+            note: 'Guest POS payment'
+          });
+          if (ledgerError) {
+            console.error('Failed to insert guest payment into ledger:', ledgerError);
+          }
+        }
+        // Update order status to completed if POS user
+        if (isPosUser && result.orderId) {
+          const { success: statusSuccess, error: statusError } = await updateOrderStatus(result.orderId, 'completed');
+          if (!statusSuccess) {
+            console.error('Failed to update order status to completed:', statusError);
+            // Optionally, show error to user
+            error = 'Order placed, but failed to mark as completed.';
+          }
+        }
+        // Update balance from ledger
+        if (!isGuest && posUser && posUser.id) {
+          posUserBalance = await getUserBalance(posUser.id);
+        }
         success = '🎉 Order placed successfully! Thank you for your purchase.';
         if (isGuest) {
           success += ' We\'ll send your order details to ' + guestInfo.email;
         }
         cartStore.clearCart();
-        // Show success message for longer and make it more prominent
+        cashGiven = '';
+        // Clear selected POS user after order
+        selectedPosUser.set(null);
         setTimeout(() => {
           success = '';
           goto('/');
@@ -108,14 +207,12 @@
       } else {
         error = result.error || 'Payment failed. Please try again.';
         if (error.includes('quantity') || error.includes('stock')) {
-          // Refresh cart quantities
           await Promise.all($cartStore.map(async (item) => {
             const { data } = await supabase
               .from('products')
               .select('quantity')
               .eq('id', item.id)
               .single();
-            
             if (data && data.quantity < item.quantity) {
               cartStore.updateQuantity(item.id, data.quantity);
             }
@@ -127,6 +224,33 @@
       error = 'An unexpected error occurred. Please try again.';
     } finally {
       loading = false;
+    }
+  }
+
+  // Watch for POS user change and update balance from ledger
+  $: {
+    const posUser = get(selectedPosUser);
+    if (posUser && posUser.id) {
+      getUserBalance(posUser.id).then(balance => {
+        posUserBalance = balance;
+      });
+    } else {
+      posUserBalance = null;
+    }
+  }
+
+  // Optionally, subscribe to selectedPosUser for reactivity
+  const unsubscribe = selectedPosUser.subscribe((val) => { selectedCustomer = val; });
+  onDestroy(unsubscribe);
+
+  // Set cashGiven to total by default when payment section is shown
+  $: if (!isGuest && (!selectedCustomer || !selectedCustomer.id)) {
+    // POS guest mode
+    if ($cartStore.length > 0) {
+      const total = cartStore.getTotal($cartStore);
+      if (cashGiven === '' || cashGiven === 0) {
+        cashGiven = total;
+      }
     }
   }
 </script>
@@ -269,6 +393,44 @@
           <span>Items:</span>
           <span>{cartStore.getItemCount($cartStore)}</span>
         </div>
+        {#if !isGuest}
+          {#if selectedCustomer && selectedCustomer.id}
+            <div class="selected-customer-info">
+              <strong>Selected Customer:</strong><br>
+              {selectedCustomer.name}
+              {#if selectedCustomer.phone}
+                <br>Phone: {selectedCustomer.phone}
+              {/if}
+              {#if selectedCustomer.email}
+                <br>Email: {selectedCustomer.email}
+              {/if}
+            </div>
+          {:else}
+            <div class="selected-customer-info warning">
+              <strong>No customer selected.</strong> Please select a customer in the cart sidebar.
+            </div>
+          {/if}
+        {/if}
+        {#if !isGuest}
+          <div class="form-group">
+            <label for="cash-given">Cash Given</label>
+            <input
+              id="cash-given"
+              type="number"
+              min="0"
+              step="0.01"
+              bind:value={cashGiven}
+              placeholder="Enter cash given by customer"
+              required
+            />
+          </div>
+          <div class="summary-row">
+            <span>Balance:</span>
+            <span style="color: {(posUserBalance ?? 0) > 0 ? '#28a745' : (posUserBalance ?? 0) < 0 ? '#dc3545' : '#666'};">
+              R{posUserBalance ?? 0}
+            </span>
+          </div>
+        {/if}
       </div>
       
       <button 
@@ -547,6 +709,22 @@
     font-size: 3rem;
     color: #28a745;
     margin: 1rem 0;
+  }
+  
+  .selected-customer-info {
+    background: #f8f9fa;
+    border: 1px solid #eee;
+    border-radius: 6px;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1rem;
+    font-size: 1rem;
+    color: #333;
+  }
+  
+  .selected-customer-info.warning {
+    background: #fff3cd;
+    border: 1px solid #ffeeba;
+    color: #856404;
   }
   
   @media (max-width: 768px) {

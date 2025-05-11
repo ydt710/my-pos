@@ -68,6 +68,11 @@ export interface User {
   name?: string;
   phone?: string;
   address?: string;
+  debt?: number;
+  credit?: number;
 }
 
-export * from './orders'; 
+export * from './orders';
+export * from './ledger';
+
+export type { User, GuestInfo }; 

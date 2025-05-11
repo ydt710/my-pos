@@ -18,6 +18,10 @@ export interface OrderItem {
     name: string;
     image_url: string;
   };
+  products?: {
+    name: string;
+    image_url: string;
+  };
 }
 
 export interface Order {
@@ -38,6 +42,7 @@ export interface Order {
       address?: string;
     };
   };
+  payment_method?: string;
 }
 
 export interface OrderFilters {

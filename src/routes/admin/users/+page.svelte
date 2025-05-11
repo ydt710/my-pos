@@ -3,6 +3,9 @@
   import { supabase } from '$lib/supabase';
   import { goto } from '$app/navigation';
   import { fade } from 'svelte/transition';
+  import { getUserBalance } from '$lib/services/orderService';
+  import { onDestroy } from 'svelte';
+  import type { CreditLedgerEntry } from '$lib/types/ledger';
 
   interface AuthUser {
     id: string;
@@ -24,12 +27,21 @@
       is_admin?: boolean;
     };
     is_admin?: boolean;
+    role?: string;
+    balance?: number;
   }
 
   let users: User[] = [];
   let loading = true;
   let error: string | null = null;
   let success: string | null = null;
+  let ledgerModalUser: User | null = null;
+  let ledgerEntries: CreditLedgerEntry[] = [];
+  let loadingLedger = false;
+  let ledgerError: string | null = null;
+
+  // Store balances for each user
+  let userBalances: Record<string, number | null> = {};
 
   onMount(async () => {
     // Check if current user is admin
@@ -45,7 +57,7 @@
     loading = true;
     error = null;
     try {
-      // First check if user is authenticated and admin
+      // Check if user is authenticated and admin
       const { data: { user: currentUser } } = await supabase.auth.getUser();
       if (!currentUser) {
         throw new Error('Not authenticated');
@@ -54,33 +66,24 @@
         throw new Error('Not authorized - Admin access required');
       }
 
-      // Fetch users from auth.users to get metadata
-      const { data: authData, error: authError } = await supabase.rpc('get_users_with_metadata');
-      if (authError) {
-        console.error('RPC Error:', authError);
-        throw new Error(authError.message || 'Failed to fetch users');
-      }
-
-      // Fetch profiles to get additional info
+      // Fetch all profiles
       const { data: profilesData, error: profilesError } = await supabase
         .from('profiles')
         .select('*');
       if (profilesError) throw profilesError;
 
-      // Merge the data
-      users = (authData as AuthUser[]).map(authUser => {
-        const profile = profilesData.find(p => p.id === authUser.id);
-        return {
-          id: authUser.id,
-          email: authUser.email,
-          created_at: authUser.created_at,
-          user_metadata: {
-            name: profile?.display_name || authUser.raw_user_meta_data?.name,
-            is_admin: authUser.raw_user_meta_data?.is_admin || profile?.is_admin
-          },
-          is_admin: authUser.raw_user_meta_data?.is_admin || profile?.is_admin
-        };
-      });
+      // Sort by balance ascending (null treated as 0)
+      users = profilesData
+        .map(p => ({
+          id: p.id,
+          email: p.email,
+          created_at: p.created_at,
+          user_metadata: { name: p.display_name },
+          is_admin: p.is_admin,
+          role: p.role,
+          balance: p.balance ?? 0
+        }))
+        .sort((a, b) => (a.balance ?? 0) - (b.balance ?? 0));
     } catch (err) {
       console.error('Error fetching users:', err);
       error = err instanceof Error ? err.message : 'Failed to load users';
@@ -138,6 +141,43 @@
       minute: '2-digit'
     });
   }
+
+  async function fetchAllUserBalances() {
+    for (const user of users) {
+      userBalances[user.id] = null;
+      getUserBalance(user.id).then(balance => {
+        userBalances[user.id] = balance;
+      });
+    }
+  }
+
+  $: if (!loading && users.length > 0) {
+    fetchAllUserBalances();
+  }
+
+  async function openLedgerModal(user: User) {
+    ledgerModalUser = user;
+    loadingLedger = true;
+    ledgerError = null;
+    const { data, error } = await supabase
+      .from('credit_ledger')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: true });
+    if (error) {
+      ledgerError = 'Failed to load ledger entries.';
+      ledgerEntries = [];
+    } else {
+      ledgerEntries = data || [];
+    }
+    loadingLedger = false;
+  }
+
+  function closeLedgerModal() {
+    ledgerModalUser = null;
+    ledgerEntries = [];
+    ledgerError = null;
+  }
 </script>
 
 <div class="users-page" in:fade>
@@ -166,11 +206,16 @@
             <th>Name</th>
             <th>Joined</th>
             <th>Role</th>
+            <th>POS User</th>
+            <th>Balance</th>
             <th>Actions</th>
           </tr>
         </thead>
         <tbody>
           {#each users as user (user.id)}
+            {#if typeof userBalances[user.id] === 'number'}
+              {@const balance = userBalances[user.id]}
+            {/if}
             <tr>
               <td>{user.email}</td>
               <td>{user.user_metadata?.name || '-'}</td>
@@ -179,6 +224,19 @@
                 <span class="role-badge" class:admin={user.is_admin}>
                   {user.is_admin ? 'Admin' : 'User'}
                 </span>
+              </td>
+              <td>{user.role === 'pos' ? 'Yes' : 'No'}</td>
+              <td>
+                {#if typeof userBalances[user.id] !== 'number'}
+                  <span style="color: #666;">Loading...</span>
+                {:else if userBalances[user.id] < 0}
+                  <span style="color: #dc3545;">Debt: R{Math.abs(userBalances[user.id] ?? 0).toFixed(2)}</span>
+                {:else if userBalances[user.id] > 0}
+                  <span style="color: #28a745;">Credit: R{(userBalances[user.id] ?? 0).toFixed(2)}</span>
+                {:else}
+                  <span>R0.00</span>
+                {/if}
+                <button class="ledger-btn" on:click={() => openLedgerModal(user)} title="View Ledger">📄</button>
               </td>
               <td>
                 <button 
@@ -194,6 +252,49 @@
           {/each}
         </tbody>
       </table>
+    </div>
+  {/if}
+
+  {#if ledgerModalUser}
+    <div class="modal-backdrop" on:click={closeLedgerModal}>
+      <div class="modal-content" on:click|stopPropagation>
+        <h2>Ledger for {ledgerModalUser.email}</h2>
+        {#if loadingLedger}
+          <div>Loading ledger entries...</div>
+        {:else if ledgerError}
+          <div class="error-message">{ledgerError}</div>
+        {:else if ledgerEntries.length === 0}
+          <div>No ledger entries for this user.</div>
+        {:else}
+          <div class="ledger-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Type</th>
+                  <th>Amount</th>
+                  <th>Order</th>
+                  <th>Note</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each ledgerEntries as entry}
+                  <tr>
+                    <td>{new Date(entry.created_at).toLocaleString()}</td>
+                    <td>{entry.type}</td>
+                    <td style="color: {entry.amount < 0 ? '#dc3545' : entry.amount > 0 ? '#28a745' : '#333'};">
+                      {entry.amount < 0 ? `-R${Math.abs(entry.amount).toFixed(2)}` : `R${entry.amount.toFixed(2)}`}
+                    </td>
+                    <td>{entry.order_id || '-'}</td>
+                    <td>{entry.note}</td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+        {/if}
+        <button class="close-btn" on:click={closeLedgerModal}>Close</button>
+      </div>
     </div>
   {/if}
 </div>
@@ -327,5 +428,78 @@
     .role-toggle-btn {
       padding: 0.375rem 0.75rem;
     }
+  }
+
+  .ledger-btn {
+    background: none;
+    border: none;
+    font-size: 1.1em;
+    margin-left: 0.5em;
+    cursor: pointer;
+    color: #007bff;
+    transition: color 0.2s;
+  }
+  .ledger-btn:hover {
+    color: #0056b3;
+  }
+  .modal-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0,0,0,0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+  }
+  .modal-content {
+    background: white;
+    border-radius: 12px;
+    padding: 2rem;
+    max-width: 700px;
+    width: 95vw;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    position: relative;
+  }
+  .close-btn {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    color: #666;
+    cursor: pointer;
+    transition: color 0.2s;
+  }
+  .close-btn:hover {
+    color: #333;
+  }
+  .ledger-table {
+    overflow-x: auto;
+    margin-top: 1rem;
+  }
+  .ledger-table table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .ledger-table th, .ledger-table td {
+    padding: 0.75rem;
+    border-bottom: 1px solid #eee;
+    text-align: left;
+  }
+  .ledger-table th {
+    background: #f8f9fa;
+    font-weight: 600;
+    color: #333;
+  }
+  .error-message {
+    background: #f8d7da;
+    color: #721c24;
+    padding: 1rem;
+    border-radius: 4px;
+    margin-bottom: 1rem;
   }
 </style> 

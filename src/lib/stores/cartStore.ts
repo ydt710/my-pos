@@ -1,6 +1,7 @@
 import { writable } from 'svelte/store';
-import type { CartItem, Product } from '../types';
+import type { CartItem, Product, User } from '../types';
 import { supabase } from '$lib/supabase';
+import { writable as writableStore } from 'svelte/store';
 
 // Create a notification store for cart messages
 export const cartNotification = writable<{ type: 'error' | 'warning' | 'success', message: string } | null>(null);
@@ -139,4 +140,40 @@ function createCartStore() {
   };
 }
 
-export const cartStore = createCartStore(); 
+export const cartStore = createCartStore();
+
+export type PosUser = User | null;
+
+function createSelectedPosUser() {
+  let initial: PosUser = null;
+  if (typeof localStorage !== 'undefined') {
+    const stored = localStorage.getItem('selectedPosUser');
+    if (stored) {
+      try {
+        initial = JSON.parse(stored);
+      } catch {}
+    }
+  }
+  const { subscribe, set } = writableStore<PosUser>(initial);
+  return {
+    subscribe,
+    set: (val: PosUser) => {
+      if (typeof localStorage !== 'undefined') {
+        if (val) {
+          localStorage.setItem('selectedPosUser', JSON.stringify(val));
+        } else {
+          localStorage.removeItem('selectedPosUser');
+        }
+      }
+      set(val);
+    },
+    clear: () => {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.removeItem('selectedPosUser');
+      }
+      set(null);
+    }
+  };
+}
+
+export const selectedPosUser = createSelectedPosUser(); 
