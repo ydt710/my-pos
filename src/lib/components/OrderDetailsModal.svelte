@@ -226,6 +226,44 @@
             </tfoot>
           </table>
         </div>
+        <!-- Invoice-style breakdown -->
+        {#if ledgerEntries.length > 0}
+        <div class="invoice-breakdown">
+          <h4>Invoice Summary</h4>
+          <table class="invoice-table">
+            <tbody>
+              <tr>
+                <td>Order Total</td>
+                <td>{formatCurrency(order.total)}</td>
+              </tr>
+              <!-- Payment breakdown by method -->
+              {#each Array.from(new Set(ledgerEntries.filter(e => e.type === 'payment' && e.amount > 0 && e.method).map(e => e.method))) as method}
+                <tr>
+                  <td>Paid by {method ? method.charAt(0).toUpperCase() + method.slice(1) : 'Unknown'}</td>
+                  <td>{formatCurrency(ledgerEntries.filter(e => e.type === 'payment' && e.amount > 0 && e.method === method).reduce((sum, e) => sum + e.amount, 0))}</td>
+                </tr>
+              {/each}
+              <tr>
+                <td>Credit Used</td>
+                <td>{formatCurrency(ledgerEntries.filter(e => e.type === 'payment' && e.amount < 0).reduce((sum, e) => sum + e.amount, 0))}</td>
+              </tr>
+              <tr>
+                <td><strong>Outstanding Debt</strong></td>
+                <td><strong>{formatCurrency(order.total - ledgerEntries.filter(e => e.type === 'payment' && e.amount > 0).reduce((sum, e) => sum + e.amount, 0))}</strong></td>
+              </tr>
+              <tr>
+                <td>Refunds/Adjustments</td>
+                <td>{formatCurrency(ledgerEntries.filter(e => (e.type === 'refund' || e.type === 'adjustment')).reduce((sum, e) => sum + e.amount, 0))}</td>
+              </tr>
+              <!-- Net Paid: sum of all positive payment ledger entries -->
+              <tr>
+                <td>Net Paid</td>
+                <td>{formatCurrency(ledgerEntries.filter(e => e.type === 'payment' && e.amount > 0).reduce((sum, e) => sum + e.amount, 0))}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        {/if}
       </div>
 
       <div class="info-section">
@@ -426,5 +464,36 @@
     th, td {
       padding: 0.75rem;
     }
+  }
+
+  .invoice-breakdown {
+    margin-top: 1.5rem;
+    background: #f8f9fa;
+    border-radius: 8px;
+    padding: 1rem 1.5rem;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  }
+  .invoice-breakdown h4 {
+    margin: 0 0 1rem 0;
+    color: #333;
+    font-size: 1.1rem;
+  }
+  .invoice-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .invoice-table td {
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid #eee;
+  }
+  .invoice-table tr:last-child td {
+    border-bottom: none;
+  }
+  .invoice-table td:first-child {
+    color: #555;
+  }
+  .invoice-table td:last-child {
+    text-align: right;
+    font-weight: 500;
   }
 </style> 

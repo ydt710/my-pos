@@ -24,9 +24,10 @@
 
   const categoryNames: Record<string, string> = {
     'flower': 'Flower',
-    'concentrate': 'Concentrate',
+    'concentrate': 'Extracts',
     'joints': 'Joints',
-    'edibles': 'Edibles'
+    'edibles': 'Edibles',
+    'headshop': 'Headshop'
   };
 
   onMount(async () => {
@@ -107,7 +108,7 @@
   {:else if error}
     <div class="error-container">
       <p class="error-message">{error}</p>
-      <button on:click={() => window.location.reload()} class="retry-btn">
+      <button on:click={fetchProducts} class="retry-btn">
         Try Again
       </button>
     </div>
@@ -321,12 +322,13 @@
   }
 
   :global(.category-nav) {
-    position: fixed;
+    position: sticky;
     top: 60px;
     left: 0;
     right: 0;
     z-index: 10;
-    background-color: #f8f9fa;
+    background: white;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
   }
 
   .watermark {

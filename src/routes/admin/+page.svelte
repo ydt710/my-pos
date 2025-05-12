@@ -5,7 +5,7 @@
     import type { Product } from '$lib/types';
     import type { Order, OrderStatus, OrderFilters } from '$lib/types/orders';
     import { makeUserAdmin as userServiceMakeUserAdmin } from '$lib/services/userService';
-    import { getAllOrders, updateOrderStatus } from '$lib/services/orderService';
+    import { getAllOrders, updateOrderStatus, getTopBuyingUsers, getUsersWithMostDebt, getAllUserBalances } from '$lib/services/orderService';
     import { fade, slide } from 'svelte/transition';
     import OrderDetailsModal from '$lib/components/OrderDetailsModal.svelte';
     import { showSnackbar } from '$lib/stores/snackbarStore';
@@ -64,7 +64,8 @@
       { id: 'joints', name: 'Joints' },
       { id: 'concentrate', name: 'Concentrate' },
       { id: 'flower', name: 'Flower' },
-      { id: 'edibles', name: 'Edibles' }
+      { id: 'edibles', name: 'Edibles' },
+      { id: 'headshop', name: 'Headshop' }
     ];
   
     let statsInterval: ReturnType<typeof setInterval>;
@@ -96,6 +97,9 @@
       year: 0,
       all: 0
     };
+  
+    let topBuyers: { user_id: string; name?: string; email?: string; total: number }[] = [];
+    let mostDebtUsers: { user_id: string; name?: string; email?: string; balance: number }[] = [];
   
     function scrollToSection(sectionId: string) {
         const element = document.getElementById(sectionId);
@@ -141,7 +145,8 @@
         Promise.all([
           fetchProducts(),
           fetchStats(),
-          loadOrders()
+          loadOrders(),
+          fetchTopBuyersAndDebtors()
         ]).catch(console.error);
         
         // Set up auto-refresh
@@ -459,33 +464,43 @@
         // Fetch all debt (order) ledger entries
         const { data: ledgerDebts, error: ledgerDebtsError } = await supabase
           .from('credit_ledger')
-          .select('amount, created_at')
-          .eq('type', 'order');
+          .select('amount, created_at, order_id, user_id, type');
         if (ledgerDebtsError) throw ledgerDebtsError;
 
-        debtCreated = { today: 0, week: 0, month: 0, year: 0, all: 0 };
+        // Group ledger entries by order_id
+        const orderLedgerMap = new Map();
         for (const entry of ledgerDebts) {
-          const created = new Date(entry.created_at);
-          const debt = Math.abs(entry.amount); // debts are negative
-          if (created >= startOfToday) debtCreated.today += debt;
-          if (created >= startOfWeek) debtCreated.week += debt;
-          if (created >= startOfMonth) debtCreated.month += debt;
-          if (created >= startOfYear) debtCreated.year += debt;
-          debtCreated.all += debt;
+          if (!entry.order_id) continue;
+          if (!orderLedgerMap.has(entry.order_id)) orderLedgerMap.set(entry.order_id, []);
+          orderLedgerMap.get(entry.order_id).push(entry);
         }
 
-        // Calculate current total outstanding debt (sum of all ledger amounts < 0)
-        const { data: allLedger, error: allLedgerError } = await supabase
-          .from('credit_ledger')
-          .select('user_id, amount');
-        if (allLedgerError) throw allLedgerError;
-        // Group by user, sum, then sum all negative balances
-        const userBalances: Record<string, number> = {};
-        for (const entry of allLedger) {
-          if (!userBalances[entry.user_id]) userBalances[entry.user_id] = 0;
-          userBalances[entry.user_id] += entry.amount;
+        // Helper to sum outstanding debt for a set of orders
+        function sumOutstandingDebt(orders: Order[], startDate: Date | undefined): number {
+          let sum = 0;
+          for (const order of orders) {
+            if ((order as any).deleted_at || order.status !== 'completed') continue;
+            if (startDate && new Date(order.created_at) < startDate) continue;
+            const ledgerEntries: any[] = orderLedgerMap.get(order.id) || [];
+            const orderTotal = order.total || 0;
+            const payments = ledgerEntries.filter((e: any) => e.type === 'payment' && e.amount > 0).reduce((s: number, e: any) => s + e.amount, 0);
+            sum += Math.max(orderTotal - payments, 0); // Only count positive outstanding debt
+          }
+          return sum;
         }
-        debtIn = Object.values(userBalances).reduce((sum, bal) => (sum as number) + ((bal as number) < 0 ? Math.abs(bal as number) : 0), 0);
+
+        debtCreated = {
+          today: sumOutstandingDebt(validOrders, startOfToday),
+          week: sumOutstandingDebt(validOrders, startOfWeek),
+          month: sumOutstandingDebt(validOrders, startOfMonth),
+          year: sumOutstandingDebt(validOrders, startOfYear),
+          all: sumOutstandingDebt(validOrders, undefined)
+        };
+        // Calculate total outstanding debt (sum of all negative user balances)
+        const allUserBalances = await getAllUserBalances();
+        debtIn = Object.values(allUserBalances)
+          .filter((balance) => (balance as number) < 0)
+          .reduce((sum, balance) => (sum as number) + Math.abs(balance as number), 0);
 
       } catch (err) {
         console.error('Error fetching stats:', err);
@@ -662,6 +677,20 @@
     $: if (activeTab === 'orders') {
       loadOrders();
     }
+
+    async function fetchTopBuyersAndDebtors() {
+      const buyers = await getTopBuyingUsers(10);
+      const debtors = await getUsersWithMostDebt(20); // fetch more to ensure enough negative balances
+      topBuyers = buyers.map(u => ({ ...u, total: Number(u.total) }));
+      // Only show users with negative balance (actual debt)
+      mostDebtUsers = debtors
+        .map(u => ({ ...u, balance: Number(u.balance) }))
+        .filter(u => u.balance < 0)
+        .slice(0, 10);
+    }
+
+    $: topBuyer = topBuyers && topBuyers.length > 0 ? topBuyers[0] : null;
+    $: mostDebtUser = mostDebtUsers && mostDebtUsers.length > 0 ? mostDebtUsers[0] : null;
 </script>
   
 <div class="admin-container">
@@ -744,58 +773,55 @@
                   <li>All Time: <strong>R{debtCreated.all.toFixed(2)}</strong></li>
                 </ul>
             </div>
+            <!-- Top Buyers as a list -->
+            <div class="stat-card">
+                <h3>Top Buyers</h3>
+                <ul class="user-list">
+                  {#each topBuyers.slice(0, 5) as user}
+                    <li>
+                      <span class="user-name">{user.name || user.email || user.user_id}</span>
+                      <span class="user-amount">R{user.total.toFixed(2)}</span>
+                    </li>
+                  {/each}
+                  {#if topBuyers.length === 0}
+                    <li>No data</li>
+                  {/if}
+                </ul>
+            </div>
+            <!-- Most Debt Users as a list -->
+            <div class="stat-card">
+                <h3>Most Debt</h3>
+                <ul class="user-list">
+                  {#each mostDebtUsers.slice(0, 5) as user}
+                    <li>
+                      <span class="user-name">{user.name || user.email || user.user_id}</span>
+                      <span class="user-amount" style="color: #dc3545;">R{Math.abs(user.balance).toFixed(2)}</span>
+                    </li>
+                  {/each}
+                  {#if mostDebtUsers.length === 0}
+                    <li>No data</li>
+                  {/if}
+                </ul>
+            </div>
+            <!-- Most Selling Product Card -->
+            <div class="stat-card">
+                <h3>Most Selling Products</h3>
+                <ul class="user-list">
+                  {#each stats.topProducts.slice(0, 5) as product}
+                    <li>
+                      <span class="user-name">{product.name}</span>
+                      <span class="user-amount" style="color: #007bff;">{product.quantity}</span>
+                    </li>
+                  {/each}
+                  {#if stats.topProducts.length === 0}
+                    <li>No data</li>
+                  {/if}
+                </ul>
+            </div>
         </div>
 
         <div class="stats-details">
-            <div class="stats-card">
-                <h3>Top Selling Products</h3>
-                <div class="table-container">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Product</th>
-                                <th>Quantity Sold</th>
-                                <th>Revenue</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {#each stats.topProducts as product}
-                                <tr>
-                                    <td>{product.name}</td>
-                                    <td>{product.quantity}</td>
-                                    <td>R{product.revenue.toFixed(2)}</td>
-                                </tr>
-                            {/each}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
-            <div class="stats-card">
-                <h3>Recent Orders</h3>
-                <div class="table-container">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Order ID</th>
-                                <th>Customer</th>
-                                <th>Date</th>
-                                <th>Total</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {#each stats.recentOrders as order}
-                                <tr>
-                                    <td>{order.shortId}</td>
-                                    <td>{order.username}</td>
-                                    <td>{new Date(order.created_at).toLocaleDateString()}</td>
-                                    <td>R{order.total.toFixed(2)}</td>
-                                </tr>
-                            {/each}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+            <!-- Remove the four stats-card tables here -->
         </div>
     </section>
 
@@ -2065,5 +2091,36 @@
     }
     tr.guest-order {
         background: #f8f9fa;
+    }
+
+    .user-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+    }
+    .user-list li {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.25rem 0;
+        border-bottom: 1px solid #f0f0f0;
+        font-size: 1rem;
+    }
+    .user-list li:last-child {
+        border-bottom: none;
+    }
+    .user-name {
+        font-weight: 500;
+        color: #333;
+        max-width: 60%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .user-amount {
+        font-weight: 600;
+        color: #007bff;
+        min-width: 80px;
+        text-align: right;
     }
 </style>

@@ -23,24 +23,52 @@ export async function getStock(productId: string, locationName: string): Promise
   return data?.quantity ?? 0;
 }
 
-// Add production to facility
+// Add production to facility (now creates a pending production movement)
 export async function addProduction(productId: string, quantity: number, note?: string) {
   const facilityId = await getLocationId('facility');
   if (!facilityId) throw new Error('Facility location not found');
-  // Update stock_levels
-  await supabase.rpc('increment_product_quantity', {
-    product_id: productId,
-    amount: quantity
-  });
-  // Insert stock_movement
+  // Insert stock_movement as pending (do not update stock_levels yet)
   await supabase.from('stock_movements').insert({
     product_id: productId,
     from_location_id: null,
     to_location_id: facilityId,
     quantity,
     type: 'production',
-    note
+    note,
+    status: 'pending'
   });
+}
+
+// Confirm production is done: update status and increment stock
+export async function confirmProductionDone(stockMovementId: string | number) {
+  // Get the stock movement
+  const { data: movement, error } = await supabase
+    .from('stock_movements')
+    .select('*')
+    .eq('id', stockMovementId)
+    .single();
+  if (error || !movement) throw new Error('Production movement not found');
+  if (movement.status === 'done') return; // Already confirmed
+
+  // Update facility stock_levels for this product
+  const facilityId = movement.to_location_id;
+  // Get current quantity
+  const { data: stockData } = await supabase
+    .from('stock_levels')
+    .select('quantity')
+    .eq('product_id', movement.product_id)
+    .eq('location_id', facilityId)
+    .single();
+  const newQty = (stockData?.quantity ?? 0) + movement.quantity;
+  await supabase
+    .from('stock_levels')
+    .upsert({ product_id: movement.product_id, location_id: facilityId, quantity: newQty }, { onConflict: ['product_id', 'location_id'] });
+
+  // Update movement status
+  await supabase
+    .from('stock_movements')
+    .update({ status: 'done' })
+    .eq('id', stockMovementId);
 }
 
 // Transfer stock from facility to shop
@@ -48,11 +76,17 @@ export async function transferToShop(productId: string, quantity: number, note?:
   const facilityId = await getLocationId('facility');
   const shopId = await getLocationId('shop');
   if (!facilityId || !shopId) throw new Error('Location not found');
-  // Decrement facility
-  await supabase.rpc('increment_product_quantity', {
-    product_id: productId,
-    amount: -quantity
-  });
+  // Decrement facility stock_levels
+  const { data: facilityStock } = await supabase
+    .from('stock_levels')
+    .select('quantity')
+    .eq('product_id', productId)
+    .eq('location_id', facilityId)
+    .single();
+  const newFacilityQty = (facilityStock?.quantity ?? 0) - quantity;
+  await supabase
+    .from('stock_levels')
+    .upsert({ product_id: productId, location_id: facilityId, quantity: newFacilityQty }, { onConflict: ['product_id', 'location_id'] });
   // Increment shop
   const { data: shopStock } = await supabase
     .from('stock_levels')

@@ -129,10 +129,12 @@
     let debt = 0;
     let paymentAmount = 0;
     let paymentUserId = null;
+    let overpayment = 0;
     if (!isGuest && posUser && posUser.id) {
       const cash = Number(cashGiven) || 0;
-      debt = total - cash;
-      paymentAmount = cash;
+      paymentAmount = Math.min(cash, total); // Only pay up to the order total
+      overpayment = Math.max(0, cash - total); // Any extra is credit
+      debt = total - paymentAmount;
       paymentUserId = posUser.id;
     }
 
@@ -161,23 +163,9 @@
       );
 
       if (result.success) {
-        // POS: Log payment to ledger if cash was given
-        if (!isGuest && posUser && posUser.id && paymentAmount > 0) {
-          await logPaymentToLedger(posUser.id, paymentAmount, result.orderId, 'POS payment');
-        }
-        // Guest POS: Log payment to ledger if cash was given
-        if (useGuest && Number(cashGiven) > 0) {
-          console.log('Logging guest payment to ledger', { cashGiven, orderId: result.orderId });
-          const { error: ledgerError } = await supabase.from('credit_ledger').insert({
-            user_id: null,
-            type: 'payment',
-            amount: Number(cashGiven),
-            order_id: result.orderId,
-            note: 'Guest POS payment'
-          });
-          if (ledgerError) {
-            console.error('Failed to insert guest payment into ledger:', ledgerError);
-          }
+        // If there is overpayment, log it as credit (not tied to order)
+        if (!isGuest && posUser && posUser.id && overpayment > 0) {
+          await logPaymentToLedger(posUser.id, overpayment, undefined, 'Overpayment credit at POS', paymentMethod);
         }
         // Update order status to completed if POS user
         if (isPosUser && result.orderId) {
@@ -193,6 +181,9 @@
           posUserBalance = await getUserBalance(posUser.id);
         }
         success = '🎉 Order placed successfully! Thank you for your purchase.';
+        if (overpayment > 0) {
+          success += ` (R${overpayment.toFixed(2)} credited to account)`;
+        }
         if (isGuest) {
           success += ' We\'ll send your order details to ' + guestInfo.email;
         }
@@ -356,7 +347,7 @@
           </div>
           <p class="login-prompt">
             Already have an account? 
-            <a href="/login?redirect=/checkout">Login here</a>
+            <button type="button" class="link-btn" on:click={() => goto('/login?redirect=/checkout')}>Login here</button>
           </p>
         </div>
       {/if}
@@ -518,13 +509,19 @@
     color: #666;
   }
 
-  .login-prompt a {
+  .login-prompt button {
+    background: none;
+    border: none;
     color: #007bff;
-    text-decoration: none;
+    text-decoration: underline;
+    font-weight: 500;
+    cursor: pointer;
+    padding: 0;
+    font: inherit;
   }
 
-  .login-prompt a:hover {
-    text-decoration: underline;
+  .login-prompt button:hover {
+    text-decoration: none;
   }
   
   .cart-items {
@@ -735,5 +732,19 @@
     .payment-section {
       position: static;
     }
+  }
+
+  .link-btn {
+    background: none;
+    border: none;
+    color: #007bff;
+    text-decoration: underline;
+    font-weight: 500;
+    cursor: pointer;
+    padding: 0;
+    font: inherit;
+  }
+  .link-btn:hover {
+    text-decoration: none;
   }
 </style> 

@@ -6,4 +6,5 @@ export interface CreditLedgerEntry {
   order_id?: string;
   created_at: string;
   note?: string;
+  method?: string;
 } 

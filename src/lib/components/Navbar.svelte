@@ -44,11 +44,13 @@
       on:click={onLogoClick}
       aria-label="Return to home"
     >
-      {#if logoUrl}
-        <img src={logoUrl} alt="Route 420 Logo" class="logo" />
-      {:else}
-        <span class="fallback-logo">🪴</span>
-      {/if}
+      <div class="logo-area">
+        {#if logoUrl}
+          <img src={logoUrl} alt="Route 420 Logo" class="logo" />
+        {:else}
+          <span class="fallback-logo">🪴</span>
+        {/if}
+      </div>
     </button>
   </div>
   <div class="right">
@@ -113,6 +115,7 @@
     display: flex;
     align-items: center;
     z-index: 2;
+    overflow: visible;
   }
 
   .navbar .right {
@@ -125,15 +128,19 @@
   }
 
   .logo {
-    height: 40px;
-    width: auto;
+    width: 95%;
+    height: 95%;
     object-fit: contain;
     display: block;
   }
 
   .fallback-logo {
-    font-size: 2rem;
-    line-height: 1;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2.5rem;
   }
 
   .navbar button {
@@ -142,7 +149,6 @@
     color: white;
     font-size: 1.5rem;
     cursor: pointer;
-    margin-left: 15px;
     position: relative;
     display: flex;
     align-items: center;
@@ -230,16 +236,28 @@
 
   @media (max-width: 768px) {
     .logo {
-      height: 35px;
+      height: 76px;
     }
   }
 
   .logo-button {
     background: none;
     border: none;
+    width: 100px;
+    height: 100px;
     padding: 0;
     cursor: pointer;
     transition: transform 0.2s ease;
+    display: block;
+  }
+
+  .logo-area {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
   }
 
   .logo-button:hover {

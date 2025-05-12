@@ -56,42 +56,34 @@
       <button 
         class="nav-link" 
         class:active={$page.url.pathname === '/admin'}
-        on:click={() => {
-          menuOpen = false;
-          goto('/admin');
-        }}
+        on:click={() => { menuOpen = false; goto('/admin'); }}
       >
         Dashboard
       </button>
       <button 
         class="nav-link" 
-        on:click={() => {
-          menuOpen = false;
-          scrollToSection('orders');
-        }}
+        on:click={() => { menuOpen = false; scrollToSection('orders'); }}
       >
         Orders
       </button>
-      <a 
-        href="/admin/users" 
+      <button 
         class="nav-link" 
         class:active={$page.url.pathname === '/admin/users'}
-        on:click={() => menuOpen = false}
+        on:click={() => { menuOpen = false; goto('/admin/users'); }}
       >
         Users
-      </a>
-      <a 
-        href="/admin/settings" 
+      </button>
+      <button 
         class="nav-link" 
         class:active={$page.url.pathname === '/admin/settings'}
-        on:click={() => menuOpen = false}
+        on:click={() => { menuOpen = false; goto('/admin/settings'); }}
       >
         Settings
-      </a>
+      </button>
     </div>
 
     <div class="nav-actions">
-      <a href="/" class="nav-link">View Store</a>
+      <button class="nav-link" on:click={() => goto('/')}>View Store</button>
       <button class="logout-btn" on:click={handleLogout}>Logout</button>
     </div>
   </div>

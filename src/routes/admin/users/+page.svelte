@@ -3,7 +3,7 @@
   import { supabase } from '$lib/supabase';
   import { goto } from '$app/navigation';
   import { fade } from 'svelte/transition';
-  import { getUserBalance } from '$lib/services/orderService';
+  import { getUserBalance, getAllUserBalances } from '$lib/services/orderService';
   import { onDestroy } from 'svelte';
   import type { CreditLedgerEntry } from '$lib/types/ledger';
 
@@ -42,6 +42,9 @@
 
   // Store balances for each user
   let userBalances: Record<string, number | null> = {};
+
+  let showDeleteModal = false;
+  let userToDelete: User | null = null;
 
   onMount(async () => {
     // Check if current user is admin
@@ -143,12 +146,7 @@
   }
 
   async function fetchAllUserBalances() {
-    for (const user of users) {
-      userBalances[user.id] = null;
-      getUserBalance(user.id).then(balance => {
-        userBalances[user.id] = balance;
-      });
-    }
+    userBalances = await getAllUserBalances();
   }
 
   $: if (!loading && users.length > 0) {
@@ -177,6 +175,38 @@
     ledgerModalUser = null;
     ledgerEntries = [];
     ledgerError = null;
+  }
+
+  async function deleteUser(userId: string) {
+    try {
+      const { error } = await supabase.from('profiles').delete().eq('id', userId);
+      if (error) throw error;
+      users = users.filter(u => u.id !== userId);
+      success = 'User deleted successfully';
+      setTimeout(() => success = null, 3000);
+    } catch (err) {
+      console.error('Error deleting user:', err);
+      error = 'Failed to delete user';
+      setTimeout(() => error = null, 3000);
+    }
+  }
+
+  function confirmDeleteUser(user: User) {
+    userToDelete = user;
+    showDeleteModal = true;
+  }
+
+  function cancelDeleteUser() {
+    userToDelete = null;
+    showDeleteModal = false;
+  }
+
+  async function handleDeleteUser() {
+    if (userToDelete) {
+      await deleteUser(userToDelete.id);
+      userToDelete = null;
+      showDeleteModal = false;
+    }
   }
 </script>
 
@@ -213,9 +243,7 @@
         </thead>
         <tbody>
           {#each users as user (user.id)}
-            {#if typeof userBalances[user.id] === 'number'}
-              {@const balance = userBalances[user.id]}
-            {/if}
+            {@const balance = userBalances?.[user.id]}
             <tr>
               <td>{user.email}</td>
               <td>{user.user_metadata?.name || '-'}</td>
@@ -227,12 +255,12 @@
               </td>
               <td>{user.role === 'pos' ? 'Yes' : 'No'}</td>
               <td>
-                {#if typeof userBalances[user.id] !== 'number'}
+                {#if typeof balance !== 'number'}
                   <span style="color: #666;">Loading...</span>
-                {:else if userBalances[user.id] < 0}
-                  <span style="color: #dc3545;">Debt: R{Math.abs(userBalances[user.id] ?? 0).toFixed(2)}</span>
-                {:else if userBalances[user.id] > 0}
-                  <span style="color: #28a745;">Credit: R{(userBalances[user.id] ?? 0).toFixed(2)}</span>
+                {:else if balance < 0}
+                  <span style="color: #dc3545;">Debt: R{Math.abs(balance).toFixed(2)}</span>
+                {:else if balance > 0}
+                  <span style="color: #28a745;">Credit: R{balance.toFixed(2)}</span>
                 {:else}
                   <span>R0.00</span>
                 {/if}
@@ -240,12 +268,11 @@
               </td>
               <td>
                 <button 
-                  class="role-toggle-btn"
-                  class:make-admin={!user.is_admin}
-                  class:remove-admin={user.is_admin}
-                  on:click={() => toggleAdmin(user.id, !user.is_admin)}
+                  class="delete-user-btn"
+                  on:click={() => confirmDeleteUser(user)}
+                  aria-label="Delete user {user.email}"
                 >
-                  {user.is_admin ? 'Remove Admin' : 'Make Admin'}
+                  Delete
                 </button>
               </td>
             </tr>
@@ -294,6 +321,19 @@
           </div>
         {/if}
         <button class="close-btn" on:click={closeLedgerModal}>Close</button>
+      </div>
+    </div>
+  {/if}
+
+  {#if showDeleteModal && userToDelete}
+    <div class="modal-backdrop" role="dialog" aria-modal="true" tabindex="-1" on:keydown={(e) => { if (e.key === 'Escape') cancelDeleteUser(); }}>
+      <div class="modal-content" role="document" tabindex="0" on:click|stopPropagation>
+        <h2 id="delete-modal-title">Confirm Delete</h2>
+        <p>Are you sure you want to delete user <strong>{userToDelete.email}</strong>?</p>
+        <div class="modal-actions">
+          <button class="cancel-btn" on:click={cancelDeleteUser} aria-label="Cancel delete">Cancel</button>
+          <button class="delete-user-btn" on:click={handleDeleteUser} aria-label="Confirm delete user">Delete</button>
+        </div>
       </div>
     </div>
   {/if}
@@ -501,5 +541,37 @@
     padding: 1rem;
     border-radius: 4px;
     margin-bottom: 1rem;
+  }
+  .delete-user-btn {
+    padding: 0.5rem 1rem;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.875rem;
+    background: #dc3545;
+    color: white;
+    transition: background 0.2s;
+  }
+  .delete-user-btn:hover {
+    background: #c82333;
+  }
+  .modal-actions {
+    display: flex;
+    gap: 1rem;
+    justify-content: flex-end;
+    margin-top: 2rem;
+  }
+  .cancel-btn {
+    background: #e9ecef;
+    color: #495057;
+    border: none;
+    border-radius: 4px;
+    padding: 0.5rem 1rem;
+    cursor: pointer;
+    font-size: 0.875rem;
+    transition: background 0.2s;
+  }
+  .cancel-btn:hover {
+    background: #dee2e6;
   }
 </style> 

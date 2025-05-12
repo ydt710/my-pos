@@ -91,7 +91,7 @@
     </form>
 
     <p class="auth-footer">
-      Don't have an account? <a href="/signup">Create one</a>
+      Don't have an account? <button type="button" class="link-btn" on:click={() => goto('/signup')}>Create one</button>
     </p>
   </div>
 </div>
@@ -190,13 +190,18 @@
     color: #666;
   }
 
-  .auth-footer a {
+  .link-btn {
+    background: none;
+    border: none;
     color: #007bff;
-    text-decoration: none;
+    text-decoration: underline;
     font-weight: 500;
+    cursor: pointer;
+    padding: 0;
+    font: inherit;
   }
 
-  .auth-footer a:hover {
-    text-decoration: underline;
+  .link-btn:hover {
+    text-decoration: none;
   }
 </style>

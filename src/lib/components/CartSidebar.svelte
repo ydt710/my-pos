@@ -503,11 +503,13 @@
 
   @media (max-width: 768px) {
     .cart-container {
-      width: 100%;
-      height: 50vh;
-      max-height: 50vh;
-      margin-top: 25vh;
-      border-radius: 12px 12px 0 0;
+
+      max-height: 100vh;
+      top: 0;
+      right: 0;
+      margin-top: 0;
+      border-radius: 0;
+      z-index: 100;
     }
   }
 </style> 

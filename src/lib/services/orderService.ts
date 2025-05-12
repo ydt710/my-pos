@@ -169,14 +169,27 @@ export async function createOrder(
       guestEmail: guestInfo?.email
     });
 
-    // Insert a credit ledger entry if there is debt
-    if (debt && userId) {
+    // Always insert the full order total as a debt in the ledger
+    if (userId) {
       await supabase.from('credit_ledger').insert({
         user_id: userId,
         type: 'order',
-        amount: -debt, // negative for debt
+        amount: -total, // negative for full order total
         order_id: order.id,
         note: 'Order placed'
+      });
+    }
+
+    // If any payment is made at checkout, insert a payment ledger entry
+    const amountPaid = total - (debt || 0);
+    if (userId && amountPaid > 0) {
+      await supabase.from('credit_ledger').insert({
+        user_id: userId,
+        type: 'payment',
+        amount: amountPaid, // positive for payment
+        order_id: order.id,
+        note: 'Payment at checkout',
+        method: paymentMethod || null
       });
     }
 
@@ -378,13 +391,14 @@ export async function updateOrderStatus(
   }
 }
 
-export async function logPaymentToLedger(userId: string, paymentAmount: number, orderId?: string, note?: string) {
+export async function logPaymentToLedger(userId: string, paymentAmount: number, orderId?: string, note?: string, method?: string) {
   return await supabase.from('credit_ledger').insert({
     user_id: userId,
     type: 'payment',
     amount: paymentAmount, // positive for payment
     order_id: orderId,
-    note: note || 'Payment received'
+    note: note || 'Payment received',
+    method: method || null
   });
 }
 
@@ -400,4 +414,93 @@ export async function getUserBalance(userId: string): Promise<number> {
   }
 
   return data.reduce((sum, entry) => sum + entry.amount, 0);
+}
+
+// Batch fetch all user balances as a map { user_id: balance }
+export async function getAllUserBalances(): Promise<Record<string, number>> {
+  const { data, error } = await supabase
+    .from('credit_ledger')
+    .select('user_id, amount');
+  if (error || !data) return {};
+  const balances: Record<string, number> = {};
+  for (const entry of data) {
+    if (!entry.user_id) continue;
+    balances[entry.user_id] = (balances[entry.user_id] || 0) + entry.amount;
+  }
+  return balances;
+}
+
+// Get top buying users by total completed order value
+export async function getTopBuyingUsers(limit = 10) {
+  const { data, error } = await supabase
+    .from('orders')
+    .select('user_id, total')
+    .eq('status', 'completed');
+
+  if (error || !data) return [];
+
+  // Aggregate totals per user
+  const totals: Record<string, number> = {};
+  for (const order of data) {
+    if (!order.user_id) continue;
+    totals[order.user_id] = (totals[order.user_id] || 0) + Number(order.total);
+  }
+
+  // Convert to array and sort
+  const sorted: { user_id: string; total: number; email?: string; name?: string }[] = Object.entries(totals)
+    .map(([user_id, total]) => ({ user_id, total: Number(total) }))
+    .sort((a, b) => b.total - a.total)
+    .slice(0, limit);
+
+  // Fetch user emails and names
+  if (sorted.length > 0) {
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, email, display_name')
+      .in('id', sorted.map(u => u.user_id));
+    for (const user of sorted) {
+      const profile = profiles?.find(p => p.id === user.user_id);
+      user.email = profile?.email || '';
+      user.name = profile?.display_name || '';
+    }
+  }
+
+  return sorted;
+}
+
+// Get users with most debt (lowest balances)
+export async function getUsersWithMostDebt(limit = 10) {
+  const { data, error } = await supabase
+    .from('credit_ledger')
+    .select('user_id, amount');
+
+  if (error || !data) return [];
+
+  // Aggregate balances per user
+  const balances: Record<string, number> = {};
+  for (const entry of data) {
+    if (!entry.user_id) continue;
+    balances[entry.user_id] = (balances[entry.user_id] || 0) + Number(entry.amount);
+  }
+
+  // Convert to array and sort by most negative
+  const sorted: { user_id: string; balance: number; email?: string; name?: string }[] = Object.entries(balances)
+    .map(([user_id, balance]) => ({ user_id, balance: Number(balance) }))
+    .sort((a, b) => a.balance - b.balance)
+    .slice(0, limit);
+
+  // Fetch user emails and names
+  if (sorted.length > 0) {
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, email, display_name')
+      .in('id', sorted.map(u => u.user_id));
+    for (const user of sorted) {
+      const profile = profiles?.find(p => p.id === user.user_id);
+      user.email = profile?.email || '';
+      user.name = profile?.display_name || '';
+    }
+  }
+
+  return sorted;
 } 

@@ -145,7 +145,7 @@
   {:else if orders.length === 0}
     <div class="empty-state">
       <p>You haven't placed any orders yet.</p>
-      <a href="/" class="shop-now-btn">Start Shopping</a>
+      <button class="shop-now-btn" on:click={() => goto('/')}>Start Shopping</button>
     </div>
   {:else}
     <div class="orders-list">

@@ -9,8 +9,8 @@
     },
     { 
       id: 'concentrate', 
-      name: 'Concentrate', 
-      icon: 'fa-droplet'
+      name: 'Extracts',
+      icon: 'fa-vial'
     },
     { 
       id: 'flower', 
@@ -21,6 +21,11 @@
       id: 'edibles', 
       name: 'Edibles', 
       icon: 'fa-cookie'
+    },
+    { 
+      id: 'headshop', 
+      name: 'Headshop', 
+      icon: 'fa-store' 
     }
   ];
 
@@ -39,6 +44,7 @@
       role="tab"
       aria-selected={activeCategory === category.id}
       aria-controls={`category-${category.id}`}
+      data-category={category.id}
     >
       <div class="image-container">
         <i class="fa-solid {category.icon}"></i>
@@ -71,7 +77,6 @@
     padding: 1.25rem;
     border: 2px solid transparent;
     border-radius: 12px;
-    background: white;
     cursor: pointer;
     transition: all 0.2s ease;
     box-shadow: 0 2px 8px rgba(0,0,0,0.1);
@@ -124,6 +129,10 @@
     transition: color 0.2s ease;
   }
 
+  .category-button[data-category='concentrate'] .name {
+    font-size: 0.9rem;
+  }
+
   @media (max-width: 768px) {
     .category-nav {
       flex-wrap: wrap;
@@ -131,13 +140,14 @@
       height: auto;
       min-height: 120px;
       align-content: flex-start;
+      justify-content: flex-start;
     }
 
     .category-button {
       padding: 0.75rem;
-      min-width: 80px;
-      flex: 1 1 calc(50% - 0.5rem);
-      max-width: calc(50% - 0.5rem);
+      min-width: 0;
+      flex: 1 1 calc(33.333% - 0.5rem);
+      max-width: calc(33.333% - 0.5rem);
     }
 
     .image-container {
