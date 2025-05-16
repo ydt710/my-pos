@@ -90,15 +90,20 @@
 
   const dispatch = createEventDispatcher();
 
-  function handleCardClick(e: MouseEvent) {
-    // Prevent opening modal if clicking on add to cart or quantity controls
-    const target = e.target as HTMLElement;
-    if (target.closest('.add-to-cart-btn') || target.closest('.quantity-btn')) return;
+  function handleCardClick(e: MouseEvent | KeyboardEvent) {
+    // Only open modal for left click or Enter/Space
+    if (e instanceof MouseEvent) {
+      const target = e.target as HTMLElement;
+      if (target.closest('.add-to-cart-btn') || target.closest('.quantity-btn')) return;
+      if (e.button !== 0) return; // Only left click
+    } else if (e instanceof KeyboardEvent) {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+    }
     dispatch('showdetails', { product });
   }
 </script>
 
-<div class="card-product__container" bind:this={cardElement} style="background-image: url('{product.image_url}'); background-size: cover; background-position: center; position: relative;" on:click={handleCardClick}>
+<div class="card-product__container" bind:this={cardElement} style="background-image: url('{product.image_url}'); background-size: cover; background-position: center; position: relative;" on:click={handleCardClick} role="button" tabindex="0" on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { handleCardClick(e); } }}>
   <div class="card-product__body">
     <div class="card-product__body-container cannabis-product">
       <div class="card-product__image">
@@ -115,11 +120,11 @@
             {#each Array(5) as _, i}
               <div
                 class="product__cannabis-potency-value product__cannabis-potency-value--thc"
-                style="background: {i < getPotencyBarCount(product.thc_min, product.thc_max) ? thcBarColors[i] : '#eee'}"
+                style="background: {i < getPotencyBarCount((product as any).thc_min, (product as any).thc_max) ? thcBarColors[i] : '#eee'}"
               ></div>
             {/each}
           </div>
-          <span class="product__cannabis-potency-unit">{product.thc_min ?? 0}-{product.thc_max ?? 0} mg/g</span>
+          <span class="product__cannabis-potency-unit">{(product as any).thc_min ?? 0}-{(product as any).thc_max ?? 0} mg/g</span>
         </div>
         <div class="product__cannabis-potency">
           <h4 class="product__cannabis-potency-title">CBD</h4>
@@ -127,11 +132,11 @@
             {#each Array(5) as _, i}
               <div
                 class="product__cannabis-potency-value product__cannabis-potency-value--cbd"
-                style="background: {i < getPotencyBarCount(product.cbd_min, product.cbd_max) ? cbdBarColors[i] : '#eee'}"
+                style="background: {i < getPotencyBarCount((product as any).cbd_min, (product as any).cbd_max) ? cbdBarColors[i] : '#eee'}"
               ></div>
             {/each}
           </div>
-          <span class="product__cannabis-potency-unit">{product.cbd_min ?? 0}-{product.cbd_max ?? 0} mg/g</span>
+          <span class="product__cannabis-potency-unit">{(product as any).cbd_min ?? 0}-{(product as any).cbd_max ?? 0} mg/g</span>
         </div>
         <div class="stock-status" 
           class:out-of-stock={displayStock <= 0} 
@@ -353,9 +358,5 @@
   0% { transform: scale(1); box-shadow: 0 4px 12px rgba(0,0,0,0.08);}
   50% { transform: scale(1.07); box-shadow: 0 8px 24px rgba(0,0,0,0.16);}
   100% { transform: scale(1); box-shadow: 0 4px 12px rgba(0,0,0,0.08);}
-}
-
-.card-product__container.added-to-cart {
-  animation: cart-pop 0.7s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 </style> 

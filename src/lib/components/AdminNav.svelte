@@ -80,11 +80,13 @@
       >
         Settings
       </button>
-    </div>
-
-    <div class="nav-actions">
-      <button class="nav-link" on:click={() => goto('/')}>View Store</button>
-      <button class="logout-btn" on:click={handleLogout}>Logout</button>
+      <button 
+        class="nav-link" 
+        class:active={$page.url.pathname === '/admin/stock-management'}
+        on:click={() => { menuOpen = false; goto('/admin/stock-management'); }}
+      >
+        Stock Management
+      </button>
     </div>
   </div>
 </nav>
@@ -159,26 +161,6 @@
     background: rgba(255, 255, 255, 0.15);
   }
 
-  .nav-actions {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-  }
-
-  .logout-btn {
-    background: #dc3545;
-    color: white;
-    border: none;
-    padding: 0.5rem 1rem;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: background-color 0.2s;
-  }
-
-  .logout-btn:hover {
-    background: #c82333;
-  }
-
   @media (max-width: 768px) {
     .menu-toggle {
       display: block;
@@ -187,6 +169,7 @@
     .nav-content {
       flex-direction: column;
       align-items: stretch;
+      gap: 0.5rem;
     }
 
     .nav-brand {
@@ -199,6 +182,9 @@
       flex-direction: column;
       gap: 0.5rem;
       margin: 1rem 0;
+      overflow-x: auto;
+      max-width: 100vw;
+      padding-bottom: 0.5rem;
     }
 
     .nav-links.open {
@@ -207,19 +193,10 @@
 
     .nav-link {
       width: 100%;
-      padding: 0.75rem;
-    }
-
-    .nav-actions {
-      flex-direction: column;
-      width: 100%;
-      gap: 0.5rem;
-    }
-
-    .nav-actions .nav-link,
-    .logout-btn {
-      width: 100%;
-      text-align: center;
+      padding: 1rem 0.75rem;
+      font-size: 1.1rem;
+      min-width: 120px;
+      text-align: left;
     }
   }
 </style> 

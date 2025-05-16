@@ -1022,50 +1022,72 @@
         
         <!-- Product List -->
         <div class="table-card">
-            <div class="table-container">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Image</th>
-                            <th>Name</th>
-                            <th>Price</th>
-                            <th>Quantity</th>
-                            <th>Category</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {#each products as p (p.id)}
-                            <tr out:fade>
-                                <td>
-                                    <img 
-                                        src={p.image_url} 
-                                        alt={p.name} 
-                                        class="product-thumbnail"
-                                    />
-                                </td>
-                                <td>{p.name}</td>
-                                <td>R{p.price}</td>
-                                <td>{p.quantity}</td>
-                                <td>{categories.find(c => c.id === p.category)?.name || p.category}</td>
-                                <td class="action-buttons">
-                                    <button 
-                                        class="edit-btn" 
-                                        on:click={() => editProduct(p)}
-                                    >
-                                        Edit
-                                    </button>
-                                    <button 
-                                        class="delete-btn" 
-                                        on:click={() => { showProductConfirmModal = true; productIdToDelete = p.id; }}
-                                    >
-                                        Delete
-                                    </button>
-                                </td>
+            <div class="table-responsive desktop-only">
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Image</th>
+                                <th>Name</th>
+                                <th>Price</th>
+                                <th>Quantity</th>
+                                <th>Category</th>
+                                <th>Actions</th>
                             </tr>
-                        {/each}
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody>
+                            {#each products as p (p.id)}
+                                <tr out:fade>
+                                    <td>
+                                        <img 
+                                            src={p.image_url} 
+                                            alt={p.name} 
+                                            class="product-thumbnail"
+                                        />
+                                    </td>
+                                    <td>{p.name}</td>
+                                    <td>R{p.price}</td>
+                                    <td>{p.quantity}</td>
+                                    <td>{categories.find(c => c.id === p.category)?.name || p.category}</td>
+                                    <td class="action-buttons">
+                                        <button 
+                                            class="edit-btn" 
+                                            on:click={() => editProduct(p)}
+                                        >
+                                            Edit
+                                        </button>
+                                        <button 
+                                            class="delete-btn" 
+                                            on:click={() => { showProductConfirmModal = true; productIdToDelete = p.id; }}
+                                        >
+                                            Delete
+                                        </button>
+                                    </td>
+                                </tr>
+                            {/each}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <!-- Mobile Card View -->
+            <div class="mobile-cards">
+                {#each products as p (p.id)}
+                    <div class="admin-card">
+                        <div class="admin-card-img-wrap">
+                            <img src={p.image_url} alt={p.name} class="product-thumbnail" />
+                        </div>
+                        <div class="admin-card-body">
+                            <div class="admin-card-title">{p.name}</div>
+                            <div class="admin-card-row"><strong>Price:</strong> R{p.price}</div>
+                            <div class="admin-card-row"><strong>Quantity:</strong> {p.quantity}</div>
+                            <div class="admin-card-row"><strong>Category:</strong> {categories.find(c => c.id === p.category)?.name || p.category}</div>
+                            <div class="admin-card-actions">
+                                <button class="edit-btn" on:click={() => editProduct(p)}>Edit</button>
+                                <button class="delete-btn" on:click={() => { showProductConfirmModal = true; productIdToDelete = p.id; }}>Delete</button>
+                            </div>
+                        </div>
+                    </div>
+                {/each}
             </div>
         </div>
     </section>
@@ -1130,76 +1152,115 @@
             <div class="loading-spinner">Loading orders...</div>
         {:else}
             <div class="table-card">
-                <div class="table-container">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Order #</th>
-                                <th>Date</th>
-                                <th>Customer</th>
-                                <th>Email</th>
-                                <th>Type</th>
-                                <th>Payment</th>
-                                <th>Total</th>
-                                <th>Status</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {#each orders as order (order.id)}
-                                <tr out:fade class:guest-order={order.guest_info}>
-                                    <td>{order.order_number || order.id}</td>
-                                    <td>{formatDate(order.created_at)}</td>
-                                    <td>
-                                        <div class="customer-info">
-                                            <strong>{getCustomerInfo(order).name}</strong>
-                                        </div>
-                                    </td>
-                                    <td>{getCustomerInfo(order).email}</td>
-                                    <td>
-                                        {#if order.guest_info}
-                                            <span class="badge guest">Guest</span>
-                                        {:else}
-                                            <span class="badge registered">Registered</span>
-                                        {/if}
-                                    </td>
-                                    <td>{order.payment_method || '-'}</td>
-                                    <td>R{order.total}</td>
-                                    <td>
-                                        <select 
-                                            value={order.status}
-                                            class="status-select"
-                                            class:pending={order.status === 'pending'}
-                                            class:processing={order.status === 'processing'}
-                                            class:completed={order.status === 'completed'}
-                                            class:cancelled={order.status === 'cancelled'}
-                                            on:change={(e) => handleStatusUpdate(order.id, e.currentTarget.value as OrderStatus)}
-                                        >
-                                            <option value="pending">Pending</option>
-                                            <option value="processing">Processing</option>
-                                            <option value="completed">Completed</option>
-                                            <option value="cancelled">Cancelled</option>
-                                        </select>
-                                    </td>
-                                    <td>
-                                        <button 
-                                            class="view-details-btn"
-                                            on:click={() => selectedOrder = order}
-                                        >
-                                            View Details
-                                        </button>
-                                        <button
-                                            class="delete-btn"
-                                            on:click={() => { showConfirmModal = true; orderIdToDelete = order.id; }}
-                                            style="margin-left: 0.5rem;"
-                                        >
-                                            Delete
-                                        </button>
-                                    </td>
+                <div class="table-responsive desktop-only">
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Order #</th>
+                                    <th>Date</th>
+                                    <th>Customer</th>
+                                    <th>Email</th>
+                                    <th>Type</th>
+                                    <th>Payment</th>
+                                    <th>Total</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
                                 </tr>
-                            {/each}
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody>
+                                {#each orders as order (order.id)}
+                                    <tr out:fade class:guest-order={order.guest_info}>
+                                        <td>{order.order_number || order.id}</td>
+                                        <td>{formatDate(order.created_at)}</td>
+                                        <td>
+                                            <div class="customer-info">
+                                                <strong>{getCustomerInfo(order).name}</strong>
+                                            </div>
+                                        </td>
+                                        <td>{getCustomerInfo(order).email}</td>
+                                        <td>
+                                            {#if order.guest_info}
+                                                <span class="badge guest">Guest</span>
+                                            {:else}
+                                                <span class="badge registered">Registered</span>
+                                            {/if}
+                                        </td>
+                                        <td>{order.payment_method || '-'}</td>
+                                        <td>R{order.total}</td>
+                                        <td>
+                                            <select 
+                                                value={order.status}
+                                                class="status-select"
+                                                class:pending={order.status === 'pending'}
+                                                class:processing={order.status === 'processing'}
+                                                class:completed={order.status === 'completed'}
+                                                class:cancelled={order.status === 'cancelled'}
+                                                on:change={(e) => handleStatusUpdate(order.id, e.currentTarget.value as OrderStatus)}
+                                            >
+                                                <option value="pending">Pending</option>
+                                                <option value="processing">Processing</option>
+                                                <option value="completed">Completed</option>
+                                                <option value="cancelled">Cancelled</option>
+                                            </select>
+                                        </td>
+                                        <td>
+                                            <button 
+                                                class="view-details-btn"
+                                                on:click={() => selectedOrder = order}
+                                            >
+                                                View Details
+                                            </button>
+                                            <button
+                                                class="delete-btn"
+                                                on:click={() => { showConfirmModal = true; orderIdToDelete = order.id; }}
+                                                style="margin-left: 0.5rem;"
+                                            >
+                                                Delete
+                                            </button>
+                                        </td>
+                                    </tr>
+                                {/each}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <!-- Mobile Card View -->
+                <div class="mobile-cards">
+                    {#each orders as order (order.id)}
+                        <div class="admin-card">
+                            <div class="admin-card-body">
+                                <div class="admin-card-title">Order #{order.order_number || order.id}</div>
+                                <div class="admin-card-row"><strong>Date:</strong> {formatDate(order.created_at)}</div>
+                                <div class="admin-card-row"><strong>Customer:</strong> {getCustomerInfo(order).name}</div>
+                                <div class="admin-card-row"><strong>Email:</strong> {getCustomerInfo(order).email}</div>
+                                <div class="admin-card-row"><strong>Type:</strong> {order.guest_info ? 'Guest' : 'Registered'}</div>
+                                <div class="admin-card-row"><strong>Payment:</strong> {order.payment_method || '-'}</div>
+                                <div class="admin-card-row"><strong>Total:</strong> R{order.total}</div>
+                                <div class="admin-card-row">
+                                    <strong>Status:</strong>
+                                    <select 
+                                        value={order.status}
+                                        class="status-select"
+                                        class:pending={order.status === 'pending'}
+                                        class:processing={order.status === 'processing'}
+                                        class:completed={order.status === 'completed'}
+                                        class:cancelled={order.status === 'cancelled'}
+                                        on:change={(e) => handleStatusUpdate(order.id, e.currentTarget.value as OrderStatus)}
+                                    >
+                                        <option value="pending">Pending</option>
+                                        <option value="processing">Processing</option>
+                                        <option value="completed">Completed</option>
+                                        <option value="cancelled">Cancelled</option>
+                                    </select>
+                                </div>
+                                <div class="admin-card-actions">
+                                    <button class="view-details-btn" on:click={() => selectedOrder = order}>View Details</button>
+                                    <button class="delete-btn" on:click={() => { showConfirmModal = true; orderIdToDelete = order.id; }}>Delete</button>
+                                </div>
+                            </div>
+                        </div>
+                    {/each}
                 </div>
             </div>
         {/if}
@@ -1322,7 +1383,7 @@
         background: white;
         z-index: 100;
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        margin: -2rem -2rem 2rem -2rem;
+       
         padding: 1rem 2rem;
     }
 
@@ -1810,7 +1871,7 @@
 
         .stats-card, .form-card, .table-card, .filters-card {
             margin-bottom: 1rem;
-            padding: 1rem;
+            padding: 0.5rem;
             max-height: none;
             overflow: visible;
         }
@@ -1823,11 +1884,13 @@
         }
 
         .table-responsive {
-            display: block;
             width: 100%;
             overflow-x: auto;
             -webkit-overflow-scrolling: touch;
-            -ms-overflow-style: -ms-autohiding-scrollbar;
+        }
+
+        .table-container {
+            min-width: 600px;
         }
 
         .stats-card table {
@@ -1853,17 +1916,18 @@
 
         .form-grid {
             grid-template-columns: 1fr;
-            gap: 0.75rem;
+            gap: 0.5rem;
         }
 
         input, select, textarea {
             width: 100%;
             max-width: none;
+            font-size: 1rem;
         }
 
         .filters {
             grid-template-columns: 1fr;
-            gap: 0.75rem;
+            gap: 0.5rem;
         }
 
         .action-buttons {
@@ -1874,49 +1938,19 @@
 
         .action-buttons button {
             width: 100%;
-        }
-
-        .status-select {
-            width: 100%;
-            max-width: none;
-        }
-
-        .product-thumbnail {
-            width: 40px;
-            height: 40px;
-        }
-
-        .modal-content {
-            padding: 1rem;
-            width: 95%;
-        }
-
-        .tab-button {
-            padding: 0.75rem 1rem;
-        }
-
-        .stat-card {
-            padding: 1rem;
-        }
-
-        .stat-value {
-            font-size: 1.5rem;
-        }
-
-        .customer-info {
-            flex-direction: column;
-            gap: 0.25rem;
+            font-size: 1rem;
         }
 
         .section-header {
             flex-direction: column;
-            gap: 1rem;
+            gap: 0.5rem;
             align-items: stretch;
             text-align: center;
         }
 
         .section-header button {
             width: 100%;
+            font-size: 1rem;
         }
 
         .nav-content {
@@ -2172,5 +2206,65 @@
         color: #007bff;
         min-width: 80px;
         text-align: right;
+    }
+
+    .desktop-only { display: block; }
+    .mobile-cards { display: none; }
+    @media (max-width: 768px) {
+        .desktop-only { display: none !important; }
+        .mobile-cards { display: block; }
+        .mobile-cards .admin-card {
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            margin-bottom: 1rem;
+            padding: 1rem;
+            display: flex;
+            gap: 1rem;
+            flex-direction: row;
+            align-items: flex-start;
+        }
+        .admin-card-img-wrap {
+            flex-shrink: 0;
+            width: 60px;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #f8f9fa;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .admin-card-img-wrap img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 8px;
+        }
+        .admin-card-body {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+        .admin-card-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+        }
+        .admin-card-row {
+            font-size: 0.98rem;
+            margin-bottom: 0.15rem;
+        }
+        .admin-card-actions {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 0.5rem;
+        }
+        .admin-card-actions button {
+            flex: 1;
+            font-size: 1rem;
+            padding: 0.5rem 0.75rem;
+        }
     }
 </style>

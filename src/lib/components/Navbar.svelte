@@ -119,7 +119,7 @@
   }
   
   .cart-badge {
-    position: absolute;
+    
     top: 0;
     right: 0;
     background: #dc3545;

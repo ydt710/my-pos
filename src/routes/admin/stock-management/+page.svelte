@@ -169,7 +169,7 @@
           <select id="adj-location" bind:value={adjustmentLocation}>
             <option value="">Select Location</option>
             {#each locations as l}
-              <option value={l.id}>{l.name}</option>
+              <option value={l.name}>{l.name}</option>
             {/each}
           </select>
         </div>
@@ -185,78 +185,84 @@
       </div>
     </div>
     <h2>Current Stock Levels</h2>
-    <table>
-      <thead>
-        <tr>
-          <th>Product</th>
-          {#each locations as l}
-            <th>{l.name}</th>
-          {/each}
-        </tr>
-      </thead>
-      <tbody>
-        {#each products as p}
+    <div class="table-responsive">
+      <table>
+        <thead>
           <tr>
-            <td>{p.name}</td>
+            <th>Product</th>
             {#each locations as l}
-              <td>{getStockLevel(p.id, l.id)}</td>
+              <th>{l.name}</th>
             {/each}
           </tr>
-        {/each}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {#each products as p}
+            <tr>
+              <td>{p.name}</td>
+              {#each locations as l}
+                <td>{getStockLevel(p.id, l.id)}</td>
+              {/each}
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </div>
     <h2>Pending Productions</h2>
-    <table>
-      <thead>
-        <tr>
-          <th>Date</th>
-          <th>Product</th>
-          <th>Qty</th>
-          <th>Note</th>
-          <th>Action</th>
-        </tr>
-      </thead>
-      <tbody>
-        {#each stockMovements.filter(m => m.type === 'production' && m.status === 'pending') as m}
+    <div class="table-responsive">
+      <table>
+        <thead>
           <tr>
-            <td>{new Date(m.created_at).toLocaleString()}</td>
-            <td>{products.find(p => p.id === m.product_id)?.name || m.product_id}</td>
-            <td>{m.quantity}</td>
-            <td>{m.note}</td>
-            <td><button on:click={() => handleConfirmProductionDone(m.id)}>Confirm Done</button></td>
+            <th>Date</th>
+            <th>Product</th>
+            <th>Qty</th>
+            <th>Note</th>
+            <th>Action</th>
           </tr>
-        {/each}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {#each stockMovements.filter(m => m.type === 'production' && m.status === 'pending') as m}
+            <tr>
+              <td>{new Date(m.created_at).toLocaleString()}</td>
+              <td>{products.find(p => p.id === m.product_id)?.name || m.product_id}</td>
+              <td>{m.quantity}</td>
+              <td>{m.note}</td>
+              <td><button on:click={() => handleConfirmProductionDone(m.id)}>Confirm Done</button></td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </div>
     <h2>Recent Stock Movements</h2>
-    <table>
-      <thead>
-        <tr>
-          <th>Date</th>
-          <th>Product</th>
-          <th>Type</th>
-          <th>From</th>
-          <th>To</th>
-          <th>Qty</th>
-          <th>Note</th>
-          <th>Status</th>
-        </tr>
-      </thead>
-      <tbody>
-        {#each stockMovements as m}
+    <div class="table-responsive">
+      <table>
+        <thead>
           <tr>
-            <td>{new Date(m.created_at).toLocaleString()}</td>
-            <td>{products.find(p => p.id === m.product_id)?.name || m.product_id}</td>
-            <td>{m.type}</td>
-            <td>{locations.find(l => l.id === m.from_location_id)?.name || '-'}</td>
-            <td>{locations.find(l => l.id === m.to_location_id)?.name || '-'}</td>
-            <td>{m.quantity}</td>
-            <td>{m.note}</td>
-            <td>{m.status || 'done'}</td>
+            <th>Date</th>
+            <th>Product</th>
+            <th>Type</th>
+            <th>From</th>
+            <th>To</th>
+            <th>Qty</th>
+            <th>Note</th>
+            <th>Status</th>
           </tr>
-        {/each}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {#each stockMovements as m}
+            <tr>
+              <td>{new Date(m.created_at).toLocaleString()}</td>
+              <td>{products.find(p => p.id === m.product_id)?.name || m.product_id}</td>
+              <td>{m.type}</td>
+              <td>{locations.find(l => l.id === m.from_location_id)?.name || '-'}</td>
+              <td>{locations.find(l => l.id === m.to_location_id)?.name || '-'}</td>
+              <td>{m.quantity}</td>
+              <td>{m.note}</td>
+              <td>{m.status || 'done'}</td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </div>
   {/if}
 </div>
 
@@ -338,6 +344,29 @@
     }
     .form-section {
       min-width: 0;
+      width: 100%;
+      padding: 0.5rem;
+    }
+    .admin-stock-management {
+      padding: 0.5rem;
+    }
+    .table-responsive {
+      width: 100%;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      margin-bottom: 1rem;
+    }
+    table {
+      min-width: 600px;
+      font-size: 0.95rem;
+    }
+    th, td {
+      padding: 0.4rem;
+    }
+    button {
+      width: 100%;
+      font-size: 1rem;
+      padding: 0.5rem 0.75rem;
     }
   }
 </style> 

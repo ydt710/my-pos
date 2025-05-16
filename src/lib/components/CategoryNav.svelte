@@ -64,13 +64,15 @@
   class="category-nav"
 >
   {#if backgroundUrl}
-    <div class="category-nav-bg" key={backgroundUrl} in:slide={{ duration: 600 }} out:fade={{ duration: 400 }} style="background-image: url('{backgroundUrl}');"></div>
+    <div class="category-nav-bg" in:slide={{ duration: 600 }} out:fade={{ duration: 400 }} style="background-image: url('{backgroundUrl}');"></div>
   {/if}
   <div class="nav-top-bar">
     <div class="nav-actions nav-left">
       <!-- Empty for spacing, or add left-side actions here if needed -->
     </div>
-    <img class="logo" src={logoUrl} alt="Logo" on:click={onLogoClick} style="cursor:pointer;" />
+    <button class="logo-btn" on:click={onLogoClick} aria-label="Home" tabindex="0" on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { onLogoClick(); } }}>
+      <img class="logo" src={logoUrl} alt="Logo" />
+    </button>
     <div class="nav-actions nav-right">
       <button class="cart-btn" on:click={onCartToggle} aria-label="Open cart" class:cart-animate={isCartAnimating}>
         <i class="fa-solid fa-shopping-cart"></i>
@@ -134,7 +136,7 @@
     height: 48px;
     width: auto;
     display: block;
-    position: absolute;
+    
     left: 50%;
     transform: translateX(-50%);
     z-index: 1;
@@ -247,8 +249,6 @@
     transition: color 0.2s ease;
   }
 
-
-
   @media (max-width: 768px) {
     .category-nav {
       flex-wrap: wrap;
@@ -360,5 +360,17 @@
   }
   .spin {
     animation: spin 0.7s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .logo-btn {
+    background: none;
+    border: none;
+    padding: 0;
+    margin: 0;
+    display: block;
+    cursor: pointer;
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1;
   }
 </style> 

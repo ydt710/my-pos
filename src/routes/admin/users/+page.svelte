@@ -229,56 +229,58 @@
     <div class="no-users">No users found</div>
   {:else}
     <div class="users-table-container">
-      <table class="users-table">
-        <thead>
-          <tr>
-            <th>Email</th>
-            <th>Name</th>
-            <th>Joined</th>
-            <th>Role</th>
-            <th>POS User</th>
-            <th>Balance</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each users as user (user.id)}
-            {@const balance = userBalances?.[user.id]}
+      <div class="table-responsive">
+        <table class="users-table">
+          <thead>
             <tr>
-              <td>{user.email}</td>
-              <td>{user.user_metadata?.name || '-'}</td>
-              <td>{formatDate(user.created_at)}</td>
-              <td>
-                <span class="role-badge" class:admin={user.is_admin}>
-                  {user.is_admin ? 'Admin' : 'User'}
-                </span>
-              </td>
-              <td>{user.role === 'pos' ? 'Yes' : 'No'}</td>
-              <td>
-                {#if typeof balance !== 'number'}
-                  <span style="color: #666;">Loading...</span>
-                {:else if balance < 0}
-                  <span style="color: #dc3545;">Debt: R{Math.abs(balance).toFixed(2)}</span>
-                {:else if balance > 0}
-                  <span style="color: #28a745;">Credit: R{balance.toFixed(2)}</span>
-                {:else}
-                  <span>R0.00</span>
-                {/if}
-                <button class="ledger-btn" on:click={() => openLedgerModal(user)} title="View Ledger">📄</button>
-              </td>
-              <td>
-                <button 
-                  class="delete-user-btn"
-                  on:click={() => confirmDeleteUser(user)}
-                  aria-label="Delete user {user.email}"
-                >
-                  Delete
-                </button>
-              </td>
+              <th>Email</th>
+              <th>Name</th>
+              <th>Joined</th>
+              <th>Role</th>
+              <th>POS User</th>
+              <th>Balance</th>
+              <th>Actions</th>
             </tr>
-          {/each}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {#each users as user (user.id)}
+              {@const balance = userBalances?.[user.id]}
+              <tr>
+                <td>{user.email}</td>
+                <td>{user.user_metadata?.name || '-'}</td>
+                <td>{formatDate(user.created_at)}</td>
+                <td>
+                  <span class="role-badge" class:admin={user.is_admin}>
+                    {user.is_admin ? 'Admin' : 'User'}
+                  </span>
+                </td>
+                <td>{user.role === 'pos' ? 'Yes' : 'No'}</td>
+                <td>
+                  {#if typeof balance !== 'number'}
+                    <span style="color: #666;">Loading...</span>
+                  {:else if balance < 0}
+                    <span style="color: #dc3545;">Debt: R{Math.abs(balance).toFixed(2)}</span>
+                  {:else if balance > 0}
+                    <span style="color: #28a745;">Credit: R{balance.toFixed(2)}</span>
+                  {:else}
+                    <span>R0.00</span>
+                  {/if}
+                  <button class="ledger-btn" on:click={() => openLedgerModal(user)} title="View Ledger">📄</button>
+                </td>
+                <td>
+                  <button 
+                    class="delete-user-btn"
+                    on:click={() => confirmDeleteUser(user)}
+                    aria-label="Delete user {user.email}"
+                  >
+                    Delete
+                  </button>
+                </td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
     </div>
   {/if}
 
@@ -391,6 +393,13 @@
     overflow: hidden;
   }
 
+  .table-responsive {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    margin-bottom: 1rem;
+  }
+
   .users-table {
     width: 100%;
     border-collapse: collapse;
@@ -459,14 +468,24 @@
       margin: 0 -1rem;
       border-radius: 0;
     }
-
+    .table-responsive {
+      width: 100%;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      margin-bottom: 1rem;
+    }
+    .users-table {
+      min-width: 700px;
+      font-size: 0.95rem;
+    }
     .users-table th,
     .users-table td {
-      padding: 0.75rem;
+      padding: 0.5rem;
     }
-
-    .role-toggle-btn {
-      padding: 0.375rem 0.75rem;
+    .role-toggle-btn, .delete-user-btn {
+      padding: 0.5rem 0.75rem;
+      font-size: 1rem;
+      width: 100%;
     }
   }
 
