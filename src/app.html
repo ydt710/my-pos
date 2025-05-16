@@ -8,6 +8,25 @@
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">
+		<video id="site-bg-video" autoplay loop muted playsinline poster="" style="position:fixed;top:0;left:0;width:100vw;height:100vh;object-fit:cover;z-index:-1;pointer-events:none;">
+			<source src="https://wglybohfygczpapjxwwz.supabase.co/storage/v1/object/public/route420//wallpaper.mp4" type="video/mp4" />
+		</video>
 		<div style="display: contents">%sveltekit.body%</div>
+		<style>
+			#site-bg-video {
+				position: fixed;
+				top: 0;
+				left: 0;
+				width: 100vw;
+				height: 100vh;
+				object-fit: cover;
+				z-index: -1;
+				pointer-events: none;
+			}
+			#svelte, body, html {
+				position: relative;
+				z-index: 1;
+			}
+		</style>
 	</body>
 </html>

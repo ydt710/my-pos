@@ -25,6 +25,9 @@
   let cashGiven: number | '' = '';
   let posUserBalance: number | null = null;
   let selectedCustomer: PosUser = null;
+  const FLOAT_USER_ID = '27cfee48-5b04-4ee1-885f-b3ef31417099'; // Float user for guest POS payments
+  const FLOAT_USER_EMAIL = 'float@pos.local';
+  let extraCashOption = 'change'; // default
   
   // Check if user is logged in
   onMount(async () => {
@@ -62,6 +65,12 @@
     const posUser = get(selectedPosUser);
     if (posUser && posUser.id) {
       posUserBalance = await getUserBalance(posUser.id);
+    }
+
+    // Clear float user if selected (e.g. from localStorage)
+    const currentSelected = get(selectedPosUser);
+    if (currentSelected && (currentSelected.id === FLOAT_USER_ID || currentSelected.email === FLOAT_USER_EMAIL)) {
+      selectedPosUser.set(null);
     }
   });
   
@@ -111,8 +120,8 @@
       return;
     }
 
-    // If POS, require cashGiven
-    if (!isGuest && posUser && posUser.id) {
+    // Only require cashGiven for POS users
+    if (isPosUser && posUser && posUser.id) {
       if (cashGiven === '' || isNaN(Number(cashGiven))) {
         error = 'Please enter the cash given by the customer.';
         return;
@@ -130,21 +139,36 @@
     let paymentAmount = 0;
     let paymentUserId = null;
     let overpayment = 0;
+    let currentUserDebt = 0;
     if (!isGuest && posUser && posUser.id) {
+      // Fetch current user debt from ledger
+      currentUserDebt = await getUserBalance(posUser.id);
+      if (currentUserDebt > 0) currentUserDebt = 0; // Only consider negative (debt)
+      const totalDue = total + Math.abs(currentUserDebt);
       const cash = Number(cashGiven) || 0;
-      paymentAmount = Math.min(cash, total); // Only pay up to the order total
-      overpayment = Math.max(0, cash - total); // Any extra is credit
-      debt = total - paymentAmount;
+      paymentAmount = Math.min(cash, totalDue); // Only pay up to the total due (order + debt)
+      overpayment = Math.max(0, cash - totalDue); // Only extra after all debt/order is paid
+      debt = totalDue - Math.min(cash, totalDue);
       paymentUserId = posUser.id;
     }
 
     // Enforce: Cannot track debt for guest orders (no selected customer) only in POS mode
     if (isPosUser && useGuest && Number(cashGiven) < total) {
       error = 'Cannot track debt for guest orders. Please select or create a customer account.';
+      loading = false;
       return;
     }
 
     try {
+      const cash = Number(cashGiven) || 0;
+      // For guests, change is cash - total; for users, change/credit is only if cash > totalDue
+      let change = 0;
+      if (!isGuest && posUser && posUser.id) {
+        const totalDue = total + Math.abs(currentUserDebt);
+        change = extraCashOption === 'change' ? Math.max(0, cash - totalDue) : 0;
+      } else {
+        change = Math.max(0, cash - total);
+      }
       const result = await createOrder(
         total,
         $cartStore,
@@ -159,12 +183,24 @@
           : undefined,
         (!isGuest && posUser && posUser.id) ? posUser.id : undefined,
         paymentMethod,
-        debt
+        debt,
+        cash,
+        change
       );
 
       if (result.success) {
+        // Always log the payment amount (even if partial or exact)
+        if (!isGuest && posUser && posUser.id && paymentAmount > 0) {
+          await logPaymentToLedger(posUser.id, paymentAmount, result.orderId, 'Order payment at POS', paymentMethod);
+        }
+        // Log guest payments to float user if no customer is selected
+        if ((!selectedCustomer || !selectedCustomer.id) && Number(cashGiven) > 0) {
+          const cashInAmount = Math.min(Number(cashGiven), total);
+          console.log('Logging guest payment to float user:', FLOAT_USER_ID, cashInAmount);
+          await logPaymentToLedger(FLOAT_USER_ID, cashInAmount, result.orderId, 'Guest payment (float)', paymentMethod);
+        }
         // If there is overpayment, log it as credit (not tied to order)
-        if (!isGuest && posUser && posUser.id && overpayment > 0) {
+        if (!isGuest && posUser && posUser.id && overpayment > 0 && extraCashOption === 'credit') {
           await logPaymentToLedger(posUser.id, overpayment, undefined, 'Overpayment credit at POS', paymentMethod);
         }
         // Update order status to completed if POS user
@@ -181,7 +217,7 @@
           posUserBalance = await getUserBalance(posUser.id);
         }
         success = '🎉 Order placed successfully! Thank you for your purchase.';
-        if (overpayment > 0) {
+        if (overpayment > 0 && extraCashOption === 'credit') {
           success += ` (R${overpayment.toFixed(2)} credited to account)`;
         }
         if (isGuest) {
@@ -244,6 +280,9 @@
       }
     }
   }
+
+  $: orderTotal = cartStore.getTotal($cartStore);
+  $: floatChange = !isGuest && cashGiven !== '' ? Number(cashGiven) - orderTotal : 0;
 </script>
 
 <div class="checkout-container">
@@ -378,13 +417,13 @@
         <h3>Order Summary</h3>
         <div class="summary-row">
           <span>Subtotal:</span>
-          <span>R{cartStore.getTotal($cartStore)}</span>
+          <span>R{orderTotal}</span>
         </div>
         <div class="summary-row">
           <span>Items:</span>
           <span>{cartStore.getItemCount($cartStore)}</span>
         </div>
-        {#if !isGuest}
+        {#if isPosUser}
           {#if selectedCustomer && selectedCustomer.id}
             <div class="selected-customer-info">
               <strong>Selected Customer:</strong><br>
@@ -401,8 +440,6 @@
               <strong>No customer selected.</strong> Please select a customer in the cart sidebar.
             </div>
           {/if}
-        {/if}
-        {#if !isGuest}
           <div class="form-group">
             <label for="cash-given">Cash Given</label>
             <input
@@ -414,6 +451,25 @@
               placeholder="Enter cash given by customer"
               required
             />
+          </div>
+          {#if Number(cashGiven) > orderTotal && selectedCustomer && selectedCustomer.id}
+            <div class="form-group">
+              <label>Extra Cash Handling:</label>
+              <label>
+                <input type="radio" bind:group={extraCashOption} value="change" checked>
+                Give Change (return R{(Number(cashGiven) - orderTotal).toFixed(2)})
+              </label>
+              <label>
+                <input type="radio" bind:group={extraCashOption} value="credit">
+                Credit Extra (add R{(Number(cashGiven) - orderTotal).toFixed(2)} to account)
+              </label>
+            </div>
+          {/if}
+          <div class="summary-row">
+            <span>{floatChange < 0 ? 'Balance Due:' : 'Change to Give:'}</span>
+            <span style="color: {floatChange < 0 ? '#dc3545' : floatChange > 0 ? '#28a745' : '#666'};">
+              R{Math.abs(floatChange).toFixed(2)}
+            </span>
           </div>
           <div class="summary-row">
             <span>Balance:</span>

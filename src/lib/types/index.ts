@@ -6,6 +6,10 @@ export interface Product {
   image_url: string;
   category: string;
   description?: string;
+  thc_min?: number;
+  thc_max?: number;
+  cbd_min?: number;
+  cbd_max?: number;
 }
 
 export interface CartItem extends Product {
@@ -73,6 +77,4 @@ export interface User {
 }
 
 export * from './orders';
-export * from './ledger';
-
-export type { User, GuestInfo }; 
+export * from './ledger'; 

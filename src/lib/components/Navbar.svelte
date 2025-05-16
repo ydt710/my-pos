@@ -73,59 +73,7 @@
 </div>
 
 <style>
-  .navbar {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    background: #333;
-    background-position: center;
-    background-size: cover;
-    color: white;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 1rem 2rem;
-    z-index: 10;
-  }
 
-  .navbar::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(51, 51, 51, 0.85);
-    z-index: -1;
-  }
-
-  .navbar .left {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: flex-start;
-  }
-
-  .navbar .center {
-    position: absolute;
-    left: 50%;
-    transform: translateX(-50%);
-    height: 100%;
-    display: flex;
-    align-items: center;
-    z-index: 2;
-    overflow: visible;
-  }
-
-  .navbar .right {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 0.5rem;
-    z-index: 2;
-  }
 
   .logo {
     width: 95%;

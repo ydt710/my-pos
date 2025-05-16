@@ -21,7 +21,9 @@ export async function createOrder(
   guestInfo?: GuestInfo,
   userIdOverride?: string,
   paymentMethod: string = 'cash',
-  debt: number = 0
+  debt: number = 0,
+  cashGiven: number = 0,
+  changeGiven: number = 0
 ): Promise<{ success: boolean; error: string | null; orderId?: string }> {
   try {
     // Validate items before proceeding
@@ -66,7 +68,9 @@ export async function createOrder(
         updated_at: orderTimestamp.toISOString(),
         order_number: orderNumber,
         payment_method: paymentMethod,
-        debt: debt
+        debt: debt,
+        cash_given: cashGiven,
+        change_given: changeGiven
       })
       .select()
       .single();
@@ -177,19 +181,6 @@ export async function createOrder(
         amount: -total, // negative for full order total
         order_id: order.id,
         note: 'Order placed'
-      });
-    }
-
-    // If any payment is made at checkout, insert a payment ledger entry
-    const amountPaid = total - (debt || 0);
-    if (userId && amountPaid > 0) {
-      await supabase.from('credit_ledger').insert({
-        user_id: userId,
-        type: 'payment',
-        amount: amountPaid, // positive for payment
-        order_id: order.id,
-        note: 'Payment at checkout',
-        method: paymentMethod || null
       });
     }
 

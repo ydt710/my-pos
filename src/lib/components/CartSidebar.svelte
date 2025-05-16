@@ -6,6 +6,7 @@
   import { supabase } from '$lib/supabase';
   import { fade } from 'svelte/transition';
   import { getUserBalance } from '$lib/services/orderService';
+  import { get } from 'svelte/store';
   
   export let visible = false;
   export let toggleVisibility: () => void;
@@ -26,6 +27,15 @@
   let addAccountLoading = false;
   let selectedUserBalance: number | null = null;
   
+  const FLOAT_USER_ID = '27cfee48-5b04-4ee1-885f-b3ef31417099';
+  const FLOAT_USER_EMAIL = 'float@pos.local';
+  
+  // Clear float user if selected (e.g. from localStorage)
+  const currentSelected = get(selectedPosUser);
+  if (currentSelected && (currentSelected.id === FLOAT_USER_ID || currentSelected.email === FLOAT_USER_EMAIL)) {
+    selectedPosUser.set(null);
+  }
+  
   async function searchUsers() {
     if (userSearch.length < 2) {
       userResults = [];
@@ -37,7 +47,7 @@
       .select('id, display_name, email')
       .or(`display_name.ilike.%${userSearch}%,email.ilike.%${userSearch}%`)
       .limit(10);
-    userResults = data || [];
+    userResults = (data || []).filter(user => user.id !== FLOAT_USER_ID && user.email !== FLOAT_USER_EMAIL);
     userLoading = false;
   }
   

@@ -16,6 +16,7 @@
   let loadingLedger = false;
   let ledgerError: string | null = null;
   let userBalance: number | null = null;
+  const FLOAT_USER_ID = '27cfee48-5b04-4ee1-885f-b3ef31417099';
 
   function formatDate(dateString: string) {
     return new Date(dateString).toLocaleString();
@@ -99,6 +100,17 @@
 
   async function fetchUserBalance(userId: string) {
     userBalance = await getUserBalance(userId);
+  }
+
+  // Helper to get cash given and change for this order
+  function getCashGivenAndChange(order: Order, ledgerEntries: CreditLedgerEntry[]): { cashGiven: number; changeGiven: number } {
+    // Find the payment ledger entry for this order (float user or real user)
+    const paymentEntry = ledgerEntries.find((e: CreditLedgerEntry) => e.type === 'payment' && e.order_id === order.id && e.amount > 0);
+    if (!paymentEntry) return { cashGiven: 0, changeGiven: 0 };
+    // If cash given was more than order total, change = cashGiven - order.total
+    const cashGiven = paymentEntry.amount;
+    const changeGiven = Math.max(0, cashGiven - order.total);
+    return { cashGiven, changeGiven };
   }
 </script>
 
@@ -243,6 +255,14 @@
                   <td>{formatCurrency(ledgerEntries.filter(e => e.type === 'payment' && e.amount > 0 && e.method === method).reduce((sum, e) => sum + e.amount, 0))}</td>
                 </tr>
               {/each}
+              <tr>
+                <td>Cash Given</td>
+                <td>{formatCurrency(order.cash_given || 0)}</td>
+              </tr>
+              <tr>
+                <td>Change Given</td>
+                <td>{formatCurrency(order.change_given || 0)}</td>
+              </tr>
               <tr>
                 <td>Credit Used</td>
                 <td>{formatCurrency(ledgerEntries.filter(e => e.type === 'payment' && e.amount < 0).reduce((sum, e) => sum + e.amount, 0))}</td>

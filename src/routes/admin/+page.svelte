@@ -5,7 +5,7 @@
     import type { Product } from '$lib/types';
     import type { Order, OrderStatus, OrderFilters } from '$lib/types/orders';
     import { makeUserAdmin as userServiceMakeUserAdmin } from '$lib/services/userService';
-    import { getAllOrders, updateOrderStatus, getTopBuyingUsers, getUsersWithMostDebt, getAllUserBalances } from '$lib/services/orderService';
+    import { getAllOrders, updateOrderStatus, getTopBuyingUsers, getUsersWithMostDebt, getAllUserBalances, logPaymentToLedger } from '$lib/services/orderService';
     import { fade, slide } from 'svelte/transition';
     import OrderDetailsModal from '$lib/components/OrderDetailsModal.svelte';
     import { showSnackbar } from '$lib/stores/snackbarStore';
@@ -40,7 +40,9 @@
       totalOrders: 0,
       totalRevenue: 0,
       topProducts: [] as { name: string; quantity: number; revenue: number }[],
-      recentOrders: [] as any[]
+      recentOrders: [] as any[],
+      cashToCollect: 0,
+      cashCollected: 0
     };
     let menuVisible = false;
     let cartVisible = false;
@@ -100,6 +102,8 @@
   
     let topBuyers: { user_id: string; name?: string; email?: string; total: number }[] = [];
     let mostDebtUsers: { user_id: string; name?: string; email?: string; balance: number }[] = [];
+  
+    const FLOAT_USER_ID = '27cfee48-5b04-4ee1-885f-b3ef31417099';
   
     function scrollToSection(sectionId: string) {
         const element = document.getElementById(sectionId);
@@ -432,6 +436,22 @@
           }))
         });
 
+        // --- NEW: Cash to Collect (pending cash orders) ---
+        const pendingCashOrders = (ordersData || []).filter(order =>
+          !order.deleted_at &&
+          order.status === 'pending' &&
+          order.payment_method === 'cash'
+        );
+        stats.cashToCollect = pendingCashOrders.reduce((sum, order) => sum + (order.total || 0), 0);
+
+        // --- NEW: Cash Collected (completed cash orders) ---
+        const completedCashOrders = (ordersData || []).filter(order =>
+          !order.deleted_at &&
+          order.status === 'completed' &&
+          order.payment_method === 'cash'
+        );
+        stats.cashCollected = completedCashOrders.reduce((sum, order) => sum + (order.total || 0), 0);
+
         // --- LEDGER-BASED CASH IN & DEBT CALCULATION ---
         const now = new Date();
         const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -480,6 +500,7 @@
           let sum = 0;
           for (const order of orders) {
             if ((order as any).deleted_at || order.status !== 'completed') continue;
+            if (!order.user_id) continue; // Only include registered users
             if (startDate && new Date(order.created_at) < startDate) continue;
             const ledgerEntries: any[] = orderLedgerMap.get(order.id) || [];
             const orderTotal = order.total || 0;
@@ -567,10 +588,31 @@
     async function handleStatusUpdate(orderId: string, newStatus: OrderStatus) {
       const { success, error } = await updateOrderStatus(orderId, newStatus);
       if (success) {
+        // Find the order in the orders array
+        const order = orders.find(o => o.id === orderId);
+        // If marking as completed, payment method is cash, and no payment logged yet
+        if (order && newStatus === 'completed' && order.payment_method === 'cash') {
+          // Check if a payment already exists in the ledger for this order
+          const { data: ledgerPayments } = await supabase
+            .from('credit_ledger')
+            .select('id')
+            .eq('order_id', orderId)
+            .eq('type', 'payment');
+          if (!ledgerPayments || ledgerPayments.length === 0) {
+            if (order.user_id) {
+              await logPaymentToLedger(order.user_id, order.total, orderId, 'Cash payment on completion (admin)', 'cash');
+            } else {
+              // Guest order: log to float user
+              await logPaymentToLedger(FLOAT_USER_ID, order.total, orderId, 'Guest cash payment on completion (admin)', 'cash');
+            }
+          }
+        }
         await loadOrders(); // Refresh the list
         if (selectedOrder?.id === orderId) {
           selectedOrder.status = newStatus; // Update modal if open
         }
+        // Refresh stats to update cashIn
+        await fetchStats();
       } else {
         orderError = error;
       }
@@ -748,6 +790,14 @@
             <div class="stat-card">
                 <h3>Total Revenue</h3>
                 <p class="stat-value">R{stats.totalRevenue.toFixed(2)}</p>
+            </div>
+            <div class="stat-card">
+                <h3>Cash to Collect</h3>
+                <p class="stat-value">R{stats.cashToCollect.toFixed(2)}</p>
+            </div>
+            <div class="stat-card">
+                <h3>Cash Collected</h3>
+                <p class="stat-value">R{stats.cashCollected.toFixed(2)}</p>
             </div>
             <div class="stat-card">
                 <h3>Cash In</h3>
