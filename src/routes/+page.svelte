@@ -39,7 +39,7 @@
     concentrate: "https://bulkweedinbox.cc/wp-content/uploads/2024/12/Greasy-Pink.jpg",
     joints: "https://mjbizdaily.com/wp-content/uploads/2024/08/Pre-rolls_-joints-_2_.webp",
     edibles: "https://longislandinterventions.com/wp-content/uploads/2024/12/Edibles-1.jpg",
-    headshop: "https://scontent-cpt1-1.xx.fbcdn.net/o1/v/t0/f2/m340/AQPj8Bq_c4ryslRUrsHogNyVhUB0P3u-QvEcBVqxX1gm4x3Pl79saDgD6pFFgnbL-2odl05H2m5pKxA2ICjkwDvnn4VkJCENroagblYGDzACwfkDLpBL0G4UxELtmNSdEJrinjqRhkq1_e9OCg61fxmYRi1J.jpeg?stp=s1440x1440&_nc_ht=scontent-cpt1-1.xx.fbcdn.net&_nc_gid=v1xCydgW1HyQZLKYNPu-ow&_nc_cat=104&_nc_oc=AdlMRe2Do3fcaLUxZnOCxnuxSXJy4cG0rsRvhLmr7gLn7Jj6X_nO1xGF1e2HRndBn_s&ccb=9-4&oh=00_AfKScf8bzrOODl_mCgnGqjwK_IiPNqFbWPcZ9TKLOwKkrQ&oe=6828D083&_nc_sid=5b3566"
+    headshop: "https://wglybohfygczpapjxwwz.supabase.co/storage/v1/object/public/route420//bongs.webp"
   };
 
   // Icon mapping for categories
