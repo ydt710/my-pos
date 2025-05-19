@@ -217,8 +217,10 @@
 }
 .card-product__body-container {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
+  column-gap: 0.3rem;
+
 }
 .card-product__image {
   margin-bottom: 1rem;

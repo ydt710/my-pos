@@ -194,8 +194,7 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.75rem;
-    padding: 1.25rem;
+    
     border: 2px solid transparent;
     border-radius: 12px;
     cursor: pointer;
