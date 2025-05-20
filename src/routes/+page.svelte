@@ -406,7 +406,7 @@
   /* Category section with background image and overlay */
   .category-section {
     position: relative;
-    padding: 2rem 0;
+    padding: 0.5rem 0;
     border-radius: 16px;
     overflow: hidden;
   }

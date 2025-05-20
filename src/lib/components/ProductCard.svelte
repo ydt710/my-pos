@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { fade } from 'svelte/transition';
   import type { Product } from '$lib/types';
   import { cartStore, cartNotification, isPosOrAdmin } from '$lib/stores/cartStore';
   import { supabase } from '$lib/supabase';
@@ -322,7 +323,20 @@
             </div>
           </div>
           <div class="product__cannabis-potency">
-            <h4 class="product__cannabis-potency-title">THC</h4>
+            <h4 class="product__cannabis-potency-title">
+              THC
+              <span class="product__cannabis-potency-unit">
+                {#if (product as any).thc_min !== undefined && (product as any).thc_max !== undefined && (product as any).thc_min !== (product as any).thc_max}
+                  {Math.round((product as any).thc_min * 0.1 * 100) / 100}% - {Math.round((product as any).thc_max * 0.1 * 100) / 100}%
+                {:else if (product as any).thc_max !== undefined}
+                  {Math.round((product as any).thc_max * 0.1 * 100) / 100}%
+                {:else if (product as any).thc_min !== undefined}
+                  {Math.round((product as any).thc_min * 0.1 * 100) / 100}%
+                {:else}
+                  0%
+                {/if}
+              </span>
+            </h4>
             <div class="product__cannabis-potency-bar">
               {#each Array(5) as _, i}
                 <div
@@ -331,10 +345,22 @@
                 ></div>
               {/each}
             </div>
-            <span class="product__cannabis-potency-unit">{(product as any).thc_min ?? 0}-{(product as any).thc_max ?? 0} mg/g</span>
           </div>
           <div class="product__cannabis-potency">
-            <h4 class="product__cannabis-potency-title">CBD</h4>
+            <h4 class="product__cannabis-potency-title">
+              CBD
+              <span class="product__cannabis-potency-unit">
+                {#if (product as any).cbd_min !== undefined && (product as any).cbd_max !== undefined && (product as any).cbd_min !== (product as any).cbd_max}
+                  {Math.round((product as any).cbd_min * 0.1 * 100) / 100}% - {Math.round((product as any).cbd_max * 0.1 * 100) / 100}%
+                {:else if (product as any).cbd_max !== undefined}
+                  {Math.round((product as any).cbd_max * 0.1 * 100) / 100}%
+                {:else if (product as any).cbd_min !== undefined}
+                  {Math.round((product as any).cbd_min * 0.1 * 100) / 100}%
+                {:else}
+                  0%
+                {/if}
+              </span>
+            </h4>
             <div class="product__cannabis-potency-bar">
               {#each Array(5) as _, i}
                 <div
@@ -343,7 +369,6 @@
                 ></div>
               {/each}
             </div>
-            <span class="product__cannabis-potency-unit">{(product as any).cbd_min ?? 0}-{(product as any).cbd_max ?? 0} mg/g</span>
           </div>
           <div class="stock-status" 
             class:out-of-stock={displayStock <= 0} 
@@ -668,7 +693,7 @@
 
 .product__cannabis-potency-unit {
   font-size: 0.85rem;
-  color: #555;
+  color: #fff;
 }
 
 .stock-status {
@@ -848,6 +873,10 @@
   
   .card-product__image {
     margin-bottom: 0.5rem;
+  }
+
+  .card-product__image img {
+    height: 152px;
   }
 
   .card-product__details {
