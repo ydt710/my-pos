@@ -250,7 +250,7 @@
 {/if}
 
 <!-- Main Content Area -->
-<main class="products-container" on:touchstart|preventDefault on:touchmove|preventDefault>
+<main class="products-container">
   {#if loading && currentPage === 1}
     <div class="loading-container">
       <LoadingSpinner size="60px" />
@@ -335,6 +335,8 @@
     position: relative;
     z-index: 1;
     padding-top: 20px;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
   }
 
   .welcome-section {
