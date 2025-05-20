@@ -55,6 +55,13 @@
     <div class="nav-links" class:open={menuOpen}>
       <button 
         class="nav-link" 
+        class:active={$page.url.pathname === '/'}
+        on:click={() => { menuOpen = false; goto('/'); }}
+      >
+        Home
+      </button>
+      <button 
+        class="nav-link" 
         class:active={$page.url.pathname === '/admin'}
         on:click={() => { menuOpen = false; goto('/admin'); }}
       >

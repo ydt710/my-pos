@@ -287,9 +287,8 @@
   class="card-product__container" 
   bind:this={cardElement} 
   style="background-image: url('{product.image_url}'); background-size: cover; background-position: center; position: relative;" 
-  role="button" 
-  tabindex="0"
-  on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { handleCardClick(e); } }}
+  role="article"
+  aria-label="Product card for {product.name}"
 >
   <div class="card-product__body">
     <div class="card-product__body-container cannabis-product">
@@ -298,16 +297,34 @@
         <span class="product__price">R{product.price}</span>
       </div>
       <div class="product__details-row">
-        <div 
+        <button 
           class="card-product__image" 
-          on:click={handleCardClick} 
-          role="button" 
-          tabindex="0" 
-          on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { handleCardClick(e); } }}
+          on:click={handleCardClick}
+          on:keydown={e => e.key === 'Enter' && handleCardClick(e)}
           aria-label="View product details"
         >
-          <img src={product.image_url} alt={product.name} />
-        </div>
+          <div class="card-product__image">
+            <img 
+              src={product.image_url + '?width=300&quality=75'} 
+              srcset="
+                {product.image_url}?width=300&quality=75 300w,
+                {product.image_url}?width=400&quality=75 400w,
+                {product.image_url}?width=500&quality=75 500w
+              "
+              sizes="
+                (max-width: 480px) 300px,
+                (max-width: 768px) 400px,
+                500px
+              "
+              alt={product.name}
+              loading="lazy"
+              decoding="async"
+              width="300"
+              height="400"
+              style="aspect-ratio: 3/4;"
+            />
+          </div>
+        </button>
         <div class="card-product__details product__details product__details--cannabis">
           <div class="product__strain-type">
             <div class="strain-type__labels">
@@ -409,9 +426,9 @@
           </div>
           <button 
             class="add-to-cart-btn" 
-            on:click|stopPropagation={handleAddToCart} 
+            on:click|stopPropagation={handleAddToCart}
             disabled={loading || displayStock <= 0}
-            aria-label={`Add ${product.name} to cart`}
+            aria-label="Add {product.name} to cart"
           >
             {#if loading}
               <span class="loading-spinner" aria-hidden="true"></span>
@@ -438,12 +455,10 @@
               <span>Add to Cart</span>
             {/if}
           </button>
-          <div 
+          <button 
             class="product__rating" 
-            role="button" 
-            tabindex="0"
             on:click={() => showReviewModal = true}
-            on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { showReviewModal = true; } }}
+            on:keydown={e => e.key === 'Enter' && (showReviewModal = true)}
             aria-label="View product reviews"
           >
             <div class="stars" aria-hidden="true">
@@ -465,7 +480,7 @@
             <span class="rating-count" aria-label="{product.review_count ?? 0} reviews">
               ({product.review_count ?? 0})
             </span>
-          </div>
+          </button>
         </div>
       </div>
     </div>
@@ -535,21 +550,22 @@
 
 <style>
 .card-product__container {
-  border-radius: 16px;
+  border-radius: 12px;
   box-shadow: 0 4px 12px rgba(0,0,0,0.08);
   overflow: hidden;
   width: 100%;
-  max-width: 340px;
+  max-width: 280px;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
   position: relative;
   transition: transform 0.3s ease, box-shadow 0.3s ease;
+  cursor: pointer;
 }
 
-.card-product__container.added-to-cart {
-  transform: scale(1.02);
-  box-shadow: 0 8px 24px rgba(33, 150, 243, 0.2);
+.card-product__container:focus-visible {
+  outline: 2px solid #2196f3;
+  outline-offset: 2px;
 }
 
 .card-product__body,
@@ -575,7 +591,7 @@
 }
 
 .card-product__body {
-  padding: 0 1rem 1rem 1rem;
+  padding: 0 0.75rem 0.75rem 0.75rem;
 }
 
 .card-product__body-container {
@@ -586,9 +602,9 @@
 }
 
 .card-product__title {
-  font-size: 1.9rem;
+  font-size: 1.4rem;
   font-weight: 600;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.35rem;
   text-align: center;
   width: 100%;
   white-space: normal;
@@ -596,7 +612,7 @@
   overflow-wrap: break-word;
   hyphens: auto;
   line-height: 1.2;
-  padding: 0 0.5rem;
+  padding: 0 0.35rem;
   color: #ffffff;
 }
 
@@ -619,11 +635,14 @@
 .card-product__image {
   margin-bottom: 0;
   position: relative;
-  flex: 0 0 120px;
+  flex: 0 0 100px;
   display: flex;
   justify-content: center;
   cursor: pointer;
   transition: transform 0.2s ease;
+  background: none;
+  border: none;
+  padding: 0;
 }
 
 .card-product__image:hover {
@@ -636,11 +655,10 @@
 }
 
 .card-product__image img {
-  width: 120px;
-  height: 285px;
+  width: 100px;
+  height: 240px;
   object-fit: cover;
   border-radius: 3%;
-  
   border: 1px solid #eee;
 }
 
@@ -655,22 +673,21 @@
 
 .product__price {
   color: #ffffff;
-  font-size: 1.2rem;
+  font-size: 1.1rem;
   font-weight: 700;
-  
 }
 
 .product__cannabis-potency {
-  margin-bottom: 0.35rem;
+  margin-bottom: 0.25rem;
   width: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.15rem;
+  gap: 0.1rem;
 }
 
 .product__cannabis-potency-title {
-  font-size: 0.9rem;
+  font-size: 0.8rem;
   font-weight: 600;
   margin: 0;
   padding: 0;
@@ -680,27 +697,27 @@
 .product__cannabis-potency-bar {
   display: flex;
   gap: 0.1rem;
-  margin: 0.15rem 0;
+  margin: 0.1rem 0;
   justify-content: center;
 }
 
 .product__cannabis-potency-value {
-  width: 20px;
-  height: 7px;
-  border-radius: 3px;
+  width: 16px;
+  height: 6px;
+  border-radius: 2px;
   background: #eee;
 }
 
 .product__cannabis-potency-unit {
-  font-size: 0.85rem;
+  font-size: 0.75rem;
   color: #fff;
 }
 
 .stock-status {
-  margin: 0.35rem 0;
-  padding: 0.2rem 0.4rem;
+  margin: 0.25rem 0;
+  padding: 0.15rem 0.3rem;
   border-radius: 4px;
-  font-size: 0.85rem;
+  font-size: 0.75rem;
   background: #e8f5e9;
   color: #2e7d32;
   text-align: center;
@@ -721,18 +738,18 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 0.75rem;
-  gap: 0.35rem;
+  margin-bottom: 0.5rem;
+  gap: 0.25rem;
   width: 100%;
 }
 
 .quantity-btn {
   background: #f0f0f0;
   border: 1px solid #ddd;
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   border-radius: 4px;
-  font-size: 1.1rem;
+  font-size: 1rem;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -750,18 +767,15 @@
 }
 
 .quantity-input {
-  width: 50px;
-  height: 28px;
+  width: 40px;
+  height: 24px;
   border: 1px solid #ddd;
   border-radius: 4px;
   text-align: center;
-  font-size: 1rem;
+  font-size: 0.9rem;
   font-weight: 500;
   color: #333;
   background: white;
-  -webkit-appearance: none;
-  -moz-appearance: textfield;
-  appearance: none;
 }
 
 .quantity-input::-webkit-outer-spin-button,
@@ -780,9 +794,9 @@
   background: linear-gradient(135deg, #2196f3, #1976d2);
   color: white;
   border: none;
-  padding: 0.6rem 1.2rem;
-  border-radius: 8px;
-  font-size: 0.95rem;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
   font-weight: 500;
   width: 100%;
   cursor: pointer;
@@ -790,10 +804,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.5rem;
+  gap: 0.35rem;
   box-shadow: 0 2px 4px rgba(33, 150, 243, 0.2);
-  position: relative;
-  overflow: hidden;
 }
 
 .add-to-cart-btn::after {
@@ -844,10 +856,9 @@
   transform: none;
 }
 
-.add-to-cart-btn.loading {
-  background: #e0e0e0;
-  cursor: not-allowed;
-  box-shadow: none;
+.add-to-cart-btn:focus-visible {
+  outline: 2px solid #2196f3;
+  outline-offset: 2px;
 }
 
 @media (max-width: 600px) {
@@ -856,7 +867,7 @@
   }
   
   .card-product__body {
-    padding: 0 0.5rem 1rem 0.5rem;
+    padding: 0 0.5rem 0.75rem 0.5rem;
   }
   
   .card-product__body-container {
@@ -866,7 +877,7 @@
   }
   
   .product__details-row {
-    flex-direction: column;
+    flex-direction: row;
     gap: 0.5rem;
     align-items: center;
   }
@@ -876,7 +887,7 @@
   }
 
   .card-product__image img {
-    height: 152px;
+    height: 200px;
   }
 
   .card-product__details {
@@ -886,7 +897,7 @@
   }
 
   .card-product__title {
-    font-size: 1rem;
+    font-size: 1.2rem;
     padding: 0 0.25rem;
   }
 }
@@ -958,13 +969,25 @@
 .product__rating {
   display: flex;
   align-items: center;
-  gap: 0.35rem;
-  margin: 0.5rem 0 0 0;
-  padding: 0.35rem;
+  gap: 0.25rem;
+  margin: 0.35rem 0 0 0;
+  padding: 0.25rem;
   background: rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
+  border-radius: 4px;
   backdrop-filter: blur(4px);
   justify-content: center;
+  border: none;
+  cursor: pointer;
+  width: 100%;
+}
+
+.product__rating:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.product__rating:focus-visible {
+  outline: 2px solid #2196f3;
+  outline-offset: 2px;
 }
 
 .stars {
@@ -973,8 +996,9 @@
 }
 
 .star {
+  width: 14px;
+  height: 14px;
   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1));
-  transition: transform 0.2s ease;
 }
 
 .star:hover {
@@ -984,12 +1008,12 @@
 .rating-value {
   font-weight: 600;
   color: #FFD700;
-  font-size: 0.85rem;
+  font-size: 0.75rem;
 }
 
 .rating-count {
   color: #ffffff;
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   opacity: 0.8;
 }
 

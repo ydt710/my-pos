@@ -1,5 +1,5 @@
 import { supabase } from '../supabase';
-import type { CartItem } from '../types';
+import type { CartItem } from '../types/index';
 import type { Order, OrderItem, GuestInfo, OrderStatus, OrderFilters } from '../types/orders';
 
 // Helper function to generate formatted order number

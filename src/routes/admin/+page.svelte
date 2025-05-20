@@ -19,6 +19,7 @@
     }
   
     let products: Product[] = [];
+    let filteredProducts: Product[] = [];
     let loading = true;
     let error = '';
     let success = '';
@@ -105,6 +106,16 @@
   
     const FLOAT_USER_ID = '27cfee48-5b04-4ee1-885f-b3ef31417099';
   
+    // Add product filters
+    let productFilters = {
+      search: '',
+      category: '',
+      minPrice: '',
+      maxPrice: '',
+      sortBy: 'name',
+      sortOrder: 'asc'
+    };
+  
     function scrollToSection(sectionId: string) {
         const element = document.getElementById(sectionId);
         if (element) {
@@ -171,7 +182,57 @@
       const { data, error: err } = await supabase.from('products').select('*');
       loading = false;
       if (err) error = err.message;
-      else products = data;
+      else {
+        products = data;
+        applyProductFilters();
+      }
+    }
+  
+    function applyProductFilters() {
+      filteredProducts = products.filter(product => {
+        // Search filter
+        if (productFilters.search && !product.name.toLowerCase().includes(productFilters.search.toLowerCase())) {
+          return false;
+        }
+        
+        // Category filter
+        if (productFilters.category && product.category !== productFilters.category) {
+          return false;
+        }
+        
+        // Price range filter
+        if (productFilters.minPrice && product.price < Number(productFilters.minPrice)) {
+          return false;
+        }
+        if (productFilters.maxPrice && product.price > Number(productFilters.maxPrice)) {
+          return false;
+        }
+        
+        return true;
+      });
+
+      // Apply sorting
+      filteredProducts.sort((a, b) => {
+        let comparison = 0;
+        switch (productFilters.sortBy) {
+          case 'name':
+            comparison = a.name.localeCompare(b.name);
+            break;
+          case 'price':
+            comparison = a.price - b.price;
+            break;
+          case 'category':
+            comparison = a.category.localeCompare(b.category);
+            break;
+          default:
+            comparison = 0;
+        }
+        return productFilters.sortOrder === 'asc' ? comparison : -comparison;
+      });
+    }
+  
+    $: if (products.length > 0) {
+      applyProductFilters();
     }
   
     async function handleImageUpload(event: Event) {
@@ -875,222 +936,7 @@
         </div>
     </section>
 
-    <!-- Product Management Section -->
-    <section id="products" class="product-management">
-        <div class="section-header">
-            <h2>Product Management</h2>
-        </div>
-        
-        <!-- Product Form -->
-        <div class="form-card">
-            <h3>{editing ? 'Edit Product' : 'Add Product'}</h3>
-            <form on:submit|preventDefault={saveProduct}>
-                <div class="form-grid">
-                    <div class="form-group">
-                        <label for="name">Name</label>
-                        {#if editing}
-                            <input 
-                                id="name"
-                                bind:value={editing.name}
-                                placeholder="Product name" 
-                                required 
-                            />
-                        {:else}
-                            <input 
-                                id="name"
-                                bind:value={newProduct.name}
-                                placeholder="Product name" 
-                                required 
-                            />
-                        {/if}
-                    </div>
-                    <div class="form-group">
-                        <label for="price">Price</label>
-                        {#if editing}
-                            <input 
-                                id="price"
-                                type="number" 
-                                min="0" 
-                                step="0.01"
-                                bind:value={editing.price}
-                                placeholder="Price" 
-                                required 
-                            />
-                        {:else}
-                            <input 
-                                id="price"
-                                type="number" 
-                                min="0" 
-                                step="0.01"
-                                bind:value={newProduct.price}
-                                placeholder="Price" 
-                                required 
-                            />
-                        {/if}
-                    </div>
-                    <div class="form-group">
-                        <label for="image">Product Image</label>
-                        <div class="image-input-container">
-                            {#if (editing?.image_url || newProduct.image_url)}
-                                <div class="image-preview">
-                                    <img 
-                                        src={editing ? editing.image_url : newProduct.image_url} 
-                                        alt="Product preview" 
-                                        class="preview-image"
-                                    />
-                                </div>
-                            {/if}
-                            <button 
-                                type="button" 
-                                class="image-btn"
-                                on:click={() => {
-                                    showImageModal = true;
-                                    tempImageUrl = (editing ? editing.image_url : newProduct.image_url) || '';
-                                }}
-                            >
-                                Add Image
-                            </button>
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <label for="quantity">Quantity</label>
-                        {#if editing}
-                            <input 
-                                id="quantity"
-                                type="number" 
-                                min="0" 
-                                bind:value={editing.quantity}
-                                placeholder="Quantity" 
-                                required 
-                            />
-                        {:else}
-                            <input 
-                                id="quantity"
-                                type="number" 
-                                min="0" 
-                                bind:value={newProduct.quantity}
-                                placeholder="Quantity" 
-                                required 
-                            />
-                        {/if}
-                    </div>
-                    <div class="form-group">
-                        <label for="category">Category</label>
-                        {#if editing}
-                            <select 
-                                id="category"
-                                bind:value={editing.category}
-                                required
-                            >
-                                {#each categories as category}
-                                    <option value={category.id}>{category.name}</option>
-                                {/each}
-                            </select>
-                        {:else}
-                            <select 
-                                id="category"
-                                bind:value={newProduct.category}
-                                required
-                            >
-                                {#each categories as category}
-                                    <option value={category.id}>{category.name}</option>
-                                {/each}
-                            </select>
-                        {/if}
-                    </div>
-                </div>
-                <div class="form-actions">
-                    {#if editing}
-                        <button type="submit" class="primary-btn" disabled={loading}>
-                            Update Product
-                        </button>
-                        <button 
-                            type="button" 
-                            class="secondary-btn" 
-                            on:click={() => editing = null}
-                        >
-                            Cancel
-                        </button>
-                    {:else}
-                        <button type="submit" class="primary-btn" disabled={loading}>
-                            Add Product
-                        </button>
-                    {/if}
-                </div>
-            </form>
-        </div>
-        
-        <!-- Product List -->
-        <div class="table-card">
-            <div class="table-responsive desktop-only">
-                <div class="table-container">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Image</th>
-                                <th>Name</th>
-                                <th>Price</th>
-                                <th>Quantity</th>
-                                <th>Category</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {#each products as p (p.id)}
-                                <tr out:fade>
-                                    <td>
-                                        <img 
-                                            src={p.image_url} 
-                                            alt={p.name} 
-                                            class="product-thumbnail"
-                                        />
-                                    </td>
-                                    <td>{p.name}</td>
-                                    <td>R{p.price}</td>
-                                    <td>{p.quantity}</td>
-                                    <td>{categories.find(c => c.id === p.category)?.name || p.category}</td>
-                                    <td class="action-buttons">
-                                        <button 
-                                            class="edit-btn" 
-                                            on:click={() => editProduct(p)}
-                                        >
-                                            Edit
-                                        </button>
-                                        <button 
-                                            class="delete-btn" 
-                                            on:click={() => { showProductConfirmModal = true; productIdToDelete = p.id; }}
-                                        >
-                                            Delete
-                                        </button>
-                                    </td>
-                                </tr>
-                            {/each}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-            <!-- Mobile Card View -->
-            <div class="mobile-cards">
-                {#each products as p (p.id)}
-                    <div class="admin-card">
-                        <div class="admin-card-img-wrap">
-                            <img src={p.image_url} alt={p.name} class="product-thumbnail" />
-                        </div>
-                        <div class="admin-card-body">
-                            <div class="admin-card-title">{p.name}</div>
-                            <div class="admin-card-row"><strong>Price:</strong> R{p.price}</div>
-                            <div class="admin-card-row"><strong>Quantity:</strong> {p.quantity}</div>
-                            <div class="admin-card-row"><strong>Category:</strong> {categories.find(c => c.id === p.category)?.name || p.category}</div>
-                            <div class="admin-card-actions">
-                                <button class="edit-btn" on:click={() => editProduct(p)}>Edit</button>
-                                <button class="delete-btn" on:click={() => { showProductConfirmModal = true; productIdToDelete = p.id; }}>Delete</button>
-                            </div>
-                        </div>
-                    </div>
-                {/each}
-            </div>
-        </div>
-    </section>
+
 
     <!-- Orders Section -->
     <section id="orders" class="orders-section" transition:fade>
@@ -1374,6 +1220,274 @@
             onCancel={() => { showProductConfirmModal = false; productIdToDelete = null; }}
         />
     {/if}
+        <!-- Product Management Section -->
+    <section id="products" class="product-management">
+        <div class="section-header">
+            <h2>Product Management</h2>
+        </div>
+
+        <!-- Product Filters -->
+        <div class="filters-card">
+            <div class="filters-grid">
+                <div class="filter-group">
+                    <label for="search">Search</label>
+                    <input 
+                        id="search"
+                        type="text"
+                        placeholder="Search products..."
+                        bind:value={productFilters.search}
+                        on:input={applyProductFilters}
+                    />
+                </div>
+                <div class="filter-group">
+                    <label for="category">Category</label>
+                    <select 
+                        id="category"
+                        bind:value={productFilters.category}
+                        on:change={applyProductFilters}
+                    >
+                        <option value="">All Categories</option>
+                        {#each categories as category}
+                            <option value={category.id}>{category.name}</option>
+                        {/each}
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label for="minPrice">Min Price</label>
+                    <input 
+                        id="minPrice"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="Min price"
+                        bind:value={productFilters.minPrice}
+                        on:input={applyProductFilters}
+                    />
+                </div>
+                <div class="filter-group">
+                    <label for="maxPrice">Max Price</label>
+                    <input 
+                        id="maxPrice"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="Max price"
+                        bind:value={productFilters.maxPrice}
+                        on:input={applyProductFilters}
+                    />
+                </div>
+                <div class="filter-group">
+                    <label for="sortBy">Sort By</label>
+                    <select 
+                        id="sortBy"
+                        bind:value={productFilters.sortBy}
+                        on:change={applyProductFilters}
+                    >
+                        <option value="name">Name</option>
+                        <option value="price">Price</option>
+                        <option value="category">Category</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label for="sortOrder">Order</label>
+                    <select 
+                        id="sortOrder"
+                        bind:value={productFilters.sortOrder}
+                        on:change={applyProductFilters}
+                    >
+                        <option value="asc">Ascending</option>
+                        <option value="desc">Descending</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Product Form -->
+        <div class="form-card">
+            <h3>{editing ? 'Edit Product' : 'Add Product'}</h3>
+            <form on:submit|preventDefault={saveProduct}>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="name">Name</label>
+                        {#if editing}
+                            <input 
+                                id="name"
+                                bind:value={editing.name}
+                                placeholder="Product name" 
+                                required 
+                            />
+                        {:else}
+                            <input 
+                                id="name"
+                                bind:value={newProduct.name}
+                                placeholder="Product name" 
+                                required 
+                            />
+                        {/if}
+                    </div>
+                    <div class="form-group">
+                        <label for="price">Price</label>
+                        {#if editing}
+                            <input 
+                                id="price"
+                                type="number" 
+                                min="0" 
+                                step="0.01"
+                                bind:value={editing.price}
+                                placeholder="Price" 
+                                required 
+                            />
+                        {:else}
+                            <input 
+                                id="price"
+                                type="number" 
+                                min="0" 
+                                step="0.01"
+                                bind:value={newProduct.price}
+                                placeholder="Price" 
+                                required 
+                            />
+                        {/if}
+                    </div>
+                    <div class="form-group">
+                        <label for="image">Product Image</label>
+                        <div class="image-input-container">
+                            {#if (editing?.image_url || newProduct.image_url)}
+                                <div class="image-preview">
+                                    <img 
+                                        src={editing ? editing.image_url : newProduct.image_url} 
+                                        alt="Product preview" 
+                                        class="preview-image"
+                                    />
+                                </div>
+                            {/if}
+                            <button 
+                                type="button" 
+                                class="image-btn"
+                                on:click={() => {
+                                    showImageModal = true;
+                                    tempImageUrl = (editing ? editing.image_url : newProduct.image_url) || '';
+                                }}
+                            >
+                                Add Image
+                            </button>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="quantity">Quantity</label>
+                        {#if editing}
+                            <input 
+                                id="quantity"
+                                type="number" 
+                                min="0" 
+                                bind:value={editing.quantity}
+                                placeholder="Quantity" 
+                                required 
+                            />
+                        {:else}
+                            <input 
+                                id="quantity"
+                                type="number" 
+                                min="0" 
+                                bind:value={newProduct.quantity}
+                                placeholder="Quantity" 
+                                required 
+                            />
+                        {/if}
+                    </div>
+                    <div class="form-group">
+                        <label for="category">Category</label>
+                        {#if editing}
+                            <select 
+                                id="category"
+                                bind:value={editing.category}
+                                required
+                            >
+                                {#each categories as category}
+                                    <option value={category.id}>{category.name}</option>
+                                {/each}
+                            </select>
+                        {:else}
+                            <select 
+                                id="category"
+                                bind:value={newProduct.category}
+                                required
+                            >
+                                {#each categories as category}
+                                    <option value={category.id}>{category.name}</option>
+                                {/each}
+                            </select>
+                        {/if}
+                    </div>
+                </div>
+                <div class="form-actions">
+                    {#if editing}
+                        <button type="submit" class="primary-btn" disabled={loading}>
+                            Update Product
+                        </button>
+                        <button 
+                            type="button" 
+                            class="secondary-btn" 
+                            on:click={() => editing = null}
+                        >
+                            Cancel
+                        </button>
+                    {:else}
+                        <button type="submit" class="primary-btn" disabled={loading}>
+                            Add Product
+                        </button>
+                    {/if}
+                </div>
+            </form>
+        </div>
+        
+        <!-- Product List -->
+        <div class="table-card">
+            <div class="table-responsive">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Image</th>
+                            <th>Name</th>
+                            <th>Category</th>
+                            <th>Price</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {#each filteredProducts as product (product.id)}
+                            <tr>
+                                <td>
+                                    <img 
+                                        src={product.image_url} 
+                                        alt={product.name}
+                                        class="product-thumbnail"
+                                    />
+                                </td>
+                                <td>{product.name}</td>
+                                <td>{categories.find(c => c.id === product.category)?.name || product.category}</td>
+                                <td>R{product.price}</td>
+                                <td class="action-buttons">
+                                    <button 
+                                        class="edit-btn"
+                                        on:click={() => editProduct(product)}
+                                    >
+                                        Edit
+                                    </button>
+                                    <button 
+                                        class="delete-btn"
+                                        on:click={() => { showProductConfirmModal = true; productIdToDelete = product.id; }}
+                                    >
+                                        Delete
+                                    </button>
+                                </td>
+                            </tr>
+                        {/each}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
 </div>
   
 <style>
@@ -1510,8 +1624,6 @@
         grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
         gap: 1.5rem;
     }
-
-
 
     .table-container {
         overflow-x: auto;
@@ -1694,8 +1806,6 @@
         color: #212529;
     }
 
-
-
     .status-select {
         padding: 0.5rem;
         border-radius: 4px;
@@ -1766,19 +1876,6 @@
         padding: 0.5rem;
     }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
     .file-input {
         position: absolute;
         width: 0.1px;
@@ -1815,8 +1912,6 @@
     }
 
     /* Style for the image preview modal */
-
-
     @media (max-width: 768px) {
         .admin-container {
             padding: 0.5rem;
@@ -1825,8 +1920,6 @@
         .stats-details {
             grid-template-columns: 1fr;
         }
-
-
 
         .table-container {
             max-height: none;
@@ -1845,18 +1938,10 @@
             min-width: 600px;
         }
 
-     
-
- 
-
-
-
         .form-grid {
             grid-template-columns: 1fr;
             gap: 0.5rem;
         }
-
-
 
         .filters {
             grid-template-columns: 1fr;
@@ -1959,12 +2044,6 @@
         justify-content: flex-end;
         gap: 1rem;
     }
-
-
-
-
-
-
 
     .submit-btn {
         background: #007bff;
@@ -2186,6 +2265,53 @@
             flex: 1;
             font-size: 1rem;
             padding: 0.5rem 0.75rem;
+        }
+    }
+
+    .filters-card {
+        background: white;
+        border-radius: 8px;
+        padding: 1.5rem;
+        margin-bottom: 1.5rem;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    .filters-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+    }
+
+    .filter-group {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .filter-group label {
+        font-size: 0.9rem;
+        color: #666;
+        font-weight: 500;
+    }
+
+    .filter-group input,
+    .filter-group select {
+        padding: 0.5rem;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 0.9rem;
+    }
+
+    .filter-group input:focus,
+    .filter-group select:focus {
+        outline: none;
+        border-color: #007bff;
+        box-shadow: 0 0 0 2px rgba(0,123,255,0.25);
+    }
+
+    @media (max-width: 768px) {
+        .filters-grid {
+            grid-template-columns: 1fr;
         }
     }
 </style>

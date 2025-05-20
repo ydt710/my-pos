@@ -3,7 +3,6 @@
   import { onMount } from 'svelte';
   import { fade, slide } from 'svelte/transition';
   export let activeCategory: string = '';
-  export let backgroundUrl: string = '';
   export let logoUrl: string = '';
   export let onMenuToggle: () => void = () => {};
   export let onCartToggle: () => void = () => {};
@@ -26,27 +25,32 @@
     { 
       id: 'joints', 
       name: 'Joints', 
-      icon: 'fa-joint'
+      icon: 'fa-joint',
+      background: 'https://mjbizdaily.com/wp-content/uploads/2024/08/Pre-rolls_-joints-_2_.webp'
     },
     { 
       id: 'concentrate', 
       name: 'Extracts',
-      icon: 'fa-vial'
+      icon: 'fa-vial',
+      background: 'https://bulkweedinbox.cc/wp-content/uploads/2024/12/Greasy-Pink.jpg'
     },
     { 
       id: 'flower', 
       name: 'Flower', 
-      icon: 'fa-cannabis'
+      icon: 'fa-cannabis',
+      background: 'https://m.foolcdn.com/media/dubs/original_images/Slide_7_-_marijuana_greenhouse.jpg'
     },
     { 
       id: 'edibles', 
       name: 'Edibles', 
-      icon: 'fa-cookie'
+      icon: 'fa-cookie',
+      background: 'https://longislandinterventions.com/wp-content/uploads/2024/12/Edibles-1.jpg'
     },
     { 
       id: 'headshop', 
       name: 'Headshop', 
-      icon: 'fa-store' 
+      icon: 'fa-store',
+      background: 'https://wglybohfygczpapjxwwz.supabase.co/storage/v1/object/public/route420//bongs.webp'
     }
   ];
 
@@ -58,22 +62,48 @@
       spinningCategory = null;
     }, 700); // match animation duration
   }
+
+  // Preload category background images
+  onMount(() => {
+    categories.forEach(category => {
+      const img = new Image();
+      img.src = category.background;
+    });
+  });
 </script>
 
-<div
-  class="category-nav"
->
-  {#if backgroundUrl}
-    <div class="category-nav-bg" in:slide={{ duration: 600 }} out:fade={{ duration: 400 }} style="background-image: url('{backgroundUrl}');"></div>
-  {/if}
-  <div class="nav-top-bar">
-    <div class="nav-actions nav-left">
-      <!-- Empty for spacing, or add left-side actions here if needed -->
+<div class="category-nav">
+  <div class="nav-container">
+    <div class="nav-left">
+      <button class="logo-btn" on:click={onLogoClick} aria-label="Home" tabindex="0" on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { onLogoClick(); } }}>
+        <img class="logo" src={logoUrl} alt="Logo" />
+      </button>
     </div>
-    <button class="logo-btn" on:click={onLogoClick} aria-label="Home" tabindex="0" on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { onLogoClick(); } }}>
-      <img class="logo" src={logoUrl} alt="Logo" />
-    </button>
-    <div class="nav-actions nav-right">
+
+    <div class="nav-center">
+      <div class="category-btn-row">
+        {#each categories as category}
+          <button 
+            class="category-button {activeCategory === category.id ? 'active' : ''}"
+            on:click={() => handleCategoryClick(category.id)}
+            on:keydown={(e) => e.key === 'Enter' && handleCategoryClick(category.id)}
+            role="tab"
+            aria-selected={activeCategory === category.id}
+            aria-controls={`category-${category.id}`}
+            data-category={category.id}
+            style="background-image: url('{category.background}'); background-size: cover; background-position: center;"
+          >
+            <div class="category-overlay"></div>
+            <div class="image-container">
+              <i class="fa-solid {category.icon} {spinningCategory === category.id ? 'spin' : ''}"></i>
+            </div>
+            <span class="name">{category.name}</span>
+          </button>
+        {/each}
+      </div>
+    </div>
+
+    <div class="nav-right">
       <button class="cart-btn" on:click={onCartToggle} aria-label="Open cart" class:cart-animate={isCartAnimating}>
         <i class="fa-solid fa-shopping-cart"></i>
         {#if cartCount > 0}
@@ -85,32 +115,12 @@
       </button>
     </div>
   </div>
-  <div class="category-btn-row">
-    {#each categories as category}
-      <button 
-        class="category-button {activeCategory === category.id ? 'active' : ''}"
-        on:click={() => handleCategoryClick(category.id)}
-        on:keydown={(e) => e.key === 'Enter' && handleCategoryClick(category.id)}
-        role="tab"
-        aria-selected={activeCategory === category.id}
-        aria-controls={`category-${category.id}`}
-        data-category={category.id}
-      >
-        <div class="image-container">
-          <i class="fa-solid {category.icon} {spinningCategory === category.id ? 'spin' : ''}"></i>
-        </div>
-        <span class="name">{category.name}</span>
-      </button>
-    {/each}
-  </div>
 </div>
 
 <style>
   .category-nav {
     display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 0.5rem;
+    align-items: center;
     padding: 1rem;
     margin-bottom: 0;
     user-select: none;
@@ -119,94 +129,82 @@
     left: 0;
     right: 0;
     z-index: 1;
-    background-color: white;
     position: relative;
     overflow: hidden;
   }
-  .nav-top-bar {
+
+  .nav-container {
     display: flex;
     align-items: center;
-    justify-content: center;
+    justify-content: space-between;
     width: 100%;
-    margin-bottom: 0.5rem;
-    z-index: 2;
-    position: relative;
+    max-width: 1400px;
+    margin: 0 auto;
+    gap: 2rem;
   }
+
+  .nav-left {
+    flex: 0 0 auto;
+  }
+
+  .nav-center {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+  }
+
+  .nav-right {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+
   .logo {
-    height: 48px;
+    height: 89px;
     width: auto;
     display: block;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 2;
     cursor: pointer;
   }
-  .nav-actions {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    min-width: 80px;
-    z-index: 2;
-  }
-  .nav-left {
-    flex: 1;
-    justify-content: flex-start;
-  }
-  .nav-right {
-    flex: 1;
-    justify-content: flex-end;
-  }
-  .menu-btn, .cart-btn {
-    background: none;
-    border: none;
-    font-size: 2rem;
-    cursor: pointer;
-    color: #333;
-    padding: 0 1rem;
-    display: flex;
-    align-items: center;
-    transition: color 0.2s;
-  }
-  .menu-btn:hover, .cart-btn:hover {
-    color: #007bff;
-  }
+
   .category-btn-row {
     display: flex;
     justify-content: center;
-    gap: 1.5rem;
+    gap: 1rem;
     width: 100%;
-  }
-  .category-nav::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background: rgba(255,255,255,0.7);
-    z-index: 0;
-    pointer-events: none;
-  }
-  .category-nav > * {
-    position: relative;
-    z-index: 1;
   }
 
   .category-button {
     display: flex;
     flex-direction: column;
     align-items: center;
-    
+    position: relative;
     border: 2px solid transparent;
-    border-radius: 12px;
+    border-radius: 50%;
     cursor: pointer;
     transition: all 0.2s ease;
     box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-    min-width: 120px;
+    width: 100px;
+    height: 100px;
     outline: none;
+    color: #fff;
+    overflow: hidden;
+    background-size: cover;
+    background-position: center;
+    background-color: transparent;
+    padding: 0;
   }
 
-  .category-button:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    border-color: #007bff;
+  .category-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    transition: background-color 0.2s ease;
+    border-radius: 50%;
+  }
+
+  .category-button:hover .category-overlay {
+    background: rgba(0, 0, 0, 0.2);
   }
 
   .category-button:focus {
@@ -215,25 +213,30 @@
   }
 
   .category-button.active {
-    background: #007bff;
-    color: white;
     border-color: #007bff;
     transform: translateY(-3px);
     box-shadow: 0 4px 12px rgba(0,0,0,0.15);
   }
 
+  .category-button.active .category-overlay {
+    background: rgba(0, 123, 255, 0.3);
+  }
+
   .image-container {
     position: relative;
-    width: 60px;
-    height: 60px;
+    width: 40px;
+    height: 40px;
     display: flex;
     align-items: center;
     justify-content: center;
+    z-index: 1;
   }
 
   .image-container i {
-    font-size: 2rem;
+    font-size: 1.5rem;
     transition: transform 0.2s ease;
+    color: #fff;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
   }
 
   .category-button:hover .image-container i {
@@ -241,70 +244,36 @@
   }
 
   .name {
-    font-size: 1rem;
-    font-weight: 600;
+    font-size: 0.8rem;
+    font-family: 'Font Awesome 6 Free';
     text-transform: uppercase;
     transition: color 0.2s ease;
+    z-index: 1;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+    color: #fff;
+    margin-top: 0.5rem;
   }
 
-  @media (max-width: 768px) {
-    .category-nav {
-      flex-wrap: wrap;
-      gap: 0.5rem;
-      height: auto;
-      min-height: 120px;
-      align-content: flex-start;
-      justify-content: flex-start;
-    }
-
-    .category-button {
-      padding: 0.5rem;
-      min-width: 0;
-      flex: 1 1 calc(33.333% - 0.5rem);
-      max-width: calc(33.333% - 0.5rem);
-    }
-
-    .image-container {
-      width: 32px;
-      height: 32px;
-    }
-
-    .image-container i {
-      font-size: 1.2rem;
-    }
-
-    .name {
-      font-size: 0.55rem
-    }
+  .menu-btn, .cart-btn {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    color: #fff;
+    padding: 0.5rem;
+    display: flex;
+    align-items: center;
+    transition: color 0.2s;
   }
 
-  @media (max-width: 480px) {
-    .category-nav {
-      min-height: 100px;
-    }
-
-    .category-button {
-      padding: 0.3rem;
-      min-width: 50px;
-    }
-
-    .image-container {
-      width: 24px;
-      height: 24px;
-    }
-
-    .image-container i {
-      font-size: 1rem;
-    }
-
-    .name {
-      font-size: 0.6rem;
-    }
+  .menu-btn:hover, .cart-btn:hover {
+    color: #007bff;
   }
 
   .cart-btn {
     position: relative;
   }
+
   .cart-badge {
     position: absolute;
     top: 0;
@@ -322,6 +291,7 @@
     transition: transform 0.2s, background-color 0.3s;
     z-index: 2;
   }
+
   @keyframes pop {
     0% { transform: scale(1); }
     25% { transform: scale(1.5); background: #28a745; }
@@ -329,36 +299,24 @@
     75% { transform: scale(1.2); background: #dc3545; }
     100% { transform: scale(1); background: #dc3545; }
   }
+
   .cart-animate .cart-badge {
     animation: pop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
   }
+
   .cart-animate.cart-btn {
     animation: pop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
   }
-  .category-nav-bg {
-    position: absolute;
-    inset: 0;
-    background-size: cover;
-    background-position: center;
-    z-index: 0;
-    transition: background-image 0.3s;
-    pointer-events: none;
-  }
-  .category-nav-bg::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background: rgba(0,0,0,0.45);
-    z-index: 1;
-    pointer-events: none;
-  }
+
   @keyframes spin {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
   }
+
   .spin {
     animation: spin 0.7s cubic-bezier(0.34, 1.56, 0.64, 1);
   }
+
   .logo-btn {
     background: none;
     border: none;
@@ -366,9 +324,99 @@
     margin: 0;
     display: block;
     cursor: pointer;
-    position: absolute;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 1;
+  }
+
+  @media (max-width: 1024px) {
+    .category-button {
+      width: 80px;
+      height: 80px;
+    }
+
+    .image-container {
+      width: 32px;
+      height: 32px;
+    }
+
+    .image-container i {
+      font-size: 1.2rem;
+    }
+
+    .name {
+      font-size: 0.7rem;
+    }
+  }
+
+  @media (max-width: 768px) {
+    .nav-container {
+      gap: 0.5rem;
+      padding: 0 0.5rem;
+    }
+
+    .category-button {
+      width: 50px;
+      height: 50px;
+    }
+
+    .image-container {
+      width: 24px;
+      height: 24px;
+    }
+
+    .image-container i {
+      font-size: 1.2rem;
+    }
+
+    .name {
+      display: none;
+    }
+
+    .logo {
+      height: 62px;
+    }
+
+    .menu-btn, .cart-btn {
+      font-size: 1.2rem;
+      padding: 0.25rem;
+    }
+
+    .category-btn-row {
+      gap: 0.5rem;
+    }
+  }
+
+  @media (max-width: 480px) {
+    .nav-container {
+      gap: 0.25rem;
+      padding: 0 0.25rem;
+    }
+
+    .category-button {
+      width: 40px;
+      height: 40px;
+    }
+
+    .image-container {
+      width: 20px;
+      height: 20px;
+    }
+
+    .image-container i {
+      font-size: 1rem;
+    }
+
+    .logo {
+      height: 43px;
+    }
+
+    .menu-btn, .cart-btn {
+      font-size: 1rem;
+      padding: 0.2rem;
+    }
+
+    .cart-badge {
+      width: 16px;
+      height: 16px;
+      font-size: 0.7rem;
+    }
   }
 </style> 

@@ -72,4 +72,20 @@ export async function updateProductRating(productId: string): Promise<void> {
       })
       .eq('id', productId);
   }
+}
+
+export async function updateReview(reviewId: string, review: { rating: number; comment: string }): Promise<Review | null> {
+  const { data, error } = await supabase
+    .from('reviews')
+    .update(review)
+    .eq('id', reviewId)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error updating review:', error);
+    return null;
+  }
+
+  return data;
 } 

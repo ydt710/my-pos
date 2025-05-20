@@ -3,12 +3,13 @@
   import { cartStore, selectedPosUser } from '$lib/stores/cartStore';
   import { createOrder, logPaymentToLedger, getUserBalance, updateOrderStatus } from '$lib/services/orderService';
   import { goto } from '$app/navigation';
-  import type { CartItem } from '$lib/types';
+  import type { CartItem } from '$lib/types/index';
   import type { PosUser } from '$lib/stores/cartStore';
   import type { GuestInfo } from '$lib/types/index';
   import { fade, slide } from 'svelte/transition';
   import { supabase } from '$lib/supabase';
   import { get } from 'svelte/store';
+  import StarryBackground from '$lib/components/StarryBackground.svelte';
   
   let loading = false;
   let error = '';
@@ -285,6 +286,8 @@
   $: floatChange = !isGuest && cashGiven !== '' ? Number(cashGiven) - orderTotal : 0;
 </script>
 
+<StarryBackground />
+
 <div class="checkout-container">
   <h1>Checkout</h1>
   
@@ -486,6 +489,7 @@
         disabled={loading || $cartStore.length === 0}
       >
         {#if loading}
+          <span class="loading-spinner"></span>
           Processing...
         {:else}
           {paymentMethod === 'cash' ? 'Place Order' : 'Pay Now'}
@@ -500,6 +504,8 @@
     max-width: 1200px;
     margin: 2rem auto;
     padding: 0 1rem;
+    position: relative;
+    z-index: 1;
   }
   
   h1 {
@@ -515,16 +521,18 @@
   }
   
   .order-review, .payment-section {
-    background: white;
-    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.9);
+    backdrop-filter: blur(10px);
+    border-radius: 16px;
     padding: 1.5rem;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
   }
   
   .guest-info {
     margin-bottom: 2rem;
     padding-bottom: 1.5rem;
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.1);
   }
 
   .form-group {
@@ -534,24 +542,25 @@
   .form-group label {
     display: block;
     margin-bottom: 0.5rem;
-    color: #333;
+    color: #555;
     font-weight: 500;
   }
 
   .form-group input,
   .form-group textarea {
     width: 100%;
-    padding: 0.75rem;
-    border: 1px solid #ddd;
-    border-radius: 6px;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
     font-size: 1rem;
-    transition: border-color 0.2s;
+    transition: all 0.2s;
+    background: rgba(255, 255, 255, 0.9);
   }
 
   .form-group input:focus,
   .form-group textarea:focus {
     outline: none;
-    border-color: #007bff;
+    border-color: #2196f3;
+    box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.1);
   }
 
   .form-group textarea {
@@ -565,10 +574,10 @@
     color: #666;
   }
 
-  .login-prompt button {
+  .link-btn {
     background: none;
     border: none;
-    color: #007bff;
+    color: #2196f3;
     text-decoration: underline;
     font-weight: 500;
     cursor: pointer;
@@ -576,7 +585,7 @@
     font: inherit;
   }
 
-  .login-prompt button:hover {
+  .link-btn:hover {
     text-decoration: none;
   }
   
@@ -588,7 +597,10 @@
     display: flex;
     align-items: center;
     padding: 1rem;
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+    background: rgba(255, 255, 255, 0.5);
+    border-radius: 8px;
+    margin-bottom: 0.5rem;
   }
   
   .cart-item img {
@@ -606,6 +618,7 @@
   .item-details h3 {
     margin: 0 0 0.5rem 0;
     font-size: 1.1rem;
+    color: #333;
   }
   
   .price {
@@ -620,8 +633,8 @@
   }
   
   .quantity-btn {
-    background: #f0f0f0;
-    border: 1px solid #ddd;
+    background: rgba(240, 240, 240, 0.9);
+    border: 1px solid rgba(0, 0, 0, 0.1);
     width: 28px;
     height: 28px;
     border-radius: 6px;
@@ -630,11 +643,12 @@
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    transition: background-color 0.2s;
+    transition: all 0.2s;
   }
   
   .quantity-btn:hover:not(:disabled) {
-    background: #e0e0e0;
+    background: rgba(224, 224, 224, 0.9);
+    transform: translateY(-1px);
   }
   
   .quantity-btn:disabled {
@@ -645,9 +659,10 @@
   .quantity-input {
     width: 40px;
     padding: 4px;
-    border: 1px solid #ccc;
+    border: 1px solid rgba(0, 0, 0, 0.1);
     border-radius: 6px;
     text-align: center;
+    background: rgba(255, 255, 255, 0.9);
   }
   
   .remove-btn {
@@ -659,12 +674,13 @@
     border-radius: 50%;
     font-size: 1.2rem;
     cursor: pointer;
-    transition: background-color 0.2s;
+    transition: all 0.2s;
     margin-left: 1rem;
   }
   
   .remove-btn:hover {
     background: #bd2130;
+    transform: scale(1.1);
   }
   
   .payment-options {
@@ -675,15 +691,17 @@
     display: flex;
     align-items: center;
     padding: 0.75rem;
-    border: 1px solid #ddd;
+    border: 1px solid rgba(0, 0, 0, 0.1);
     border-radius: 8px;
     margin-bottom: 0.5rem;
     cursor: pointer;
-    transition: background-color 0.2s;
+    transition: all 0.2s;
+    background: rgba(255, 255, 255, 0.5);
   }
   
   .payment-option:hover {
-    background: #f8f9fa;
+    background: rgba(248, 249, 250, 0.9);
+    transform: translateY(-1px);
   }
   
   .payment-option input {
@@ -693,7 +711,7 @@
   .order-summary {
     margin-top: 2rem;
     padding-top: 1rem;
-    border-top: 1px solid #eee;
+    border-top: 1px solid rgba(0, 0, 0, 0.1);
   }
   
   .summary-row {
@@ -706,31 +724,39 @@
   .pay-button {
     width: 100%;
     padding: 1rem;
-    background: #28a745;
+    background: linear-gradient(135deg, #2196f3, #1976d2);
     color: white;
     border: none;
     border-radius: 8px;
     font-size: 1.1rem;
+    font-weight: 600;
     cursor: pointer;
-    transition: background-color 0.2s;
+    transition: all 0.2s;
     margin-top: 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
   }
   
   .pay-button:hover:not(:disabled) {
-    background: #218838;
+    background: linear-gradient(135deg, #1976d2, #1565c0);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(33, 150, 243, 0.3);
   }
   
   .pay-button:disabled {
-    background: #ccc;
+    background: #e0e0e0;
     cursor: not-allowed;
   }
   
   .error-message {
-    background: #f8d7da;
+    background: rgba(248, 215, 218, 0.9);
     color: #721c24;
     padding: 1rem;
     border-radius: 8px;
     margin-bottom: 1rem;
+    backdrop-filter: blur(4px);
   }
   
   .success-overlay {
@@ -744,18 +770,20 @@
     align-items: center;
     justify-content: center;
     z-index: 1000;
+    backdrop-filter: blur(4px);
   }
 
   .success-message {
-    background: white;
+    background: rgba(255, 255, 255, 0.95);
     color: #155724;
     padding: 2rem;
-    border-radius: 12px;
+    border-radius: 16px;
     font-size: 1.5rem;
     text-align: center;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
     max-width: 90%;
     width: 400px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
   }
 
   .success-icon {
@@ -765,9 +793,9 @@
   }
   
   .selected-customer-info {
-    background: #f8f9fa;
-    border: 1px solid #eee;
-    border-radius: 6px;
+    background: rgba(248, 249, 250, 0.9);
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
     padding: 0.75rem 1rem;
     margin-bottom: 1rem;
     font-size: 1rem;
@@ -775,9 +803,24 @@
   }
   
   .selected-customer-info.warning {
-    background: #fff3cd;
-    border: 1px solid #ffeeba;
+    background: rgba(255, 243, 205, 0.9);
+    border: 1px solid rgba(255, 238, 186, 0.9);
     color: #856404;
+  }
+
+  .loading-spinner {
+    width: 20px;
+    height: 20px;
+    border: 2px solid #ffffff;
+    border-radius: 50%;
+    border-top-color: transparent;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
   }
   
   @media (max-width: 768px) {
@@ -788,19 +831,13 @@
     .payment-section {
       position: static;
     }
-  }
 
-  .link-btn {
-    background: none;
-    border: none;
-    color: #007bff;
-    text-decoration: underline;
-    font-weight: 500;
-    cursor: pointer;
-    padding: 0;
-    font: inherit;
-  }
-  .link-btn:hover {
-    text-decoration: none;
+    .checkout-container {
+      padding: 1rem;
+    }
+
+    .order-review, .payment-section {
+      padding: 1rem;
+    }
   }
 </style> 

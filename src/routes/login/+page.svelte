@@ -1,11 +1,24 @@
 <script lang="ts">
   import { supabase } from '$lib/supabase';
   import { goto } from '$app/navigation';
+  import StarryBackground from '$lib/components/StarryBackground.svelte';
+  import { onMount } from 'svelte';
+  import { fade } from 'svelte/transition';
 
   let email = '';
   let password = '';
   let error = '';
   let loading = false;
+  let logoUrl = '';
+
+  onMount(async () => {
+    try {
+      const { data } = supabase.storage.from('route420').getPublicUrl('logo.png');
+      logoUrl = data.publicUrl;
+    } catch (err) {
+      console.error('Error getting logo URL:', err);
+    }
+  });
 
   async function login() {
     loading = true;
@@ -51,13 +64,18 @@
   }
 </script>
 
+<StarryBackground />
+
 <div class="auth-container">
   <div class="auth-card">
+    {#if logoUrl}
+      <img src={logoUrl} alt="Logo" class="logo" />
+    {/if}
     <h1>Welcome Back</h1>
     <p class="subtitle">Sign in to your account</p>
 
     {#if error}
-      <div class="error">{error}</div>
+      <div class="error" transition:fade>{error}</div>
     {/if}
 
     <form on:submit|preventDefault={login}>
@@ -86,7 +104,12 @@
       </div>
 
       <button type="submit" class="submit-btn" disabled={loading}>
-        {loading ? 'Signing in...' : 'Sign In'}
+        {#if loading}
+          <span class="loading-spinner"></span>
+          Signing in...
+        {:else}
+          Sign In
+        {/if}
       </button>
     </form>
 
@@ -103,16 +126,26 @@
     align-items: center;
     justify-content: center;
     padding: 2rem;
-    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+    position: relative;
+    z-index: 1;
   }
 
   .auth-card {
-    background: white;
+    background: rgba(255, 255, 255, 0.9);
+    backdrop-filter: blur(10px);
     padding: 2.5rem;
     border-radius: 16px;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
     width: 100%;
     max-width: 400px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+  }
+
+  .logo {
+    width: 120px;
+    height: auto;
+    margin: 0 auto 2rem;
+    display: block;
   }
 
   h1 {
@@ -141,47 +174,55 @@
 
   input {
     width: 100%;
-    padding: 0.75rem;
-    border: 1px solid #ddd;
+    border: 1px solid rgba(0, 0, 0, 0.1);
     border-radius: 8px;
     font-size: 1rem;
-    transition: border-color 0.2s;
+    transition: all 0.2s;
+    background: rgba(255, 255, 255, 0.9);
   }
 
   input:focus {
     outline: none;
-    border-color: #007bff;
+    border-color: #2196f3;
+    box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.1);
   }
 
   .submit-btn {
     width: 100%;
     padding: 0.75rem;
-    background: #007bff;
+    background: linear-gradient(135deg, #2196f3, #1976d2);
     color: white;
     border: none;
     border-radius: 8px;
     font-size: 1rem;
     font-weight: 600;
     cursor: pointer;
-    transition: background-color 0.2s;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
   }
 
   .submit-btn:hover:not(:disabled) {
-    background: #0056b3;
+    background: linear-gradient(135deg, #1976d2, #1565c0);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(33, 150, 243, 0.3);
   }
 
   .submit-btn:disabled {
-    background: #ccc;
+    background: #e0e0e0;
     cursor: not-allowed;
   }
 
   .error {
-    background: #f8d7da;
+    background: rgba(248, 215, 218, 0.9);
     color: #721c24;
     padding: 1rem;
     border-radius: 8px;
     margin-bottom: 1.5rem;
     text-align: center;
+    backdrop-filter: blur(4px);
   }
 
   .auth-footer {
@@ -193,7 +234,7 @@
   .link-btn {
     background: none;
     border: none;
-    color: #007bff;
+    color: #2196f3;
     text-decoration: underline;
     font-weight: 500;
     cursor: pointer;
@@ -203,5 +244,34 @@
 
   .link-btn:hover {
     text-decoration: none;
+  }
+
+  .loading-spinner {
+    width: 20px;
+    height: 20px;
+    border: 2px solid #ffffff;
+    border-radius: 50%;
+    border-top-color: transparent;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  @media (max-width: 480px) {
+    .auth-container {
+      padding: 1rem;
+    }
+
+    .auth-card {
+      padding: 1.5rem;
+    }
+
+    h1 {
+      font-size: 1.75rem;
+    }
   }
 </style>

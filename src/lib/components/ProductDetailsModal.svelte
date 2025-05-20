@@ -1,7 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import type { Product } from '$lib/types';
-  import { getProductReviews, addReview, updateProductRating } from '$lib/services/reviewService';
+  import { getProductReviews, addReview, updateReview, updateProductRating } from '$lib/services/reviewService';
   import { supabase } from '$lib/supabase';
   
   interface Review {
@@ -82,10 +82,7 @@
       
       if (userReview) {
         // Update existing review
-        const updatedReview = await addReview({
-          id: userReview.id,
-          product_id: String(product.id),
-          user_id: user.id,
+        const updatedReview = await updateReview(userReview.id, {
           rating: newReview.rating,
           comment: newReview.comment
         });
@@ -162,7 +159,25 @@
     
     <div class="product-details">
       <div class="product-image">
-        <img src={product.image_url} alt={product.name} />
+        <img 
+          src={product.image_url + '?width=400&quality=80'} 
+          srcset="
+            {product.image_url}?width=400&quality=80 400w,
+            {product.image_url}?width=600&quality=80 600w,
+            {product.image_url}?width=800&quality=80 800w
+          "
+          sizes="
+            (max-width: 768px) 400px,
+            (max-width: 1024px) 600px,
+            800px
+          "
+          alt={product.name}
+          loading="eager"
+          decoding="async"
+          width="400"
+          height="533"
+          style="aspect-ratio: 3/4;"
+        />
       </div>
       
       <div class="product-info">
@@ -301,6 +316,10 @@
     transition: opacity 0.3s ease, visibility 0.3s ease;
   }
 
+  .modal-backdrop:focus {
+    outline: none;
+  }
+
   .modal-backdrop.show {
     opacity: 1;
     visibility: visible;
@@ -334,8 +353,11 @@
     transition: background-color 0.2s ease;
   }
 
-  .close-button:hover {
+  .close-button:hover,
+  .close-button:focus {
     background-color: rgba(0, 0, 0, 0.1);
+    outline: 2px solid #2196f3;
+    outline-offset: 2px;
   }
 
   .product-details {

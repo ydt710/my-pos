@@ -251,8 +251,9 @@
     width: 320px;
     height: 60vh;
     max-height: 60vh;
-    background: white;
-    box-shadow: -5px 0 15px rgba(0,0,0,0.1);
+    background: rgba(255, 255, 255, 0.9);
+    backdrop-filter: blur(10px);
+    box-shadow: -5px 0 15px rgba(0, 0, 0, 0.1);
     padding: 1rem;
     transform: translateX(100%);
     transition: transform 0.2s ease-out;
@@ -262,6 +263,7 @@
     flex-direction: column;
     margin-top: 20vh;
     border-radius: 12px 0 0 12px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
   }
 
   .cart-container.show {
@@ -274,16 +276,18 @@
     align-items: center;
     margin-bottom: 0.75rem;
     padding-bottom: 0.5rem;
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.1);
     position: sticky;
     top: 0;
-    background: white;
+    background: rgba(255, 255, 255, 0.9);
+    backdrop-filter: blur(10px);
     z-index: 2001;
   }
 
   .cart-header h2 {
     margin: 0;
     font-size: 1.25rem;
+    color: #333;
   }
 
   .close-btn {
@@ -292,6 +296,13 @@
     font-size: 1.5rem;
     cursor: pointer;
     padding: 0.25rem 0.5rem;
+    color: #666;
+    transition: all 0.2s;
+  }
+
+  .close-btn:hover {
+    color: #333;
+    transform: scale(1.1);
   }
 
   .cart-items {
@@ -303,21 +314,29 @@
   .cart-footer {
     margin-top: auto;
     padding-top: 1rem;
-    border-top: 1px solid #eee;
+    border-top: 1px solid rgba(0, 0, 0, 0.1);
   }
 
   .checkout-btn {
     width: 100%;
     padding: 0.75rem;
-    background: #4CAF50;
+    background: linear-gradient(135deg, #2196f3, #1976d2);
     color: white;
     border: none;
-    border-radius: 4px;
+    border-radius: 8px;
     cursor: pointer;
+    font-weight: 500;
+    transition: all 0.2s;
+  }
+
+  .checkout-btn:hover:not(:disabled) {
+    background: linear-gradient(135deg, #1976d2, #1565c0);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(33, 150, 243, 0.3);
   }
 
   .checkout-btn:disabled {
-    opacity: 0.7;
+    background: #e0e0e0;
     cursor: not-allowed;
   }
 
@@ -330,16 +349,17 @@
   .notification {
     padding: 0.75rem;
     margin-bottom: 1rem;
-    border-radius: 4px;
+    border-radius: 8px;
+    backdrop-filter: blur(4px);
   }
 
   .notification.success {
-    background: #d4edda;
+    background: rgba(212, 237, 218, 0.9);
     color: #155724;
   }
 
   .notification.error {
-    background: #f8d7da;
+    background: rgba(248, 215, 218, 0.9);
     color: #721c24;
   }
 
@@ -352,93 +372,123 @@
   .pos-user-search {
     margin-bottom: 1rem;
     padding-bottom: 1rem;
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.1);
   }
+
   .pos-user-search label {
     font-weight: 500;
     display: block;
     margin-bottom: 0.25rem;
+    color: #333;
   }
+
   .pos-user-search input {
     width: 100%;
-    padding: 0.5rem;
-    border: 1px solid #ccc;
-    border-radius: 4px;
+    padding: 0.75rem;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
     margin-bottom: 0.25rem;
+    background: rgba(255, 255, 255, 0.9);
+    transition: all 0.2s;
   }
+
+  .pos-user-search input:focus {
+    outline: none;
+    border-color: #2196f3;
+    box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.1);
+  }
+
   .user-results {
     list-style: none;
     margin: 0;
     padding: 0;
-    background: #fff;
-    border: 1px solid #ccc;
-    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.95);
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
     max-height: 180px;
     overflow-y: auto;
     position: absolute;
     width: 90%;
     z-index: 10;
+    backdrop-filter: blur(10px);
   }
+
   .user-results li {
     padding: 0.5rem;
     cursor: pointer;
     transition: background 0.15s;
   }
+
   .user-results li:hover {
-    background: #f0f0f0;
+    background: rgba(0, 0, 0, 0.05);
   }
+
   .user-email {
     color: #888;
     font-size: 0.9em;
   }
+
   .selected-user {
     margin-top: 0.5rem;
     font-size: 0.95em;
-    color: #007bff;
+    color: #2196f3;
+    padding: 0.75rem;
+    background: rgba(33, 150, 243, 0.1);
+    border-radius: 8px;
   }
+
   .user-loading {
     font-size: 0.95em;
-    color: #888;
+    color: #666;
     margin-bottom: 0.25rem;
   }
 
   .add-account-btn {
     margin-top: 0.5rem;
-    padding: 0.5rem 1rem;
-    background: #007bff;
+    padding: 0.75rem 1rem;
+    background: linear-gradient(135deg, #2196f3, #1976d2);
     color: white;
     border: none;
-    border-radius: 4px;
+    border-radius: 8px;
     cursor: pointer;
     font-size: 1rem;
     margin-bottom: 0.5rem;
-    transition: background 0.2s;
+    transition: all 0.2s;
   }
+
   .add-account-btn:hover {
-    background: #0056b3;
+    background: linear-gradient(135deg, #1976d2, #1565c0);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(33, 150, 243, 0.3);
   }
+
   .modal-backdrop {
     position: fixed;
     top: 0;
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(0,0,0,0.4);
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(4px);
     z-index: 1001;
   }
+
   .modal.add-account-modal {
     position: fixed;
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    background: white;
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px);
     padding: 2rem 1.5rem;
-    border-radius: 12px;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+    border-radius: 16px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
     z-index: 1002;
     min-width: 320px;
     max-width: 95vw;
+    border: 1px solid rgba(255, 255, 255, 0.2);
   }
+
   .modal.add-account-modal h3 {
     margin-top: 0;
     margin-bottom: 1rem;
@@ -446,54 +496,86 @@
     color: #333;
     text-align: center;
   }
+
   .modal.add-account-modal .form-group {
     margin-bottom: 1rem;
   }
+
   .modal.add-account-modal label {
     display: block;
     margin-bottom: 0.25rem;
     color: #555;
     font-weight: 500;
   }
+
   .modal.add-account-modal input {
     width: 100%;
-    padding: 0.5rem;
-    border: 1px solid #ccc;
-    border-radius: 4px;
+    padding: 0.75rem;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
     font-size: 1rem;
+    background: rgba(255, 255, 255, 0.9);
+    transition: all 0.2s;
   }
+
+  .modal.add-account-modal input:focus {
+    outline: none;
+    border-color: #2196f3;
+    box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.1);
+  }
+
   .modal-actions {
     display: flex;
     justify-content: flex-end;
     gap: 1rem;
     margin-top: 1rem;
   }
+
   .cancel-btn {
-    background: #ccc;
+    background: #e0e0e0;
     color: #333;
     border: none;
-    border-radius: 4px;
-    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
     cursor: pointer;
     font-size: 1rem;
+    transition: all 0.2s;
   }
+
+  .cancel-btn:hover {
+    background: #d0d0d0;
+    transform: translateY(-1px);
+  }
+
   .submit-btn {
-    background: #28a745;
+    background: linear-gradient(135deg, #2196f3, #1976d2);
     color: white;
     border: none;
-    border-radius: 4px;
-    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
     cursor: pointer;
     font-size: 1rem;
+    transition: all 0.2s;
   }
+
+  .submit-btn:hover:not(:disabled) {
+    background: linear-gradient(135deg, #1976d2, #1565c0);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(33, 150, 243, 0.3);
+  }
+
   .submit-btn:disabled {
-    background: #b7e0c2;
+    background: #e0e0e0;
     cursor: not-allowed;
   }
+
   .error-message {
     color: #dc3545;
     margin-bottom: 0.5rem;
     text-align: center;
+    padding: 0.75rem;
+    background: rgba(220, 53, 69, 0.1);
+    border-radius: 8px;
   }
 
   .user-select-btn {
@@ -501,20 +583,20 @@
     background: none;
     border: none;
     text-align: left;
-    padding: 0.5rem;
+    padding: 0.75rem;
     cursor: pointer;
     font-size: 1rem;
     color: #333;
-    transition: background 0.15s;
+    transition: all 0.2s;
   }
+
   .user-select-btn:hover, .user-select-btn:focus {
-    background: #f0f0f0;
+    background: rgba(0, 0, 0, 0.05);
     outline: none;
   }
 
   @media (max-width: 768px) {
     .cart-container {
-
       max-height: 100vh;
       top: 0;
       right: 0;

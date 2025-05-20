@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { CartItem as CartItemType } from '$lib/types';
+  import type { CartItem as CartItemType } from '$lib/types/index';
   import { cartStore } from '$lib/stores/cartStore';
 
   export let item: CartItemType;

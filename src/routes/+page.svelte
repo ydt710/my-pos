@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { fly, fade } from 'svelte/transition';
   import { cartStore } from '$lib/stores/cartStore';
-  import { fetchProducts } from '$lib/services/productService';
+  import { fetchProducts, fetchProductsLazy } from '$lib/services/productService';
   import { supabase } from '$lib/supabase';
   import type { Product } from '$lib/types';
   
@@ -12,17 +12,25 @@
   import SideMenu from '$lib/components/SideMenu.svelte';
   import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
   import ProductDetailsModal from '$lib/components/ProductDetailsModal.svelte';
+  import StarryBackground from '$lib/components/StarryBackground.svelte';
 
   let products: Product[] = [];
   let filteredProducts: Product[] = [];
   let cartVisible = false;
   let menuVisible = false;
-  let loading = true;
+  let loading = false;
+  let loadingMore = false;
   let error: string | null = null;
   let activeCategory: string | undefined = undefined;
   let logoUrl = '';
   let isPosUser = false;
   let selectedProduct: Product | null = null;
+  let currentPage = 1;
+  let hasMore = false;
+  let observer: IntersectionObserver;
+  let loadMoreTrigger: HTMLElement;
+  let totalProducts = 0;
+  let pageSize = 4; // Default to tablet view
 
   const categoryNames: Record<string, string> = {
     'flower': 'Flower',
@@ -51,13 +59,79 @@
     headshop: 'fa-store'
   };
 
-  onMount(async () => {
-    loading = true;
-    const result = await fetchProducts();
-    products = result.products;
-    error = result.error;
-    loading = false;
+  // Function to determine page size based on viewport width
+  function updatePageSize() {
+    const width = window.innerWidth;
+    if (width < 600) { // Mobile
+      pageSize = 2;
+    } else if (width < 1024) { // Tablet
+      pageSize = 4;
+    } else { // Desktop
+      pageSize = 8;
+    }
+    console.log('Updated page size:', { width, pageSize });
+  }
 
+  async function loadProducts(category?: string, page: number = 1) {
+    if (!category) return;
+    
+    if (page === 1) {
+      loading = true;
+      error = null;
+      products = [];
+    } else {
+      loadingMore = true;
+    }
+
+    try {
+      const result = await fetchProductsLazy(category, page, pageSize);
+      
+      if (page === 1) {
+        products = result.products;
+      } else {
+        products = [...products, ...result.products];
+      }
+      
+      hasMore = result.hasMore;
+      error = result.error;
+      currentPage = page;
+      
+      console.log('Products loaded:', {
+        page,
+        pageSize,
+        productsCount: products.length,
+        hasMore,
+        currentProducts: products.length
+      });
+    } catch (err) {
+      console.error('Error loading products:', err);
+      error = 'Failed to load products. Please try again.';
+    } finally {
+      loading = false;
+      loadingMore = false;
+    }
+  }
+
+  function handleIntersection(entries: IntersectionObserverEntry[]) {
+    const target = entries[0];
+    if (target.isIntersecting && hasMore && !loadingMore && activeCategory) {
+      console.log('Triggering load more:', { 
+        currentPage, 
+        hasMore, 
+        currentProducts: products.length 
+      });
+      loadProducts(activeCategory, currentPage + 1);
+    }
+  }
+
+  function handleRetry() {
+    if (activeCategory) {
+      currentPage = 1;
+      loadProducts(activeCategory, 1);
+    }
+  }
+
+  onMount(async () => {
     try {
       const { data } = supabase.storage.from('route420').getPublicUrl('logo.png');
       logoUrl = data.publicUrl;
@@ -82,13 +156,50 @@
       const img = new window.Image();
       img.src = url;
     });
+
+    // Initial page size update
+    updatePageSize();
+
+    // Listen for window resize
+    window.addEventListener('resize', () => {
+      updatePageSize();
+      // Reset and reload if category is active
+      if (activeCategory) {
+        currentPage = 1;
+        loadProducts(activeCategory, 1);
+      }
+    });
+
+    // Setup intersection observer for infinite scroll
+    observer = new IntersectionObserver(handleIntersection, {
+      root: null,
+      rootMargin: '200px',
+      threshold: 0.1
+    });
   });
 
-  $: if (activeCategory) {
-    filteredProducts = products.filter(product => product.category === activeCategory);
-    } else {
-    filteredProducts = [];
+  // Cleanup observer on component destroy
+  onDestroy(() => {
+    if (observer) {
+      observer.disconnect();
     }
+  });
+
+  // Update observer when loadMoreTrigger changes
+  $: if (loadMoreTrigger && observer) {
+    observer.observe(loadMoreTrigger);
+  }
+
+  $: if (activeCategory) {
+    currentPage = 1;
+    loadProducts(activeCategory);
+  } else {
+    products = [];
+    filteredProducts = [];
+    hasMore = false;
+  }
+
+  $: filteredProducts = products;
 
   $: categoryBackgroundStyle = '';
 
@@ -120,6 +231,9 @@
   }
 </script>
 
+<!-- Add StarryBackground component at the top level -->
+<StarryBackground />
+
 <!-- Category Navigation -->
 <CategoryNav 
   bind:activeCategory 
@@ -137,58 +251,65 @@
 
 <!-- Main Content Area -->
 <main class="products-container">
-  {#key activeCategory}
-    {#if loading}
-      <div class="loading-container" transition:fade>
-        <LoadingSpinner size="60px" />
-        <p>Loading products...</p>
+  {#if loading && currentPage === 1}
+    <div class="loading-container">
+      <LoadingSpinner size="60px" />
+      <p>Loading products...</p>
+    </div>
+  {:else if error}
+    <div class="error-container">
+      <p class="error-message">{error}</p>
+      <button on:click={handleRetry} class="retry-btn">
+        Try Again
+      </button>
+    </div>
+  {:else if !activeCategory}
+    <div class="welcome-section">
+      <div class="welcome-overlay"></div>
+      {#if isPosUser}
+        <h1>Welcome POS User</h1>
+      {:else}
+        <h1>Welcome to Route 420</h1>
+      {/if}
+      <div class="content">
+        <p class="tagline">Family-Grown Cannabis, Crafted with Care</p>
+        <div class="message">
+          <p>At Route 420, we're more than just a dispensary – we're a family-run farm dedicated to cultivating the finest cannabis products. Our journey began with a simple passion for quality and a commitment to sustainable farming practices.</p>
+          <p>Every product in our store is grown, harvested, and processed with the same care and attention we give to our own family. We believe in transparency, quality, and the power of nature's gifts.</p>
+          <p>Join us on this journey and experience the difference that family-grown cannabis can make.</p>
+        </div>
+        <p class="select-category">Select a category above to browse our products</p>
       </div>
-    {:else if error}
-      <div class="error-container" transition:fade>
-        <p class="error-message">{error}</p>
-        <button on:click={fetchProducts} class="retry-btn">
-          Try Again
-        </button>
-      </div>
-    {:else if !activeCategory}
-      <div class="welcome-section" transition:fade>
-        <div class="welcome-overlay"></div>
-        {#if isPosUser}
-          <h1>Welcome POS User</h1>
-        {:else}
-          <h1>Welcome to Route 420</h1>
+    </div>
+  {:else if filteredProducts.length === 0}
+    <div class="empty-container">
+      <p>No products available in this category at this time.</p>
+    </div>
+  {:else}
+    <div class="category-section">
+      <div class="category-header">
+        {#if activeCategory && categoryIcons[activeCategory]}
+          <i class="fa-solid {categoryIcons[activeCategory]} category-header-icon"></i>
         {/if}
-        <div class="content">
-          <p class="tagline">Family-Grown Cannabis, Crafted with Care</p>
-          <div class="message">
-            <p>At Route 420, we're more than just a dispensary – we're a family-run farm dedicated to cultivating the finest cannabis products. Our journey began with a simple passion for quality and a commitment to sustainable farming practices.</p>
-            <p>Every product in our store is grown, harvested, and processed with the same care and attention we give to our own family. We believe in transparency, quality, and the power of nature's gifts.</p>
-            <p>Join us on this journey and experience the difference that family-grown cannabis can make.</p>
+      </div>
+      <div class="products-grid">
+        {#each filteredProducts as product (product.id)}
+          <div in:fly={{ y: 30, duration: 350 }}>
+            <ProductCard {product} on:addToCart={addToCart} on:showdetails={handleShowDetails} />
           </div>
-          <p class="select-category">Select a category above to browse our products</p>
-        </div>
+        {/each}
       </div>
-    {:else if filteredProducts.length === 0}
-      <div class="empty-container" transition:fade>
-        <p>No products available in this category at this time.</p>
-      </div>
-    {:else}
-      <div class="category-section" transition:fade>
-        <div class="category-header">
-          {#if activeCategory && categoryIcons[activeCategory]}
-            <i class="fa-solid {categoryIcons[activeCategory]} category-header-icon"></i>
-          {/if}
+      {#if loadingMore}
+        <div class="loading-more">
+          <LoadingSpinner size="40px" />
+          <p>Loading more products... ({products.length} of {totalProducts} loaded)</p>
         </div>
-        <div class="products-grid">
-          {#each filteredProducts as product (product.id)}
-            <div in:fly={{ y: 30, duration: 350 }}>
-              <ProductCard {product} on:addToCart={addToCart} on:showdetails={handleShowDetails} />
-            </div>
-          {/each}
-        </div>
-      </div>
-    {/if}
-  {/key}
+      {/if}
+      {#if hasMore}
+        <div class="load-more-trigger" bind:this={loadMoreTrigger}></div>
+      {/if}
+    </div>
+  {/if}
 </main>
 
 <!-- Cart Sidebar Component -->
@@ -221,26 +342,17 @@
     margin: 0 auto;
     text-align: center;
     padding: 2rem;
-    background: none;
+    background: rgba(0, 0, 0, 0.7);
     border-radius: 16px;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
     position: relative;
     overflow: hidden;
     color: #fff;
+    backdrop-filter: blur(10px);
   }
 
   .welcome-section .welcome-overlay {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background: rgba(0,0,0,0.7);
-    z-index: 0;
-    pointer-events: none;
-  }
-
-  .welcome-section > *:not(.welcome-overlay) {
-    position: relative;
-    z-index: 1;
+    display: none; /* Remove the overlay since we have the starry background */
   }
 
   .welcome-section h1,
@@ -295,14 +407,28 @@
 
   .products-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-    gap: 2rem;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 1.5rem;
     padding: 1rem;
   }
 
-  @media (max-width: 600px) {
+  @media (max-width: 1024px) {
+    .products-grid {
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1rem;
+    }
+  }
+
+  @media (max-width: 768px) {
     .products-grid {
       grid-template-columns: repeat(2, 1fr);
+      gap: 1rem;
+    }
+  }
+
+  @media (max-width: 480px) {
+    .products-grid {
+      grid-template-columns: repeat(1, 1fr);
       gap: 1rem;
     }
   }
@@ -399,7 +525,7 @@
     left: 0;
     right: 0;
     z-index: 10;
-    background: white;
+
     box-shadow: 0 2px 8px rgba(0,0,0,0.04);
   }
 
@@ -409,14 +535,10 @@
     padding: 0.5rem 0;
     border-radius: 16px;
     overflow: hidden;
+    
   }
   .category-section::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background: rgb(0 8 2 / 70%); /* adjust for desired overlay */
-    z-index: 0;
-    pointer-events: none;
+    display: none; /* Remove the overlay since we have the starry background */
   }
   .category-section > * {
     position: relative;
@@ -440,5 +562,24 @@
     display: block;
     text-align: center;
     
+  }
+
+  .loading-more {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+    gap: 1rem;
+    background: rgba(255, 255, 255, 0.9);
+    border-radius: 8px;
+    margin: 1rem;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  }
+
+  .load-more-trigger {
+    height: 20px;
+    width: 100%;
+    margin: 1rem 0;
   }
 </style>
