@@ -118,7 +118,7 @@
     top: 0;
     left: 0;
     right: 0;
-    z-index: 5;
+    z-index: 1;
     background-color: white;
     position: relative;
     overflow: hidden;
@@ -136,10 +136,9 @@
     height: 48px;
     width: auto;
     display: block;
-    
     left: 50%;
     transform: translateX(-50%);
-    z-index: 1;
+    z-index: 2;
     cursor: pointer;
   }
   .nav-actions {

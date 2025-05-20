@@ -1,15 +1,21 @@
+import type { Review } from './reviews';
+
 export interface Product {
-  id: number;
+  id: string;
   name: string;
+  description: string;
   price: number;
-  quantity: number;
   image_url: string;
+  quantity: number;
   category: string;
-  description?: string;
   thc_min?: number;
   thc_max?: number;
   cbd_min?: number;
   cbd_max?: number;
+  indica?: number;  // 0-100, represents indica percentage. Sativa percentage is (100 - indica)
+  reviews?: Review[];
+  average_rating?: number;
+  review_count?: number;
 }
 
 export interface CartItem extends Product {

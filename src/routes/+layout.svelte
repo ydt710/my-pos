@@ -1,21 +1,28 @@
 <script lang="ts">
 	import { supabase } from '$lib/supabase';
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import Snackbar from '$lib/components/Snackbar.svelte';
 	import { snackbarStore, showSnackbar } from '$lib/stores/snackbarStore';
+	import { updateIsPosOrAdmin } from '$lib/stores/cartStore';
 	import '../styles/global.css';
 	import { fade, scale } from 'svelte/transition';
 
 	let showAgeModal = false;
+	let channel: any = null;
 
 	onMount(async () => {
 		const { data: { user } } = await supabase.auth.getUser();
 		if (user && user.user_metadata && user.user_metadata.is_admin === true) {
-			supabase
+			channel = supabase
 				.channel('orders-changes')
 				.on(
 					'postgres_changes',
-					{ event: 'INSERT', schema: 'public', table: 'orders' },
+					{ 
+						event: 'INSERT', 
+						schema: 'public', 
+						table: 'orders',
+						filter: 'status=eq.pending'  // Only track pending orders
+					},
 					(payload) => {
 						showSnackbar('New order placed! Order ID: ' + payload.new.id);
 					}
@@ -23,8 +30,17 @@
 				.subscribe();
 		}
 
+		// Update isPosOrAdmin status
+		await updateIsPosOrAdmin();
+
 		if (typeof localStorage !== 'undefined' && !localStorage.getItem('ageConfirmed')) {
 			showAgeModal = true;
+		}
+	});
+
+	onDestroy(() => {
+		if (channel) {
+			channel.unsubscribe();
 		}
 	});
 
@@ -39,7 +55,7 @@
 		<div class="age-modal" in:scale={{ duration: 250 }} out:fade={{ duration: 200 }}>
 			<h2>Age Verification</h2>
 			<p>You must be 18 years or older to enter this site.</p>
-			<button class="confirm-btn" on:click={confirmAge}>I am 18 or older</button>
+			<button class="confirm-btn" on:click={confirmAge} on:keydown={e => e.key === 'Enter' && confirmAge()}>I am 18 or older</button>
 		</div>
 	</div>
 {/if}
@@ -65,7 +81,7 @@
 		position: fixed;
 		inset: 0;
 		background: rgba(0,0,0,0.85);
-		z-index: 9999;
+		z-index: 1000;
 		display: flex;
 		align-items: center;
 		justify-content: center;

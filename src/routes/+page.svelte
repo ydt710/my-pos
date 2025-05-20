@@ -295,7 +295,7 @@
 
   .products-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
     gap: 2rem;
     padding: 1rem;
   }
@@ -439,6 +439,6 @@
     color: #007bff;
     display: block;
     text-align: center;
-    margin: 1.5rem auto 2rem auto;
+    
   }
 </style>

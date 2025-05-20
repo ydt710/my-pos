@@ -257,7 +257,7 @@
     transform: translateX(100%);
     transition: transform 0.2s ease-out;
     overflow-y: auto;
-    z-index: 20;
+    z-index: 2000;
     display: flex;
     flex-direction: column;
     margin-top: 20vh;
@@ -278,7 +278,7 @@
     position: sticky;
     top: 0;
     background: white;
-    z-index: 1;
+    z-index: 2001;
   }
 
   .cart-header h2 {
@@ -297,6 +297,7 @@
   .cart-items {
     flex-grow: 1;
     overflow-y: auto;
+    z-index: 2000;
   }
 
   .cart-footer {

@@ -1275,12 +1275,20 @@
     {/if}
 
     {#if showImageModal}
-        <div class="modal-backdrop"
-             role="button"
-             tabindex="0"
-             on:click={() => showImageModal = false}
-             on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && (showImageModal = false)}>
-            <div class="modal-content" on:click|stopPropagation>
+        <div 
+            class="modal-backdrop"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Image upload modal"
+            tabindex="0"
+            on:click={() => showImageModal = false}
+            on:keydown={(e) => e.key === 'Escape' && (showImageModal = false)}>
+            <div 
+                class="modal-content" 
+                role="button"
+                on:click|stopPropagation
+                on:keydown={(e) => e.key === 'Escape' && (showImageModal = false)}
+                tabindex="0">
                 <h3>Add Product Image</h3>
                 
                 <div class="modal-tabs">
@@ -1503,15 +1511,7 @@
         gap: 1.5rem;
     }
 
-    .stats-card, .form-card, .table-card, .filters-card {
-        background: white;
-        border-radius: 12px;
-        padding: 1.5rem;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-        overflow-x: auto;
-        max-height: 400px;
-        overflow-y: auto;
-    }
+
 
     .table-container {
         overflow-x: auto;
@@ -1694,10 +1694,7 @@
         color: #212529;
     }
 
-    .customer-info span {
-        color: #6c757d;
-        font-size: 0.9rem;
-    }
+
 
     .status-select {
         padding: 0.5rem;
@@ -1769,50 +1766,18 @@
         padding: 0.5rem;
     }
 
-    .image-upload-options {
-        width: 100%;
-        max-width: 300px;
-        display: flex;
-        flex-direction: column;
-        gap: 0.5rem;
-    }
 
-    .upload-buttons {
-        display: flex;
-        gap: 0.5rem;
-    }
 
-    .upload-btn, .url-btn {
-        flex: 1;
-        padding: 0.75rem;
-        border: none;
-        border-radius: 6px;
-        font-size: 0.9rem;
-        cursor: pointer;
-        transition: all 0.2s;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 0.5rem;
-    }
 
-    .upload-btn {
-        background: #007bff;
-        color: white;
-    }
 
-    .upload-btn:hover {
-        background: #0056b3;
-    }
 
-    .url-btn {
-        background: #6c757d;
-        color: white;
-    }
 
-    .url-btn:hover {
-        background: #5a6268;
-    }
+
+
+
+
+
+
 
     .file-input {
         position: absolute;
@@ -1850,15 +1815,7 @@
     }
 
     /* Style for the image preview modal */
-    .modal-image-preview {
-        max-width: 90%;
-        max-height: 80vh;
-        object-fit: contain;
-        border-radius: 8px;
-        background: #fff;
-        padding: 1rem;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-    }
+
 
     @media (max-width: 768px) {
         .admin-container {
@@ -1869,12 +1826,7 @@
             grid-template-columns: 1fr;
         }
 
-        .stats-card, .form-card, .table-card, .filters-card {
-            margin-bottom: 1rem;
-            padding: 0.5rem;
-            max-height: none;
-            overflow: visible;
-        }
+
 
         .table-container {
             max-height: none;
@@ -1893,37 +1845,18 @@
             min-width: 600px;
         }
 
-        .stats-card table {
-            min-width: unset;
-        }
+     
 
-        .stats-card tr {
-            display: flex;
-            flex-direction: column;
-            padding: 0.5rem 0;
-            border-bottom: 1px solid #dee2e6;
-        }
+ 
 
-        .stats-card td {
-            padding: 0.25rem 0;
-            border: none;
-            text-align: left;
-        }
 
-        .stats-card th {
-            display: none;
-        }
 
         .form-grid {
             grid-template-columns: 1fr;
             gap: 0.5rem;
         }
 
-        input, select, textarea {
-            width: 100%;
-            max-width: none;
-            font-size: 1rem;
-        }
+
 
         .filters {
             grid-template-columns: 1fr;
@@ -2027,23 +1960,11 @@
         gap: 1rem;
     }
 
-    .cancel-btn, .submit-btn {
-        padding: 0.75rem 1.5rem;
-        border: none;
-        border-radius: 6px;
-        font-size: 1rem;
-        cursor: pointer;
-        transition: all 0.2s;
-    }
 
-    .cancel-btn {
-        background: #e9ecef;
-        color: #495057;
-    }
 
-    .cancel-btn:hover {
-        background: #dee2e6;
-    }
+
+
+
 
     .submit-btn {
         background: #007bff;

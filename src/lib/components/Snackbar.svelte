@@ -28,7 +28,7 @@
   border-radius: 8px;
   box-shadow: 0 2px 8px rgba(0,0,0,0.2);
   font-size: 1rem;
-  z-index: 2000;
+  z-index: 3000;
   animation: fadeInUp 0.3s;
 }
 @keyframes fadeInUp {

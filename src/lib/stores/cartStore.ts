@@ -1,5 +1,5 @@
 import { writable } from 'svelte/store';
-import type { CartItem, Product, User } from '../types';
+import type { CartItem, Product, User } from '$lib/types/index';
 import { supabase } from '$lib/supabase';
 import { writable as writableStore } from 'svelte/store';
 
@@ -22,7 +22,7 @@ function createCartStore() {
       const { data: currentProduct, error } = await supabase
         .from('products')
         .select('quantity')
-        .eq('id', product.id)
+        .eq('id', String(product.id))
         .single();
 
       if (error || !currentProduct) {
@@ -32,7 +32,7 @@ function createCartStore() {
 
       let success = true;
       update(items => {
-        const existing = items.find(item => item.id === product.id);
+        const existing = items.find(item => String(item.id) === String(product.id));
         const currentStock = currentProduct.quantity;
         const requestedQuantity = product.quantity || 1; // Fallback to 1 if not specified
 
@@ -50,7 +50,7 @@ function createCartStore() {
           
           // Update existing item quantity
           return items.map(item =>
-            item.id === product.id
+            String(item.id) === String(product.id)
               ? { ...item, quantity: Math.min(currentStock, newQuantity) }
               : item
           );
@@ -81,7 +81,7 @@ function createCartStore() {
 
       return success;
     },
-    updateQuantity: async (productId: number, newQuantity: number) => {
+    updateQuantity: async (productId: string | number, newQuantity: number) => {
       if (newQuantity < 1) {
         cartNotification.set({ type: 'error', message: 'Quantity must be at least 1.' });
         return false;
@@ -91,7 +91,7 @@ function createCartStore() {
       const { data: currentProduct, error } = await supabase
         .from('products')
         .select('quantity')
-        .eq('id', productId)
+        .eq('id', String(productId))
         .single();
 
       if (error || !currentProduct) {
@@ -107,7 +107,7 @@ function createCartStore() {
         // Update to maximum available
         update(items => {
           return items.map(item =>
-            item.id === productId
+            String(item.id) === String(productId)
               ? { ...item, quantity: currentProduct.quantity }
               : item
           );
@@ -117,15 +117,15 @@ function createCartStore() {
 
       update(items => {
         return items.map(item =>
-          item.id === productId
+          String(item.id) === String(productId)
             ? { ...item, quantity: newQuantity }
             : item
         );
       });
       return true;
     },
-    removeItem: (productId: number) => {
-      update(items => items.filter(item => item.id !== productId));
+    removeItem: (productId: string | number) => {
+      update(items => items.filter(item => String(item.id) !== String(productId)));
     },
     clearCart: () => {
       set([]);
@@ -176,4 +176,38 @@ function createSelectedPosUser() {
   };
 }
 
-export const selectedPosUser = createSelectedPosUser(); 
+export const selectedPosUser = createSelectedPosUser();
+
+// Create a store to check if current user is POS or admin
+export const isPosOrAdmin = writableStore<boolean>(false);
+
+// Update isPosOrAdmin when selectedPosUser changes or when user is admin
+export async function updateIsPosOrAdmin() {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (user) {
+    // Check if user is admin
+    const isAdmin = !!user.user_metadata?.is_admin;
+    if (isAdmin) {
+      isPosOrAdmin.set(true);
+      return;
+    }
+    // Check if user is POS
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('auth_user_id', user.id)
+      .single();
+    isPosOrAdmin.set(profile?.role === 'pos');
+  } else {
+    isPosOrAdmin.set(false);
+  }
+}
+
+// Update isPosOrAdmin when selectedPosUser changes
+selectedPosUser.subscribe(user => {
+  if (user) {
+    isPosOrAdmin.set(true);
+  } else {
+    updateIsPosOrAdmin();
+  }
+}); 

@@ -62,7 +62,7 @@ export async function confirmProductionDone(stockMovementId: string | number) {
   const newQty = (stockData?.quantity ?? 0) + movement.quantity;
   await supabase
     .from('stock_levels')
-    .upsert({ product_id: movement.product_id, location_id: facilityId, quantity: newQty }, { onConflict: ['product_id', 'location_id'] });
+    .upsert({ product_id: movement.product_id, location_id: facilityId, quantity: newQty }, { onConflict: 'product_id,location_id' });
 
   // Update movement status
   await supabase
@@ -86,7 +86,7 @@ export async function transferToShop(productId: string, quantity: number, note?:
   const newFacilityQty = (facilityStock?.quantity ?? 0) - quantity;
   await supabase
     .from('stock_levels')
-    .upsert({ product_id: productId, location_id: facilityId, quantity: newFacilityQty }, { onConflict: ['product_id', 'location_id'] });
+    .upsert({ product_id: productId, location_id: facilityId, quantity: newFacilityQty }, { onConflict: 'product_id,location_id' });
   // Increment shop
   const { data: shopStock } = await supabase
     .from('stock_levels')
@@ -97,7 +97,7 @@ export async function transferToShop(productId: string, quantity: number, note?:
   const newShopQty = (shopStock?.quantity ?? 0) + quantity;
   await supabase
     .from('stock_levels')
-    .upsert({ product_id: productId, location_id: shopId, quantity: newShopQty }, { onConflict: ['product_id', 'location_id'] });
+    .upsert({ product_id: productId, location_id: shopId, quantity: newShopQty }, { onConflict: 'product_id,location_id' });
   // Insert stock_movement
   await supabase.from('stock_movements').insert({
     product_id: productId,
@@ -124,7 +124,7 @@ export async function adjustStock(productId: string, locationName: string, newQu
   // Update stock_levels
   await supabase
     .from('stock_levels')
-    .upsert({ product_id: productId, location_id: locationId, quantity: newQuantity }, { onConflict: ['product_id', 'location_id'] });
+    .upsert({ product_id: productId, location_id: locationId, quantity: newQuantity }, { onConflict: 'product_id,location_id' });
   // Insert stock_movement
   await supabase.from('stock_movements').insert({
     product_id: productId,
