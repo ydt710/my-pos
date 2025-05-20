@@ -237,7 +237,7 @@
 <!-- Category Navigation -->
 <CategoryNav 
   bind:activeCategory 
-  
+  backgroundUrl={categoryBackgrounds[activeCategory || 'home']} 
   logoUrl={logoUrl}
   onMenuToggle={toggleMenu}
   onCartToggle={toggleCart}
