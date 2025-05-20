@@ -115,10 +115,12 @@
   function handleIntersection(entries: IntersectionObserverEntry[]) {
     const target = entries[0];
     if (target.isIntersecting && hasMore && !loadingMore && activeCategory) {
-      const currentScroll = window.scrollY;
-      loadProducts(activeCategory, currentPage + 1).then(() => {
-        window.scrollTo(0, currentScroll);
+      console.log('Triggering load more:', { 
+        currentPage, 
+        hasMore, 
+        currentProducts: products.length 
       });
+      loadProducts(activeCategory, currentPage + 1);
     }
   }
 
