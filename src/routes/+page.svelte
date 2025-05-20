@@ -302,7 +302,7 @@
       {#if loadingMore}
         <div class="loading-more">
           <LoadingSpinner size="40px" />
-          <p>Loading more products... ({products.length} of {totalProducts} loaded)</p>
+          <p>Loading more products...</p>
         </div>
       {/if}
       {#if hasMore}
@@ -571,12 +571,24 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 2rem;
-    gap: 1rem;
+    padding: 1rem;
+    gap: 0.5rem;
     background: rgba(255, 255, 255, 0.9);
     border-radius: 8px;
     margin: 1rem;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    position: sticky;
+    bottom: 1rem;
+    left: 50%;
+    transform: translateX(-50%);
+    width: fit-content;
+    z-index: 10;
+  }
+
+  .loading-more p {
+    margin: 0;
+    font-size: 0.9rem;
+    color: #666;
   }
 
   .load-more-trigger {
