@@ -112,25 +112,13 @@
     }
   }
 
-  // Add debouncing to prevent rapid reloads
-  let debounceTimer: NodeJS.Timeout;
   function handleIntersection(entries: IntersectionObserverEntry[]) {
     const target = entries[0];
     if (target.isIntersecting && hasMore && !loadingMore && activeCategory) {
-      // Clear any existing timer
-      if (debounceTimer) {
-        clearTimeout(debounceTimer);
-      }
-      
-      // Set a new timer
-      debounceTimer = setTimeout(() => {
-        console.log('Triggering load more:', { 
-          currentPage, 
-          hasMore, 
-          currentProducts: products.length 
-        });
-        loadProducts(activeCategory, currentPage + 1);
-      }, 300); // 300ms debounce
+      const currentScroll = window.scrollY;
+      loadProducts(activeCategory, currentPage + 1).then(() => {
+        window.scrollTo(0, currentScroll);
+      });
     }
   }
 
@@ -183,8 +171,8 @@
     // Setup intersection observer for infinite scroll
     observer = new IntersectionObserver(handleIntersection, {
       root: null,
-      rootMargin: '100px', // Reduced from 200px
-      threshold: 0.5 // Increased from 0.1 for more stable triggering
+      rootMargin: '200px',
+      threshold: 0.1
     });
   });
 
