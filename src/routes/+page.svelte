@@ -31,6 +31,8 @@
   let loadMoreTrigger: HTMLElement;
   let totalProducts = 0;
   let pageSize = 4; // Default to tablet view
+  let debounceTimer: NodeJS.Timeout;
+  let isFetching = false;
 
   const categoryNames: Record<string, string> = {
     'flower': 'Flower',
@@ -72,8 +74,28 @@
     console.log('Updated page size:', { width, pageSize });
   }
 
+  function handleIntersection(entries: IntersectionObserverEntry[]) {
+    const target = entries[0];
+    if (target.isIntersecting && hasMore && !loadingMore && !isFetching && activeCategory) {
+      // Clear any existing timer
+      if (debounceTimer) {
+        clearTimeout(debounceTimer);
+      }
+      
+      // Set a new timer
+      debounceTimer = setTimeout(() => {
+        console.log('Triggering load more:', { 
+          currentPage, 
+          hasMore, 
+          currentProducts: products.length 
+        });
+        loadProducts(activeCategory, currentPage + 1);
+      }, 300); // 300ms debounce
+    }
+  }
+
   async function loadProducts(category?: string, page: number = 1) {
-    if (!category) return;
+    if (!category || isFetching) return;
     
     if (page === 1) {
       loading = true;
@@ -82,6 +104,8 @@
     } else {
       loadingMore = true;
     }
+
+    isFetching = true;
 
     try {
       const result = await fetchProductsLazy(category, page, pageSize);
@@ -109,18 +133,7 @@
     } finally {
       loading = false;
       loadingMore = false;
-    }
-  }
-
-  function handleIntersection(entries: IntersectionObserverEntry[]) {
-    const target = entries[0];
-    if (target.isIntersecting && hasMore && !loadingMore && activeCategory) {
-      console.log('Triggering load more:', { 
-        currentPage, 
-        hasMore, 
-        currentProducts: products.length 
-      });
-      loadProducts(activeCategory, currentPage + 1);
+      isFetching = false;
     }
   }
 
@@ -170,18 +183,21 @@
       }
     });
 
-    // Setup intersection observer for infinite scroll
+    // Setup intersection observer for infinite scroll with more conservative settings
     observer = new IntersectionObserver(handleIntersection, {
       root: null,
-      rootMargin: '200px',
-      threshold: 0.1
+      rootMargin: '100px', // Reduced from 200px
+      threshold: 0.5 // Increased from 0.1
     });
   });
 
-  // Cleanup observer on component destroy
+  // Cleanup observer and timer on component destroy
   onDestroy(() => {
     if (observer) {
       observer.disconnect();
+    }
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
     }
   });
 
@@ -299,13 +315,13 @@
           </div>
         {/each}
       </div>
-      {#if loadingMore}
+      {#if loadingMore && !isFetching}
         <div class="loading-more">
-          <LoadingSpinner size="40px" />
-          <p>Loading more products... ({products.length} of {totalProducts} loaded)</p>
+          <LoadingSpinner size="24px" />
+          <p>Loading more...</p>
         </div>
       {/if}
-      {#if hasMore}
+      {#if hasMore && !loadingMore}
         <div class="load-more-trigger" bind:this={loadMoreTrigger}></div>
       {/if}
     </div>
@@ -566,20 +582,21 @@
 
   .loading-more {
     display: flex;
-    flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 2rem;
-    gap: 1rem;
-    background: rgba(255, 255, 255, 0.9);
-    border-radius: 8px;
-    margin: 1rem;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    gap: 0.5rem;
+    padding: 1rem;
+    color: #666;
+    font-size: 0.9rem;
+    background: transparent;
+    margin: 0.5rem 0;
   }
 
   .load-more-trigger {
-    height: 20px;
+    height: 1px;
     width: 100%;
-    margin: 1rem 0;
+    margin: 0;
+    opacity: 0;
+    pointer-events: none;
   }
 </style>
