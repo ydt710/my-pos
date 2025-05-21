@@ -33,6 +33,9 @@
   let pageSize = 4; // Default to tablet view
   let debounceTimer: NodeJS.Timeout;
   let isFetching = false;
+  let lastScrollY = 0;
+  let scrollDirection: 'up' | 'down' = 'down';
+  let scrollTimeout: NodeJS.Timeout;
 
   const categoryNames: Record<string, string> = {
     'flower': 'Flower',
@@ -74,23 +77,53 @@
     console.log('Updated page size:', { width, pageSize });
   }
 
+  function handleScroll() {
+    const currentScrollY = window.scrollY;
+    scrollDirection = currentScrollY > lastScrollY ? 'down' : 'up';
+    lastScrollY = currentScrollY;
+
+    // Clear any existing timeout
+    if (scrollTimeout) {
+      clearTimeout(scrollTimeout);
+    }
+
+    // Set a new timeout to update scroll direction
+    scrollTimeout = setTimeout(() => {
+      scrollDirection = 'down'; // Reset to default after scrolling stops
+    }, 150);
+  }
+
   function handleIntersection(entries: IntersectionObserverEntry[]) {
     const target = entries[0];
-    if (target.isIntersecting && hasMore && !loadingMore && !isFetching && activeCategory) {
+    // Only trigger if:
+    // 1. Element is intersecting
+    // 2. We have more products to load
+    // 3. We're not currently loading
+    // 4. We're not fetching
+    // 5. We have an active category
+    // 6. We're scrolling down (prevents triggers during bounce/overscroll)
+    if (target.isIntersecting && 
+        hasMore && 
+        !loadingMore && 
+        !isFetching && 
+        activeCategory && 
+        scrollDirection === 'down') {
+      
       // Clear any existing timer
       if (debounceTimer) {
         clearTimeout(debounceTimer);
       }
       
-      // Set a new timer
+      // Set a new timer with increased debounce time for mobile
       debounceTimer = setTimeout(() => {
         console.log('Triggering load more:', { 
           currentPage, 
           hasMore, 
-          currentProducts: products.length 
+          currentProducts: products.length,
+          scrollDirection
         });
         loadProducts(activeCategory, currentPage + 1);
-      }, 300); // 300ms debounce
+      }, 500); // Increased from 300ms to 500ms for better mobile handling
     }
   }
 
@@ -183,15 +216,18 @@
       }
     });
 
+    // Add scroll listener
+    window.addEventListener('scroll', handleScroll, { passive: true });
+
     // Setup intersection observer for infinite scroll with more conservative settings
     observer = new IntersectionObserver(handleIntersection, {
       root: null,
-      rootMargin: '100px', // Reduced from 200px
-      threshold: 0.5 // Increased from 0.1
+      rootMargin: '400px', // Significantly increased to load products much earlier
+      threshold: 0.1
     });
   });
 
-  // Cleanup observer and timer on component destroy
+  // Cleanup observer, timer, and scroll listener on component destroy
   onDestroy(() => {
     if (observer) {
       observer.disconnect();
@@ -199,6 +235,10 @@
     if (debounceTimer) {
       clearTimeout(debounceTimer);
     }
+    if (scrollTimeout) {
+      clearTimeout(scrollTimeout);
+    }
+    window.removeEventListener('scroll', handleScroll);
   });
 
   // Update observer when loadMoreTrigger changes
@@ -253,7 +293,6 @@
 <!-- Category Navigation -->
 <CategoryNav 
   bind:activeCategory 
-  backgroundUrl={categoryBackgrounds[activeCategory || 'home']} 
   logoUrl={logoUrl}
   onMenuToggle={toggleMenu}
   onCartToggle={toggleCart}
@@ -426,6 +465,7 @@
     grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
     gap: 1.5rem;
     padding: 1rem;
+    padding-bottom: 200px; /* Add padding to ensure trigger is always in view */
   }
 
   @media (max-width: 1024px) {
@@ -589,14 +629,14 @@
     color: #666;
     font-size: 0.9rem;
     background: transparent;
-    margin: 0.5rem 0;
+    margin: 1rem 0;
+    min-height: 50px;
   }
 
   .load-more-trigger {
-    height: 1px;
+    height: 200px; /* Increased height for earlier triggering */
     width: 100%;
-    margin: 0;
-    opacity: 0;
-    pointer-events: none;
+    position: relative;
+    z-index: -1; /* Ensure it doesn't interfere with other elements */
   }
 </style>
