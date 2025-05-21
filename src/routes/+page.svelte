@@ -36,6 +36,7 @@
   let lastScrollY = 0;
   let scrollDirection: 'up' | 'down' = 'down';
   let scrollTimeout: NodeJS.Timeout;
+  let loadedPages = new Set<number>(); // Track which pages we've already loaded
 
   const categoryNames: Record<string, string> = {
     'flower': 'Flower',
@@ -79,8 +80,11 @@
 
   function handleScroll() {
     const currentScrollY = window.scrollY;
-    scrollDirection = currentScrollY > lastScrollY ? 'down' : 'up';
-    lastScrollY = currentScrollY;
+    // Only update direction if the change is significant (more than 5px)
+    if (Math.abs(currentScrollY - lastScrollY) > 5) {
+      scrollDirection = currentScrollY > lastScrollY ? 'down' : 'up';
+      lastScrollY = currentScrollY;
+    }
 
     // Clear any existing timeout
     if (scrollTimeout) {
@@ -90,7 +94,26 @@
     // Set a new timeout to update scroll direction
     scrollTimeout = setTimeout(() => {
       scrollDirection = 'down'; // Reset to default after scrolling stops
-    }, 150);
+    }, 300); // Increased from 150ms to 300ms for more stability
+  }
+
+  // Debounced resize handler
+  let resizeTimeout: NodeJS.Timeout;
+  function handleResize() {
+    if (resizeTimeout) {
+      clearTimeout(resizeTimeout);
+    }
+    
+    resizeTimeout = setTimeout(() => {
+      const oldPageSize = pageSize;
+      updatePageSize();
+      
+      // Only reload if page size actually changed
+      if (oldPageSize !== pageSize && activeCategory) {
+        currentPage = 1;
+        loadProducts(activeCategory, 1);
+      }
+    }, 500); // Wait 500ms after resize stops before updating
   }
 
   function handleIntersection(entries: IntersectionObserverEntry[]) {
@@ -130,10 +153,17 @@
   async function loadProducts(category?: string, page: number = 1) {
     if (!category || isFetching) return;
     
+    // If we've already loaded this page, don't fetch again
+    if (loadedPages.has(page)) {
+      console.log('Page already loaded:', page);
+      return;
+    }
+    
     if (page === 1) {
       loading = true;
       error = null;
       products = [];
+      loadedPages.clear(); // Clear loaded pages when changing category
     } else {
       loadingMore = true;
     }
@@ -152,13 +182,15 @@
       hasMore = result.hasMore;
       error = result.error;
       currentPage = page;
+      loadedPages.add(page); // Mark this page as loaded
       
       console.log('Products loaded:', {
         page,
         pageSize,
         productsCount: products.length,
         hasMore,
-        currentProducts: products.length
+        currentProducts: products.length,
+        loadedPages: Array.from(loadedPages)
       });
     } catch (err) {
       console.error('Error loading products:', err);
@@ -173,6 +205,7 @@
   function handleRetry() {
     if (activeCategory) {
       currentPage = 1;
+      loadedPages.clear(); // Clear loaded pages on retry
       loadProducts(activeCategory, 1);
     }
   }
@@ -208,15 +241,8 @@
       // Initial page size update
       updatePageSize();
 
-      // Listen for window resize
-      window.addEventListener('resize', () => {
-        updatePageSize();
-        // Reset and reload if category is active
-        if (activeCategory) {
-          currentPage = 1;
-          loadProducts(activeCategory, 1);
-        }
-      });
+      // Listen for window resize with debounce
+      window.addEventListener('resize', handleResize);
 
       // Add scroll listener
       window.addEventListener('scroll', handleScroll, { passive: true });
@@ -224,7 +250,7 @@
       // Setup intersection observer for infinite scroll with more conservative settings
       observer = new IntersectionObserver(handleIntersection, {
         root: null,
-        rootMargin: '400px', // Significantly increased to load products much earlier
+        rootMargin: '400px',
         threshold: 0.1
       });
     }
@@ -242,7 +268,11 @@
       if (scrollTimeout) {
         clearTimeout(scrollTimeout);
       }
+      if (resizeTimeout) {
+        clearTimeout(resizeTimeout);
+      }
       window.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('resize', handleResize);
     }
   });
 
@@ -253,11 +283,13 @@
 
   $: if (activeCategory) {
     currentPage = 1;
+    loadedPages.clear();
     loadProducts(activeCategory);
   } else {
     products = [];
     filteredProducts = [];
     hasMore = false;
+    loadedPages.clear();
   }
 
   $: filteredProducts = products;
