@@ -198,47 +198,52 @@
       }
     }
 
-    Object.values(categoryBackgrounds).forEach(url => {
-      const img = new window.Image();
-      img.src = url;
-    });
+    // Only run browser-specific code if window is defined
+    if (typeof window !== 'undefined') {
+      Object.values(categoryBackgrounds).forEach(url => {
+        const img = new window.Image();
+        img.src = url;
+      });
 
-    // Initial page size update
-    updatePageSize();
-
-    // Listen for window resize
-    window.addEventListener('resize', () => {
+      // Initial page size update
       updatePageSize();
-      // Reset and reload if category is active
-      if (activeCategory) {
-        currentPage = 1;
-        loadProducts(activeCategory, 1);
-      }
-    });
 
-    // Add scroll listener
-    window.addEventListener('scroll', handleScroll, { passive: true });
+      // Listen for window resize
+      window.addEventListener('resize', () => {
+        updatePageSize();
+        // Reset and reload if category is active
+        if (activeCategory) {
+          currentPage = 1;
+          loadProducts(activeCategory, 1);
+        }
+      });
 
-    // Setup intersection observer for infinite scroll with more conservative settings
-    observer = new IntersectionObserver(handleIntersection, {
-      root: null,
-      rootMargin: '400px', // Significantly increased to load products much earlier
-      threshold: 0.1
-    });
+      // Add scroll listener
+      window.addEventListener('scroll', handleScroll, { passive: true });
+
+      // Setup intersection observer for infinite scroll with more conservative settings
+      observer = new IntersectionObserver(handleIntersection, {
+        root: null,
+        rootMargin: '400px', // Significantly increased to load products much earlier
+        threshold: 0.1
+      });
+    }
   });
 
   // Cleanup observer, timer, and scroll listener on component destroy
   onDestroy(() => {
-    if (observer) {
-      observer.disconnect();
+    if (typeof window !== 'undefined') {
+      if (observer) {
+        observer.disconnect();
+      }
+      if (debounceTimer) {
+        clearTimeout(debounceTimer);
+      }
+      if (scrollTimeout) {
+        clearTimeout(scrollTimeout);
+      }
+      window.removeEventListener('scroll', handleScroll);
     }
-    if (debounceTimer) {
-      clearTimeout(debounceTimer);
-    }
-    if (scrollTimeout) {
-      clearTimeout(scrollTimeout);
-    }
-    window.removeEventListener('scroll', handleScroll);
   });
 
   // Update observer when loadMoreTrigger changes
