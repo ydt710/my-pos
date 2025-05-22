@@ -248,11 +248,9 @@
     position: fixed;
     top: 0;
     right: 0;
-    width: 320px;
     height: 60vh;
     max-height: 60vh;
-    background: rgba(255, 255, 255, 0.9);
-    backdrop-filter: blur(10px);
+    backdrop-filter: blur(50px);
     box-shadow: -5px 0 15px rgba(0, 0, 0, 0.1);
     padding: 1rem;
     transform: translateX(100%);
@@ -264,6 +262,8 @@
     margin-top: 20vh;
     border-radius: 12px 0 0 12px;
     border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 5%;
+    width:50%;
   }
 
   .cart-container.show {
@@ -276,10 +276,10 @@
     align-items: center;
     margin-bottom: 0.75rem;
     padding-bottom: 0.5rem;
-    border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+    border-bottom: 1px solid wheat;
     position: sticky;
     top: 0;
-    background: rgba(255, 255, 255, 0.9);
+    
     backdrop-filter: blur(10px);
     z-index: 2001;
   }
@@ -287,7 +287,7 @@
   .cart-header h2 {
     margin: 0;
     font-size: 1.25rem;
-    color: #333;
+    color: wheat;
   }
 
   .close-btn {
@@ -296,7 +296,7 @@
     font-size: 1.5rem;
     cursor: pointer;
     padding: 0.25rem 0.5rem;
-    color: #666;
+    color: wheat;
     transition: all 0.2s;
   }
 
@@ -320,7 +320,7 @@
   .checkout-btn {
     width: 100%;
     padding: 0.75rem;
-    background: linear-gradient(135deg, #2196f3, #1976d2);
+    background: linear-gradient(161deg, #db92c6, #1b8260);
     color: white;
     border: none;
     border-radius: 8px;
@@ -342,7 +342,7 @@
 
   .empty-cart {
     text-align: center;
-    color: #666;
+    color: wheat;
     margin: 2rem 0;
   }
 
@@ -510,7 +510,7 @@
 
   .modal.add-account-modal input {
     width: 100%;
-    padding: 0.75rem;
+ 
     border: 1px solid rgba(0, 0, 0, 0.1);
     border-radius: 8px;
     font-size: 1rem;
@@ -600,8 +600,8 @@
       max-height: 100vh;
       top: 0;
       right: 0;
-      margin-top: 0;
-      border-radius: 0;
+      
+      
       z-index: 100;
     }
   }

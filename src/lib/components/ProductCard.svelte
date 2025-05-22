@@ -721,7 +721,7 @@
   background: #e8f5e9;
   color: #2e7d32;
   text-align: center;
-  width: 100%;
+  
 }
 
 .stock-status.out-of-stock {

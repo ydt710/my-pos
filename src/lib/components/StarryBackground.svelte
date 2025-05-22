@@ -16,8 +16,10 @@
     y: number;
     size: number;
     speed: number;
-    brightness: number;
+    color: string;
     opacity: number;
+    blinkSpeed: number;
+    blinkPhase: number;
   }
 
   interface FloatingIcon {
@@ -37,8 +39,10 @@
     size: number;
     speed: number;
     angle: number;
-    trail: { x: number; y: number; opacity: number }[];
+    trail: { x: number; y: number; opacity: number; size: number }[];
     opacity: number;
+    rotation: number;
+    rotationSpeed: number;
   }
 
   const categoryIcons = [
@@ -50,13 +54,24 @@
   ];
 
   function createStar(): Star {
+    const colors = [
+      'rgba(255, 255, 255, 0.8)', // White
+      'rgba(76, 175, 80, 0.8)',   // Green
+      'rgba(255, 235, 59, 0.8)',  // Yellow
+      'rgba(244, 67, 54, 0.8)'    // Red
+    ];
+    const color = colors[Math.floor(Math.random() * colors.length)];
+    const isWhite = color === 'rgba(255, 255, 255, 0.8)';
+    
     return {
       x: Math.random() * canvas.width,
       y: Math.random() * canvas.height,
-      size: Math.random() * 1.5 + 0.5,
+      size: Math.random() * 2 + 1,
       speed: Math.random() * 0.3 + 0.1,
-      brightness: Math.random() * 0.5 + 0.5,
-      opacity: Math.random() * 0.5 + 0.5
+      color,
+      opacity: isWhite ? 0.8 : 0,
+      blinkSpeed: isWhite ? 0 : Math.random() * 0.02 + 0.01,
+      blinkPhase: Math.random() * Math.PI * 2
     };
   }
 
@@ -81,16 +96,18 @@
     return {
       x,
       y,
-      size: Math.random() * 15 + 10,
-      speed: Math.random() * 5 + 8,
+      size: Math.random() * 1 + 0.5, // Smaller size
+      speed: Math.random() * 15 + 20, // Faster speed for smoother motion
       angle,
       trail: [],
-      opacity: 1
+      opacity: 1,
+      rotation: Math.random() * Math.PI * 2,
+      rotationSpeed: (Math.random() - 0.5) * 0.01 // Reduced curve amount
     };
   }
 
   function initStars() {
-    const starCount = Math.floor((canvas.width * canvas.height) / 2000);
+    const starCount = Math.floor((canvas.width * canvas.height) / 1000); // Increased star density
     stars = Array.from({ length: starCount }, createStar);
     icons = Array.from({ length: 3 }, createFloatingIcon);
     shootingFlowers = [];
@@ -99,8 +116,10 @@
   function drawStar(star: Star) {
     ctx.beginPath();
     ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
-    ctx.fillStyle = `rgba(255, 255, 255, ${star.opacity * star.brightness})`;
+    ctx.fillStyle = star.color;
+    ctx.globalAlpha = star.opacity;
     ctx.fill();
+    ctx.globalAlpha = 1;
   }
 
   function drawIcon(icon: FloatingIcon) {
@@ -118,42 +137,74 @@
   }
 
   function drawShootingFlower(flower: ShootingFlower) {
-    // Draw trail
     ctx.save();
-    for (let i = 0; i < flower.trail.length; i++) {
-      const point = flower.trail[i];
-      ctx.beginPath();
-      ctx.arc(point.x, point.y, flower.size * 0.2, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(76, 175, 80, ${point.opacity})`;
-      ctx.fill();
-    }
     
-    // Draw flower
-    ctx.translate(flower.x, flower.y);
-    ctx.rotate(flower.angle);
-    ctx.globalAlpha = flower.opacity;
-    
-    // Draw flower petals
-    const petalCount = 5;
-    const petalSize = flower.size * 0.4;
-    
-    for (let i = 0; i < petalCount; i++) {
-      const angle = (i * 2 * Math.PI) / petalCount;
-      ctx.save();
-      ctx.rotate(angle);
-      ctx.beginPath();
-      ctx.ellipse(0, -petalSize * 0.5, petalSize * 0.3, petalSize * 0.6, 0, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(76, 175, 80, 0.8)';
-      ctx.fill();
-      ctx.restore();
-    }
-    
-    // Draw center
+    // Draw main trail
+    const gradient = ctx.createLinearGradient(
+      flower.x, 
+      flower.y, 
+      flower.x - Math.cos(flower.angle) * 120, 
+      flower.y - Math.sin(flower.angle) * 120
+    );
+    gradient.addColorStop(0, 'rgba(255, 255, 255, 0.9)');
+    gradient.addColorStop(0.1, 'rgba(255, 255, 255, 0.5)');
+    gradient.addColorStop(0.3, 'rgba(255, 255, 255, 0.2)');
+    gradient.addColorStop(0.6, 'rgba(255, 255, 255, 0.05)');
+    gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+
     ctx.beginPath();
-    ctx.arc(0, 0, flower.size * 0.2, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(129, 199, 132, 0.9)';
+    ctx.moveTo(flower.x, flower.y);
+    ctx.lineTo(
+      flower.x - Math.cos(flower.angle) * 120,
+      flower.y - Math.sin(flower.angle) * 120
+    );
+    ctx.strokeStyle = gradient;
+    ctx.lineWidth = flower.size * 1.2; // Thinner main trail
+    ctx.stroke();
+
+    // Draw secondary trail (more spread out)
+    const secondaryGradient = ctx.createLinearGradient(
+      flower.x, 
+      flower.y, 
+      flower.x - Math.cos(flower.angle) * 150, 
+      flower.y - Math.sin(flower.angle) * 150
+    );
+    secondaryGradient.addColorStop(0, 'rgba(255, 255, 255, 0.2)');
+    secondaryGradient.addColorStop(0.2, 'rgba(255, 255, 255, 0.1)');
+    secondaryGradient.addColorStop(0.5, 'rgba(255, 255, 255, 0.02)');
+    secondaryGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+
+    ctx.beginPath();
+    ctx.moveTo(flower.x, flower.y);
+    ctx.lineTo(
+      flower.x - Math.cos(flower.angle) * 150,
+      flower.y - Math.sin(flower.angle) * 150
+    );
+    ctx.strokeStyle = secondaryGradient;
+    ctx.lineWidth = flower.size * 2; // Thinner secondary trail
+    ctx.stroke();
+
+    // Draw bright head with glow
+    const headGradient = ctx.createRadialGradient(
+      flower.x, flower.y, 0,
+      flower.x, flower.y, flower.size * 2
+    );
+    headGradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
+    headGradient.addColorStop(0.4, 'rgba(255, 255, 255, 0.6)');
+    headGradient.addColorStop(0.7, 'rgba(255, 255, 255, 0.2)');
+    headGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+
+    ctx.beginPath();
+    ctx.arc(flower.x, flower.y, flower.size * 2, 0, Math.PI * 2);
+    ctx.fillStyle = headGradient;
     ctx.fill();
-    
+
+    // Draw core
+    ctx.beginPath();
+    ctx.arc(flower.x, flower.y, flower.size * 0.5, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255, 255, 255, 1)';
+    ctx.fill();
+
     ctx.restore();
   }
 
@@ -164,7 +215,9 @@
     }
     lastTime = currentTime;
 
-    ctx.fillStyle = 'rgba(0, 0, 20, 0.1)';
+    // Clear the entire canvas completely
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#000510';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     // Update and draw stars
@@ -174,6 +227,13 @@
         star.y = 0;
         star.x = Math.random() * canvas.width;
       }
+      
+      // Update blinking for colored stars
+      if (star.blinkSpeed > 0) {
+        star.blinkPhase += star.blinkSpeed;
+        star.opacity = (Math.sin(star.blinkPhase) + 1) * 0.4;
+      }
+      
       drawStar(star);
     });
 
@@ -192,26 +252,11 @@
 
     // Update and draw shooting flowers
     shootingFlowers.forEach((flower, index) => {
-      // Update position
-      flower.x += Math.cos(flower.angle) * flower.speed;
-      flower.y += Math.sin(flower.angle) * flower.speed;
-      
-      // Add trail point
-      flower.trail.push({
-        x: flower.x,
-        y: flower.y,
-        opacity: 1
-      });
-      
-      // Remove old trail points
-      if (flower.trail.length > 10) {
-        flower.trail.shift();
-      }
-      
-      // Fade trail
-      flower.trail.forEach(point => {
-        point.opacity *= 0.9;
-      });
+      // Update position with very slight curve
+      flower.rotation += flower.rotationSpeed;
+      const curveFactor = Math.sin(flower.rotation) * 0.05; // Reduced curve amount
+      flower.x += Math.cos(flower.angle + curveFactor) * flower.speed;
+      flower.y += Math.sin(flower.angle + curveFactor) * flower.speed;
       
       // Remove if off screen
       if (flower.y > canvas.height + 50 || flower.x > canvas.width + 50) {
@@ -222,7 +267,7 @@
     });
 
     // Randomly add new shooting flowers
-    if (Math.random() < 0.02) { // 2% chance each frame
+    if (Math.random() < 0.005) { // Reduced frequency to 0.5%
       shootingFlowers.push(createShootingFlower());
     }
 

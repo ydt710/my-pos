@@ -85,7 +85,7 @@
   aria-modal="true"
   aria-label="Side menu"
   on:keydown={handleKeydown}
-  style="background-image: url('{backgroundUrl}')"
+  
 >
   <div class="menu-header">
     <button 
@@ -138,7 +138,7 @@
     right: 0;
     width: 250px;
     height: 100%;
-    background: #333;
+    
     background-position: center;
     background-size: cover;
     color: white;
@@ -149,6 +149,8 @@
     transition: transform 0.3s ease-in-out;
     display: flex;
     flex-direction: column;
+    backdrop-filter: invert;
+    
   }
 
   .side-menu::before {
@@ -158,8 +160,9 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(51, 51, 51, 0.85);
+    backdrop-filter: blur(23px);
     z-index: -1;
+    
   }
 
   .side-menu.show {
@@ -176,6 +179,7 @@
     margin-bottom: 2rem;
     position: relative;
     z-index: 1;
+    
   }
   
   .close-btn {

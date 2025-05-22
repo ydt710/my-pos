@@ -434,7 +434,6 @@
     margin: 0 auto;
     text-align: center;
     padding: 2rem;
-    background: rgba(0, 0, 0, 0.7);
     border-radius: 16px;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
     position: relative;

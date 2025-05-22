@@ -168,7 +168,10 @@
   }
 
   .category-btn-row {
+    
     display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
     justify-content: center;
     gap: 1rem;
     width: 100%;
@@ -178,6 +181,7 @@
     display: flex;
     flex-direction: column;
     align-items: center;
+    justify-content: center;
     position: relative;
     border: 2px solid transparent;
     border-radius: 50%;
@@ -352,10 +356,7 @@
       padding: 0 0.5rem;
     }
 
-    .category-button {
-      width: 50px;
-      height: 50px;
-    }
+
 
     .image-container {
       width: 24px;
@@ -381,6 +382,7 @@
 
     .category-btn-row {
       gap: 0.5rem;
+      
     }
   }
 
@@ -391,8 +393,8 @@
     }
 
     .category-button {
-      width: 40px;
-      height: 40px;
+      width: 70px;
+      height: 70px;
     }
 
     .image-container {
@@ -401,12 +403,10 @@
     }
 
     .image-container i {
-      font-size: 1rem;
+      font-size: 2rem;
     }
 
-    .logo {
-      height: 43px;
-    }
+  
 
     .menu-btn, .cart-btn {
       font-size: 1rem;

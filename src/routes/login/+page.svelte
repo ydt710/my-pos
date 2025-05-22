@@ -120,6 +120,11 @@
 </div>
 
 <style>
+
+input {
+  text-align: center;
+}
+
   .auth-container {
     min-height: 100vh;
     display: flex;
@@ -131,12 +136,10 @@
   }
 
   .auth-card {
-    background: rgba(255, 255, 255, 0.9);
     backdrop-filter: blur(10px);
-    padding: 2.5rem;
+    padding: 1.5rem;
     border-radius: 16px;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-    width: 100%;
     max-width: 400px;
     border: 1px solid rgba(255, 255, 255, 0.2);
   }
@@ -150,25 +153,26 @@
 
   h1 {
     font-size: 2rem;
-    color: #333;
+    color: wheat;
     margin: 0 0 0.5rem;
     text-align: center;
   }
 
   .subtitle {
-    color: #666;
+    color: #ffffff;
     text-align: center;
     margin-bottom: 2rem;
   }
 
   .form-group {
     margin-bottom: 1.5rem;
+    text-align: center;
   }
 
   label {
     display: block;
     margin-bottom: 0.5rem;
-    color: #555;
+    color: #e0e0e0;
     font-weight: 500;
   }
 
