@@ -23,7 +23,8 @@ export async function createOrder(
   paymentMethod: string = 'cash',
   debt: number = 0,
   cashGiven: number = 0,
-  changeGiven: number = 0
+  changeGiven: number = 0,
+  isPosOrder: boolean = false
 ): Promise<{ success: boolean; error: string | null; orderId?: string }> {
   try {
     // Validate items before proceeding
@@ -173,14 +174,25 @@ export async function createOrder(
       guestEmail: guestInfo?.email
     });
 
-    // Always insert the full order total as a debt in the ledger
-    if (userId) {
+    // Only insert a debt ledger entry for POS/credit orders
+    if (userId && isPosOrder) {
       await supabase.from('credit_ledger').insert({
         user_id: userId,
         type: 'order',
         amount: -total, // negative for full order total
         order_id: order.id,
-        note: 'Order placed'
+        note: 'Order placed (POS/credit)'
+      });
+    }
+
+    // Only log a payment if cashGiven > 0 and isPosOrder is true
+    if (userId && cashGiven > 0 && isPosOrder) {
+      await supabase.from('credit_ledger').insert({
+        user_id: userId,
+        type: 'payment',
+        amount: cashGiven,
+        order_id: order.id,
+        note: 'Order payment'
       });
     }
 
@@ -362,6 +374,7 @@ export async function updateOrderStatus(
   status: OrderStatus
 ): Promise<{ success: boolean; error: string | null }> {
   try {
+    // Update the order status
     const { error } = await supabase
       .from('orders')
       .update({ 
@@ -373,6 +386,40 @@ export async function updateOrderStatus(
     if (error) {
       console.error('Error updating order status:', error);
       return { success: false, error: 'Failed to update order status.' };
+    }
+
+    // --- NEW: Insert ledger entries for normal user orders on completion ---
+    if (status === 'completed') {
+      // Fetch the order
+      const { data: order, error: orderFetchError } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('id', orderId)
+        .single();
+      if (!order || orderFetchError) {
+        return { success: false, error: 'Order not found for ledger update.' };
+      }
+      // Only for registered users (not POS/credit)
+      if (order.user_id && !order.is_pos_order) {
+        // Check if a payment ledger entry already exists for this order
+        const { data: existingPayments } = await supabase
+          .from('credit_ledger')
+          .select('id')
+          .eq('order_id', orderId)
+          .eq('type', 'payment');
+        if (!existingPayments || existingPayments.length === 0) {
+          // Insert payment entry for the order total (cash collected)
+          await supabase.from('credit_ledger').insert({
+            user_id: order.user_id,
+            type: 'payment',
+            amount: order.total,
+            order_id: order.id,
+            note: 'Cash collected on order completion'
+          });
+        }
+        // If any debt remains (e.g., partial payment), insert debt entry (not typical for normal users)
+        // (Optional: implement if you support partial payments)
+      }
     }
 
     return { success: true, error: null };

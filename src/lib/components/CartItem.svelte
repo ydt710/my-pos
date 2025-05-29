@@ -70,10 +70,11 @@
   .cart-item-name {
     font-weight: 500;
     margin-bottom: 0.25rem;
+    color: wheat;
   }
 
   .cart-item-price {
-    color: #666;
+    color: wheat;
     font-size: 0.875rem;
   }
 

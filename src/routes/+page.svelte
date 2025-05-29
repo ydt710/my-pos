@@ -13,6 +13,8 @@
   import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
   import ProductDetailsModal from '$lib/components/ProductDetailsModal.svelte';
   import StarryBackground from '$lib/components/StarryBackground.svelte';
+  import ProductReviewModal from '$lib/components/ProductReviewModal.svelte';
+  import { getProductReviews, addReview, updateReview, updateProductRating } from '$lib/services/reviewService';
 
   let products: Product[] = [];
   let filteredProducts: Product[] = [];
@@ -37,6 +39,11 @@
   let scrollDirection: 'up' | 'down' = 'down';
   let scrollTimeout: NodeJS.Timeout;
   let loadedPages = new Set<number>(); // Track which pages we've already loaded
+  let showReviewModal = false;
+  let reviewProduct: Product | null = null;
+  let userReview: any = null;
+  let newReview = { rating: 5, comment: '' };
+  let submittingReview = false;
 
   const categoryNames: Record<string, string> = {
     'flower': 'Flower',
@@ -221,11 +228,14 @@
     // Fetch current user's profile to check for POS role
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
-      const { data: profile } = await supabase
+      const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('role')
         .eq('auth_user_id', user.id)
-        .single();
+        .maybeSingle();
+      if (profileError && profileError.code !== 'PGRST116' && profileError.code !== '406') {
+        console.error('Error fetching profile:', profileError);
+      }
       if (profile && profile.role === 'pos') {
         isPosUser = true;
       }
@@ -322,6 +332,70 @@
   function closeProductModal() {
     selectedProduct = null;
   }
+
+  async function openReviewModal(event: CustomEvent<{product: Product}>) {
+    reviewProduct = event.detail.product;
+    showReviewModal = true;
+    // Load reviews for this product and set userReview/newReview
+    const reviews = await getProductReviews(String(reviewProduct.id));
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      userReview = reviews.find((review: any) => review.user_id === user.id) || null;
+      if (userReview) {
+        newReview = { rating: userReview.rating, comment: userReview.comment };
+      } else {
+        newReview = { rating: 5, comment: '' };
+      }
+    }
+  }
+
+  function closeReviewModal() {
+    showReviewModal = false;
+    reviewProduct = null;
+    userReview = null;
+    newReview = { rating: 5, comment: '' };
+  }
+
+  function setReviewRating(rating: number) {
+    newReview = { ...newReview, rating };
+  }
+
+  function setReviewComment(comment: string) {
+    newReview = { ...newReview, comment };
+  }
+
+  async function submitReview() {
+    if (submittingReview || !reviewProduct) return;
+    submittingReview = true;
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        alert('Please sign in to leave a review');
+        return;
+      }
+      if (userReview) {
+        // Update existing review
+        await updateReview(userReview.id, {
+          rating: newReview.rating,
+          comment: newReview.comment
+        });
+      } else {
+        // Create new review
+        await addReview({
+          product_id: String(reviewProduct.id),
+          user_id: user.id,
+          rating: newReview.rating,
+          comment: newReview.comment
+        });
+      }
+      await updateProductRating(String(reviewProduct.id));
+      closeReviewModal();
+    } catch (error) {
+      alert('Failed to submit review. Please try again.');
+    } finally {
+      submittingReview = false;
+    }
+  }
 </script>
 
 <!-- Add StarryBackground component at the top level -->
@@ -387,7 +461,7 @@
       <div class="products-grid">
         {#each filteredProducts as product (product.id)}
           <div in:fly={{ y: 30, duration: 350 }}>
-            <ProductCard {product} on:addToCart={addToCart} on:showdetails={handleShowDetails} />
+            <ProductCard {product} on:addToCart={addToCart} on:showDetails={handleShowDetails} on:showReview={openReviewModal} />
           </div>
         {/each}
       </div>
@@ -415,7 +489,21 @@
 />
 
 {#if selectedProduct}
-  <ProductDetailsModal product={selectedProduct} on:close={closeProductModal} />
+  <ProductDetailsModal product={selectedProduct} show={true} on:close={closeProductModal} />
+{/if}
+
+{#if showReviewModal && reviewProduct}
+  <ProductReviewModal
+    product={reviewProduct}
+    userReview={userReview}
+    newReview={newReview}
+    submittingReview={submittingReview}
+    show={showReviewModal}
+    onSubmit={submitReview}
+    onClose={closeReviewModal}
+    setRating={setReviewRating}
+    setComment={setReviewComment}
+  />
 {/if}
 
 <style>
@@ -673,6 +761,6 @@
     height: 200px; /* Increased height for earlier triggering */
     width: 100%;
     position: relative;
-    z-index: -1; /* Ensure it doesn't interfere with other elements */
+    z-index: 0; /* Ensure it doesn't interfere with other elements */
   }
 </style>

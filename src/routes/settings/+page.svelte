@@ -2,7 +2,6 @@
   import { onMount } from 'svelte';
   import { supabase } from '$lib/supabase';
   import { goto } from '$app/navigation';
-  import Navbar from '$lib/components/Navbar.svelte';
   import SideMenu from '$lib/components/SideMenu.svelte';
   import { showSnackbar } from '$lib/stores/snackbarStore';
 
@@ -32,11 +31,16 @@
     email = currentUser.email || '';
     
     // Fetch profile by auth_user_id
-    const { data: profile } = await supabase
+    const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select('*')
       .eq('auth_user_id', user.id)
-      .single();
+      .maybeSingle();
+    if (profileError && profileError.code !== 'PGRST116' && profileError.code !== '406') {
+      error = 'Failed to fetch profile. Please contact support.';
+      loading = false;
+      return;
+    }
     if (profile) {
       displayName = profile.display_name || '';
       phoneNumber = profile.phone_number || '';
@@ -44,13 +48,11 @@
       notifications = profile.notifications ?? true;
       darkMode = profile.dark_mode ?? false;
     } else {
-      // fallback to user_metadata
-      const preferences = currentUser.user_metadata || {};
-      displayName = preferences.display_name || '';
-      phoneNumber = preferences.phone_number || '';
-      address = preferences.address || '';
-      notifications = preferences.notifications ?? true;
-      darkMode = preferences.dark_mode ?? false;
+      displayName = '';
+      phoneNumber = '';
+      address = '';
+      notifications = true;
+      darkMode = false;
     }
     loading = false;
   });
@@ -61,25 +63,15 @@
     success = '';
 
     try {
-      // Update user metadata with preferences
-      const { error: updateError } = await supabase.auth.updateUser({
-        data: {
-          display_name: displayName,
-          phone_number: phoneNumber,
-          address: address,
-          notifications,
-          dark_mode: darkMode
-        }
-      });
-
-      if (updateError) throw updateError;
-
-      // Update profiles table
+      // Only update profiles table
       const { error: profileError } = await supabase
         .from('profiles')
         .update({
           display_name: displayName,
-          phone_number: phoneNumber
+          phone_number: phoneNumber,
+          address: address,
+          notifications: notifications,
+          dark_mode: darkMode
         })
         .eq('auth_user_id', user.id);
 
@@ -156,13 +148,6 @@
     if (menuVisible) menuVisible = false;
   }
 </script>
-
-<Navbar 
-  bind:cartButton
-  onCartToggle={toggleCart} 
-  onMenuToggle={toggleMenu}
-  onLogoClick={() => goto('/')}
-/>
 
 <main class="settings-container">
   <h1>Settings</h1>

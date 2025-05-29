@@ -310,7 +310,7 @@
   bind:this={canvas}
   class="starry-background"
   aria-hidden="true"
-/>
+></canvas>
 
 <style>
   .starry-background {

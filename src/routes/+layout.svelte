@@ -12,22 +12,30 @@
 
 	onMount(async () => {
 		const { data: { user } } = await supabase.auth.getUser();
-		if (user && user.user_metadata && user.user_metadata.is_admin === true) {
-			channel = supabase
-				.channel('orders-changes')
-				.on(
-					'postgres_changes',
-					{ 
-						event: 'INSERT', 
-						schema: 'public', 
-						table: 'orders',
-						filter: 'status=eq.pending'  // Only track pending orders
-					},
-					(payload) => {
-						showSnackbar('New order placed! Order ID: ' + payload.new.id);
-					}
-				)
-				.subscribe();
+		if (user) {
+			// Query profiles for is_admin
+			const { data: profile } = await supabase
+				.from('profiles')
+				.select('is_admin')
+				.eq('auth_user_id', user.id)
+				.maybeSingle();
+			if (profile && profile.is_admin === true) {
+				channel = supabase
+					.channel('orders-changes')
+					.on(
+						'postgres_changes',
+						{ 
+							event: 'INSERT', 
+							schema: 'public', 
+							table: 'orders',
+							filter: 'status=eq.pending'  // Only track pending orders
+						},
+						(payload) => {
+							showSnackbar('New order placed! Order ID: ' + payload.new.id);
+						}
+					)
+					.subscribe();
+			}
 		}
 
 		// Update isPosOrAdmin status

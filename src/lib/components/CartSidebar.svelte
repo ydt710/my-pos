@@ -315,6 +315,7 @@
     margin-top: auto;
     padding-top: 1rem;
     border-top: 1px solid rgba(0, 0, 0, 0.1);
+    color: wheat;
   }
 
   .checkout-btn {
@@ -383,7 +384,7 @@
   }
 
   .pos-user-search input {
-    width: 100%;
+    
     padding: 0.75rem;
     border: 1px solid rgba(0, 0, 0, 0.1);
     border-radius: 8px;

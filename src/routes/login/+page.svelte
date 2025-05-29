@@ -35,8 +35,8 @@
           .from('profiles')
           .select('*')
           .eq('auth_user_id', user.id)
-          .single();
-        if (profileFetchError && profileFetchError.code !== 'PGRST116') {
+          .maybeSingle();
+        if (profileFetchError && profileFetchError.code !== 'PGRST116' && profileFetchError.code !== '406') {
           // PGRST116: No rows found (acceptable, means profile doesn't exist)
           error = 'Failed to check profile. Please contact support.';
           return;
@@ -48,12 +48,12 @@
             .insert([
               {
                 id: user.id,
-                display_name: user.user_metadata?.display_name || '',
-                phone_number: user.user_metadata?.phone_number || '',
+                auth_user_id: user.id,
                 email: user.email
               }
             ]);
-          if (profileInsertError) {
+          // If error is not a duplicate key/409, show error
+          if (profileInsertError && profileInsertError.code !== '23505' && profileInsertError.code !== '409') {
             error = 'Failed to create profile. Please contact support.';
             return;
           }

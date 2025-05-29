@@ -2,7 +2,6 @@
   import { onMount } from 'svelte';
   import { supabase } from '$lib/supabase';
   import { goto } from '$app/navigation';
-  import Navbar from '$lib/components/Navbar.svelte';
   import SideMenu from '$lib/components/SideMenu.svelte';
   import type { Order, OrderItem } from '$lib/types/orders';
   import { showSnackbar } from '$lib/stores/snackbarStore';
@@ -34,7 +33,15 @@
     error = '';
 
     try {
-      // Fetch orders with their items
+      // Get the current user's profile
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('auth_user_id', user.id)
+        .maybeSingle();
+      if (profileError || !profile) throw profileError || new Error('Profile not found');
+
+      // Fetch orders with their items for this user only
       const { data: ordersData, error: ordersError } = await supabase
         .from('orders')
         .select(`
@@ -48,6 +55,7 @@
             )
           )
         `)
+        .eq('user_id', profile.id)
         .is('deleted_at', null)
         .order('created_at', { ascending: false });
 
@@ -126,12 +134,6 @@
     if (menuVisible) menuVisible = false;
   }
 </script>
-
-<Navbar 
-  onCartToggle={toggleCart} 
-  onMenuToggle={toggleMenu}
-  onLogoClick={() => goto('/')}
-/>
 
 <main class="orders-container">
   <h1>Your Orders</h1>

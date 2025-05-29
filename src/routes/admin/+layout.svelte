@@ -26,13 +26,16 @@
       goto('/login');
       return false;
     }
-    
-    const isUserAdmin = !!user?.user_metadata?.is_admin;
-    if (!isUserAdmin) {
+    // Query profiles for is_admin
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('is_admin')
+      .eq('auth_user_id', user.id)
+      .maybeSingle();
+    if (!profile?.is_admin) {
       goto('/');
       return false;
     }
-
     return true;
   }
 

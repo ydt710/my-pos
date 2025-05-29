@@ -146,7 +146,6 @@
 >
   <div 
     class="modal-content" 
-    on:click|stopPropagation
     role="document"
   >
     <button 
@@ -310,7 +309,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 99999;
+    z-index: 2000;
     opacity: 0;
     visibility: hidden;
     transition: opacity 0.3s ease, visibility 0.3s ease;
@@ -333,7 +332,7 @@
     max-height: 90vh;
     overflow-y: auto;
     position: relative;
-    z-index: 100000;
+    z-index: 2001;
     padding: 2rem;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
   }
@@ -347,7 +346,7 @@
     font-size: 1.5rem;
     cursor: pointer;
     color: #666;
-    z-index: 100001;
+    z-index: 2002;
     padding: 0.5rem;
     border-radius: 50%;
     transition: background-color 0.2s ease;

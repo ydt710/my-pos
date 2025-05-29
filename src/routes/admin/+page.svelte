@@ -151,26 +151,29 @@
       // Check if user is admin
       supabase.auth.getUser().then(({ data }) => {
         user = data.user;
-        isAdmin = !!user?.user_metadata?.is_admin;
-        
-        if (!user) goto('/login');
-        if (!isAdmin) goto('/');
-        
-        // Initial load
-        Promise.all([
-          fetchProducts(),
-          fetchStats(),
-          loadOrders(),
-          fetchTopBuyersAndDebtors()
-        ]).catch(console.error);
-        
-        // Set up auto-refresh
-        statsInterval = setInterval(fetchStats, 30000);
-        
-        // Add scroll event listener
-        window.addEventListener('scroll', updateActiveSection);
+        // Query profiles for is_admin
+        supabase
+          .from('profiles')
+          .select('is_admin')
+          .eq('auth_user_id', user.id)
+          .maybeSingle()
+          .then(({ data: profile }) => {
+            isAdmin = !!profile?.is_admin;
+            if (!user) goto('/login');
+            if (!isAdmin) goto('/');
+            // Initial load
+            Promise.all([
+              fetchProducts(),
+              fetchStats(),
+              loadOrders(),
+              fetchTopBuyersAndDebtors()
+            ]).catch(console.error);
+            // Set up auto-refresh
+            statsInterval = setInterval(fetchStats, 30000);
+            // Add scroll event listener
+            window.addEventListener('scroll', updateActiveSection);
+          });
       });
-      
       return () => {
         if (statsInterval) clearInterval(statsInterval);
         window.removeEventListener('scroll', updateActiveSection);
@@ -505,15 +508,7 @@
         );
         stats.cashToCollect = pendingCashOrders.reduce((sum, order) => sum + (order.total || 0), 0);
 
-        // --- NEW: Cash Collected (completed cash orders) ---
-        const completedCashOrders = (ordersData || []).filter(order =>
-          !order.deleted_at &&
-          order.status === 'completed' &&
-          order.payment_method === 'cash'
-        );
-        stats.cashCollected = completedCashOrders.reduce((sum, order) => sum + (order.total || 0), 0);
-
-        // --- LEDGER-BASED CASH IN & DEBT CALCULATION ---
+        // --- NEW: Cash Collected (from ledger, actual cash received today) ---
         const now = new Date();
         const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         const startOfWeek = new Date(now);
@@ -583,6 +578,12 @@
         debtIn = Object.values(allUserBalances)
           .filter((balance) => (balance as number) < 0)
           .reduce((sum, balance) => (sum as number) + Math.abs(balance as number), 0);
+
+        // --- NEW: Cash Collected (from ledger, actual cash received today) ---
+        const todayISO = startOfToday.toISOString();
+        stats.cashCollected = ledgerPayments
+          .filter(entry => new Date(entry.created_at) >= startOfToday)
+          .reduce((sum, entry) => sum + entry.amount, 0);
 
       } catch (err) {
         console.error('Error fetching stats:', err);
@@ -692,15 +693,21 @@
           address: order.guest_info.address
         };
       } else if (order.user) {
-        // Try to get name from user_metadata first, then fallback to email username
-        const name = order.user.user_metadata?.name || 
-                     order.user.email?.split('@')[0] ||
-                     'N/A';
+        // Use display_name, phone_number, address from profiles if available
+        const name = 'display_name' in order.user && order.user.display_name
+          ? order.user.display_name
+          : order.user.email?.split('@')[0] || 'N/A';
+        const phone = 'phone_number' in order.user && order.user.phone_number
+          ? order.user.phone_number
+          : 'N/A';
+        const address = 'address' in order.user && order.user.address
+          ? order.user.address
+          : 'N/A';
         return {
-          name: name,
+          name,
           email: order.user.email || 'N/A',
-          phone: order.user.user_metadata?.phone || 'N/A',
-          address: order.user.user_metadata?.address || 'N/A'
+          phone,
+          address
         };
       }
       return {
@@ -727,45 +734,29 @@
       loadingOrders = true;
       orderError = null;
       try {
-        // Fetch the order to check if it's already deleted
-        const { data: orderCheck, error: fetchCheckError } = await supabase
-          .from('orders')
-          .select('deleted_at')
-          .eq('id', orderId)
-          .single();
-        if (fetchCheckError) throw fetchCheckError;
-        if (orderCheck.deleted_at) {
-          showSnackbar('Order has already been deleted.');
-          return;
-        }
-        // Fetch the order and its items
-        const { data: orderData, error: fetchError } = await supabase
-          .from('orders')
-          .select('id, order_items (product_id, quantity)')
-          .eq('id', orderId)
-          .single();
-        if (fetchError) throw fetchError;
+        // Fetch all order items for this order
+        const { data: orderItems, error: itemsError } = await supabase
+          .from('order_items')
+          .select('product_id, quantity')
+          .eq('order_id', orderId);
+        if (itemsError) throw itemsError;
         // Reapply stock for each product in the order
-        for (const item of orderData.order_items) {
+        for (const item of orderItems) {
+          // Increment product quantity
           await supabase.rpc('increment_product_quantity', {
             product_id: item.product_id,
             amount: item.quantity
           });
         }
-        // Soft delete the order and set status to 'cancelled', deleted_by, and deleted_by_role
-        const { error: updateError } = await supabase
-          .from('orders')
-          .update({ 
-            deleted_at: new Date().toISOString(), 
-            status: 'cancelled', 
-            deleted_by: user?.id, 
-            deleted_by_role: 'admin' 
-          })
-          .eq('id', orderId);
-        if (updateError) throw updateError;
-        // After successful soft delete
+        // Delete all order_items for this order
+        await supabase.from('order_items').delete().eq('order_id', orderId);
+        // Delete all credit_ledger entries for this order
+        await supabase.from('credit_ledger').delete().eq('order_id', orderId);
+        // Delete the order itself
+        await supabase.from('orders').delete().eq('id', orderId);
+        // Remove from UI
         orders = orders.filter(o => o.id !== orderId);
-        showSnackbar('Order deleted (soft delete) and stock reapplied.');
+        showSnackbar('Order and all related data deleted. Stock reapplied.');
         // Optionally, refresh in the background
         loadOrders();
       } catch (err) {
@@ -1072,7 +1063,7 @@
                     </div>
                 </div>
                 <!-- Mobile Card View -->
-                <div class="mobile-cards">
+                <div class="mobile-cards mobile-only">
                     {#each orders as order (order.id)}
                         <div class="admin-card">
                             <div class="admin-card-body">
@@ -1792,503 +1783,6 @@
     }
 
     .filter-group label {
-        color: #495057;
-        font-size: 0.9rem;
-    }
-
-    .customer-info {
-        display: flex;
-        flex-direction: column;
-        gap: 0.25rem;
-    }
-
-    .customer-info strong {
-        color: #212529;
-    }
-
-    .status-select {
-        padding: 0.5rem;
-        border-radius: 4px;
-        border: 1px solid #dee2e6;
-    }
-
-    .status-select.pending {
-        background: #fff3cd;
-        color: #856404;
-        border-color: #ffeeba;
-    }
-
-    .status-select.processing {
-        background: #cce5ff;
-        color: #004085;
-        border-color: #b8daff;
-    }
-
-    .status-select.completed {
-        background: #d4edda;
-        color: #155724;
-        border-color: #c3e6cb;
-    }
-
-    .status-select.cancelled {
-        background: #f8d7da;
-        color: #721c24;
-        border-color: #f5c6cb;
-    }
-
-    .loading-spinner {
-        text-align: center;
-        padding: 2rem;
-        color: #6c757d;
-    }
-
-    .image-input-container {
-        display: flex;
-        flex-direction: column;
-        gap: 1rem;
-        align-items: center;
-        
-        max-width: 300px;
-        margin: 0 auto;
-    }
-
-    .image-preview {
-        width: 100%;
-        max-width: 300px;
-        height: 200px;
-        border: 2px dashed #dee2e6;
-        border-radius: 8px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        overflow: hidden;
-        background: #f8f9fa;
-        margin: 0 auto;
-        position: relative;
-    }
-
-    .preview-image {
-        width: 100%;
-        height: 100%;
-        object-fit: contain;
-        object-position: center;
-        background: #fff;
-        padding: 0.5rem;
-    }
-
-    .file-input {
-        position: absolute;
-        width: 0.1px;
-        height: 0.1px;
-        opacity: 0;
-        overflow: hidden;
-        z-index: -1;
-    }
-
-    .upload-progress {
-        width: 100%;
-        height: 4px;
-        background: #dee2e6;
-        border-radius: 2px;
-        overflow: hidden;
-    }
-
-    .progress-bar {
-        height: 100%;
-        background: #28a745;
-        transition: width 0.3s ease;
-    }
-
-    /* Add aspect ratio container for product thumbnails in table */
-    td .product-thumbnail {
-        width: 60px;
-        height: 60px;
-        object-fit: cover;
-        object-position: center;
-        border-radius: 4px;
-        background: #fff;
-        padding: 2px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-    }
-
-    /* Style for the image preview modal */
-    @media (max-width: 768px) {
-        .admin-container {
-            padding: 0.5rem;
-        }
-
-        .stats-details {
-            grid-template-columns: 1fr;
-        }
-
-        .table-container {
-            max-height: none;
-            overflow-y: visible;
-            margin: 0 -1rem;
-            padding: 0 1rem;
-        }
-
-        .table-responsive {
-            width: 100%;
-            overflow-x: auto;
-            -webkit-overflow-scrolling: touch;
-        }
-
-        .table-container {
-            min-width: 600px;
-        }
-
-        .form-grid {
-            grid-template-columns: 1fr;
-            gap: 0.5rem;
-        }
-
-        .filters {
-            grid-template-columns: 1fr;
-            gap: 0.5rem;
-        }
-
-        .action-buttons {
-            display: flex;
-            flex-direction: column;
-            gap: 0.5rem;
-        }
-
-        .action-buttons button {
-            width: 100%;
-            font-size: 1rem;
-        }
-
-        .section-header {
-            flex-direction: column;
-            gap: 0.5rem;
-            align-items: stretch;
-            text-align: center;
-        }
-
-        .section-header button {
-            width: 100%;
-            font-size: 1rem;
-        }
-
-        .nav-content {
-            flex-direction: column;
-            gap: 1rem;
-            text-align: center;
-        }
-
-        .nav-links {
-            width: 100%;
-            justify-content: center;
-            flex-wrap: wrap;
-        }
-
-        .nav-links button {
-            flex: 1;
-            min-width: 120px;
-        }
-
-        section {
-            scroll-margin-top: 120px; /* Accounts for larger nav on mobile */
-        }
-    }
-
-    .modal-backdrop {
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: rgba(0, 0, 0, 0.5);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 1000;
-    }
-
-    .modal-content {
-        background: white;
-        padding: 2rem;
-        border-radius: 12px;
-        width: 90%;
-        max-width: 500px;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    }
-
-    .modal-content h3 {
-        margin: 0 0 1.5rem;
-        color: #333;
-        font-size: 1.25rem;
-    }
-
-    .modal-form-group {
-        margin-bottom: 1.5rem;
-    }
-
-    .modal-form-group input {
-        width: 100%;
-        padding: 0.75rem;
-        border: 1px solid #dee2e6;
-        border-radius: 6px;
-        font-size: 1rem;
-    }
-
-    .modal-form-group input:focus {
-        outline: none;
-        border-color: #007bff;
-        box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
-    }
-
-    .modal-actions {
-        display: flex;
-        justify-content: flex-end;
-        gap: 1rem;
-    }
-
-    .submit-btn {
-        background: #007bff;
-        color: white;
-    }
-
-    .submit-btn:hover {
-        background: #0056b3;
-    }
-
-    .image-btn {
-        width: 100%;
-        max-width: 300px;
-        padding: 0.75rem;
-        background: #007bff;
-        color: white;
-        border: none;
-        border-radius: 6px;
-        font-size: 1rem;
-        cursor: pointer;
-        transition: all 0.2s;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 0.5rem;
-    }
-
-    .image-btn:hover {
-        background: #0056b3;
-    }
-
-    .modal-tabs {
-        display: flex;
-        gap: 1rem;
-        margin-bottom: 1.5rem;
-        border-bottom: 1px solid #dee2e6;
-        padding-bottom: 1rem;
-    }
-
-    .tab-btn {
-        padding: 0.5rem 1rem;
-        background: none;
-        border: none;
-        color: #6c757d;
-        cursor: pointer;
-        font-size: 1rem;
-        transition: all 0.2s;
-        border-bottom: 2px solid transparent;
-        margin-bottom: -1rem;
-    }
-
-    .tab-btn.active {
-        color: #007bff;
-        border-bottom-color: #007bff;
-    }
-
-    .upload-area {
-        border: 2px dashed #dee2e6;
-        border-radius: 8px;
-        padding: 2rem;
-        text-align: center;
-        cursor: pointer;
-        transition: all 0.2s;
-    }
-
-    .upload-area:hover {
-        border-color: #007bff;
-        background: #f8f9fa;
-    }
-
-    .upload-label {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 0.5rem;
-        cursor: pointer;
-    }
-
-    .upload-icon {
-        font-size: 2rem;
-        margin-bottom: 0.5rem;
-    }
-
-    .upload-hint {
-        font-size: 0.875rem;
-        color: #6c757d;
-    }
-
-    .close-btn {
-        position: absolute;
-        top: 1rem;
-        right: 1rem;
-        background: none;
-        border: none;
-        font-size: 1.5rem;
-        color: #6c757d;
-        cursor: pointer;
-        padding: 0.25rem 0.5rem;
-        line-height: 1;
-    }
-
-    .close-btn:hover {
-        color: #343a40;
-    }
-
-    .stat-list {
-        list-style: none;
-        padding: 0;
-        margin: 0;
-    }
-    .stat-list li {
-        font-size: 1rem;
-        margin-bottom: 0.25rem;
-    }
-
-    .badge {
-        display: inline-block;
-        padding: 0.25em 0.75em;
-        border-radius: 12px;
-        font-size: 0.85em;
-        font-weight: 600;
-        color: #fff;
-    }
-    .badge.guest {
-        background: #6c757d;
-    }
-    .badge.registered {
-        background: #007bff;
-    }
-    tr.guest-order {
-        background: #f8f9fa;
-    }
-
-    .user-list {
-        list-style: none;
-        padding: 0;
-        margin: 0;
-    }
-    .user-list li {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 0.25rem 0;
-        border-bottom: 1px solid #f0f0f0;
-        font-size: 1rem;
-    }
-    .user-list li:last-child {
-        border-bottom: none;
-    }
-    .user-name {
-        font-weight: 500;
-        color: #333;
-        max-width: 60%;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-    }
-    .user-amount {
-        font-weight: 600;
-        color: #007bff;
-        min-width: 80px;
-        text-align: right;
-    }
-
-    .desktop-only { display: block; }
-    .mobile-cards { display: none; }
-    @media (max-width: 768px) {
-        .desktop-only { display: none !important; }
-        .mobile-cards { display: block; }
-        .mobile-cards .admin-card {
-            background: #fff;
-            border-radius: 12px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-            margin-bottom: 1rem;
-            padding: 1rem;
-            display: flex;
-            gap: 1rem;
-            flex-direction: row;
-            align-items: flex-start;
-        }
-        .admin-card-img-wrap {
-            flex-shrink: 0;
-            width: 60px;
-            height: 60px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: #f8f9fa;
-            border-radius: 8px;
-            overflow: hidden;
-        }
-        .admin-card-img-wrap img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            border-radius: 8px;
-        }
-        .admin-card-body {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            gap: 0.5rem;
-        }
-        .admin-card-title {
-            font-size: 1.1rem;
-            font-weight: 600;
-            margin-bottom: 0.25rem;
-        }
-        .admin-card-row {
-            font-size: 0.98rem;
-            margin-bottom: 0.15rem;
-        }
-        .admin-card-actions {
-            display: flex;
-            gap: 0.5rem;
-            margin-top: 0.5rem;
-        }
-        .admin-card-actions button {
-            flex: 1;
-            font-size: 1rem;
-            padding: 0.5rem 0.75rem;
-        }
-    }
-
-    .filters-card {
-        background: white;
-        border-radius: 8px;
-        padding: 1.5rem;
-        margin-bottom: 1.5rem;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
-
-    .filters-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-        gap: 1rem;
-    }
-
-    .filter-group {
-        display: flex;
-        flex-direction: column;
-        gap: 0.5rem;
-    }
-
-    .filter-group label {
         font-size: 0.9rem;
         color: #666;
         font-weight: 500;
@@ -2312,6 +1806,225 @@
     @media (max-width: 768px) {
         .filters-grid {
             grid-template-columns: 1fr;
+        }
+    }
+
+    .mobile-only {
+        display: none;
+    }
+    @media (max-width: 900px) {
+        .mobile-only {
+            display: block;
+        }
+        .desktop-only {
+            display: none;
+        }
+    }
+
+    .image-input-container {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+    }
+
+    .image-preview {
+        display: flex;
+        align-items: center;
+    }
+
+    .preview-image {
+        width: 60px;
+        height: 60px;
+        object-fit: cover;
+        border-radius: 6px;
+        border: 1px solid #eee;
+    }
+
+    .image-btn {
+        padding: 0.5rem 1.2rem;
+        border: 1px solid #007bff;
+        background: #f8f9fa;
+        color: #007bff;
+        border-radius: 6px;
+        font-size: 1rem;
+        cursor: pointer;
+        transition: background 0.2s, color 0.2s;
+        margin-left: 0.5rem;
+        white-space: nowrap;
+    }
+
+    .image-btn:hover {
+        background: #007bff;
+        color: #fff;
+    }
+
+    .modal-backdrop {
+        position: fixed;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0,0,0,0.35);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 2000;
+    }
+
+    .modal-content {
+        background: #fff;
+        border-radius: 16px;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+        padding: 2rem 2.5rem 1.5rem 2.5rem;
+        min-width: 320px;
+        max-width: 95vw;
+        width: 400px;
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .modal-content h3 {
+        margin-top: 0;
+        margin-bottom: 1.5rem;
+        font-size: 1.3rem;
+        color: #333;
+        text-align: center;
+    }
+
+    .modal-tabs {
+        display: flex;
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+        justify-content: center;
+    }
+
+    .tab-btn {
+        background: none;
+        border: none;
+        color: #007bff;
+        font-size: 1rem;
+        padding: 0.5rem 1.2rem;
+        border-radius: 6px 6px 0 0;
+        cursor: pointer;
+        transition: background 0.2s, color 0.2s;
+        border-bottom: 2px solid transparent;
+    }
+
+    .tab-btn.active, .tab-btn:focus {
+        background: #f8f9fa;
+        color: #0056b3;
+        border-bottom: 2px solid #007bff;
+        outline: none;
+    }
+
+    .upload-area {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 1rem;
+        margin-bottom: 1rem;
+    }
+
+    .upload-label {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        cursor: pointer;
+        padding: 1.2rem 2rem;
+        border: 2px dashed #007bff;
+        border-radius: 8px;
+        background: #f8f9fa;
+        transition: border-color 0.2s;
+        width: 100%;
+        text-align: center;
+    }
+
+    .upload-label:hover {
+        border-color: #0056b3;
+    }
+
+    .upload-icon {
+        font-size: 2rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .upload-hint {
+        font-size: 0.9rem;
+        color: #888;
+    }
+
+    .file-input {
+        display: none;
+    }
+
+    .upload-progress {
+        width: 100%;
+        background: #e9ecef;
+        border-radius: 4px;
+        height: 8px;
+        margin-top: 0.5rem;
+        overflow: hidden;
+    }
+
+    .progress-bar {
+        height: 100%;
+        background: #007bff;
+        transition: width 0.3s;
+    }
+
+    .modal-form-group {
+        margin-bottom: 1rem;
+    }
+
+    .modal-form-group input[type="url"] {
+        width: 100%;
+        padding: 0.75rem;
+        border: 1px solid #dee2e6;
+        border-radius: 6px;
+        font-size: 1rem;
+    }
+
+    .modal-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 1rem;
+    }
+
+    .submit-btn {
+        background: #007bff;
+        color: #fff;
+        border: none;
+        border-radius: 6px;
+        padding: 0.75rem 1.5rem;
+        font-size: 1rem;
+        cursor: pointer;
+        transition: background 0.2s;
+    }
+
+    .submit-btn:hover {
+        background: #0056b3;
+    }
+
+    .close-btn {
+        position: absolute;
+        top: 1rem;
+        right: 1rem;
+        background: none;
+        border: none;
+        font-size: 1.5rem;
+        color: #888;
+        cursor: pointer;
+        transition: color 0.2s;
+    }
+
+    .close-btn:hover {
+        color: #dc3545;
+    }
+
+    @media (max-width: 500px) {
+        .modal-content {
+            padding: 1rem;
+            min-width: 0;
+            width: 98vw;
         }
     }
 </style>

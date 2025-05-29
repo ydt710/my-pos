@@ -34,10 +34,10 @@
   onMount(async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
-      // Fetch profile to check for POS role
+      // Fetch profile to check for POS role and get user info
       const { data: profile } = await supabase
         .from('profiles')
-        .select('role')
+        .select('role, display_name, phone_number, address')
         .eq('auth_user_id', user.id)
         .single();
       if (profile && profile.role === 'pos') {
@@ -48,9 +48,9 @@
       if (!isPosUser) {
         guestInfo = {
           email: user.email || '',
-          name: user.user_metadata?.name || '',
-          phone: user.user_metadata?.phone || '',
-          address: user.user_metadata?.address || ''
+          name: profile?.display_name || '',
+          phone: profile?.phone_number || '',
+          address: profile?.address || ''
         };
       } else {
         guestInfo = {
@@ -141,6 +141,7 @@
     let paymentUserId = null;
     let overpayment = 0;
     let currentUserDebt = 0;
+    let userProfileId = undefined;
     if (!isGuest && posUser && posUser.id) {
       // Fetch current user debt from ledger
       currentUserDebt = await getUserBalance(posUser.id);
@@ -151,6 +152,21 @@
       overpayment = Math.max(0, cash - totalDue); // Only extra after all debt/order is paid
       debt = totalDue - Math.min(cash, totalDue);
       paymentUserId = posUser.id;
+    }
+
+    // For regular logged-in users (not POS), fetch their profile id
+    if (!isGuest && (!isPosUser || !posUser || !posUser.id)) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('auth_user_id', user.id)
+          .maybeSingle();
+        if (profile && profile.id) {
+          userProfileId = profile.id;
+        }
+      }
     }
 
     // Enforce: Cannot track debt for guest orders (no selected customer) only in POS mode
@@ -182,11 +198,16 @@
               address: guestInfo.address.trim()
             }
           : undefined,
-        (!isGuest && posUser && posUser.id) ? posUser.id : undefined,
+        (!isGuest && posUser && posUser.id)
+          ? posUser.id
+          : (!isGuest && userProfileId)
+            ? userProfileId
+            : undefined,
         paymentMethod,
         debt,
         cash,
-        change
+        change,
+        isPosUser && posUser && posUser.id ? true : false
       );
 
       if (result.success) {

@@ -6,7 +6,6 @@
   import { supabase } from '$lib/supabase';
   import { createEventDispatcher } from 'svelte';
   import { getProductReviews, addReview, updateProductRating } from '$lib/services/reviewService';
-  import ProductDetailsModal from './ProductDetailsModal.svelte';
   
   interface Review {
     id: string;
@@ -32,14 +31,6 @@
   let selectedQuantity = 1;
   let cardElement: HTMLElement;
   let reviews: Review[] = [];
-  let showReviewModal = false;
-  let newReview = {
-    rating: 5,
-    comment: ''
-  };
-  let submittingReview = false;
-  let showDetailsModal = false;
-  let userReview: Review | null = null;
   let showSnackbar = false;
   let snackbarMessage = '';
   let snackbarType: 'success' | 'error' = 'success';
@@ -91,20 +82,6 @@
     }
   }
 
-  async function loadReviews() {
-    reviews = await getProductReviews(String(product.id));
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-      userReview = reviews.find(review => review.user_id === user.id) || null;
-      if (userReview) {
-        newReview = {
-          rating: userReview.rating,
-          comment: userReview.comment
-        };
-      }
-    }
-  }
-
   function showMessage(message: string, type: 'success' | 'error' = 'success') {
     snackbarMessage = message;
     snackbarType = type;
@@ -121,59 +98,8 @@
     }, 3000);
   }
 
-  async function handleReviewSubmit() {
-    if (submittingReview) return;
-    
-    submittingReview = true;
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        showMessage('Please sign in to leave a review', 'error');
-        return;
-      }
-      
-      if (userReview) {
-        // Update existing review
-        const updatedReview = await addReview({
-          product_id: String(product.id),
-          user_id: user.id,
-          rating: newReview.rating,
-          comment: newReview.comment
-        });
-        
-        if (updatedReview) {
-          await updateProductRating(String(product.id));
-          await loadReviews();
-          showMessage('Review updated successfully!');
-          showReviewModal = false;
-        }
-      } else {
-        // Create new review
-        const review = await addReview({
-          product_id: String(product.id),
-          user_id: user.id,
-          rating: newReview.rating,
-          comment: newReview.comment
-        });
-        
-        if (review) {
-          await updateProductRating(String(product.id));
-          await loadReviews();
-          showMessage('Review submitted successfully!');
-          showReviewModal = false;
-        }
-      }
-    } catch (error) {
-      console.error('Error submitting review:', error);
-      showMessage('Failed to submit review. Please try again.', 'error');
-    } finally {
-      submittingReview = false;
-    }
-  }
-
   onMount(() => {
     checkStock();
-    loadReviews();
   });
 
   async function handleAddToCart() {
@@ -256,7 +182,7 @@
     } else if (e instanceof KeyboardEvent) {
       if (e.key !== 'Enter' && e.key !== ' ') return;
     }
-    showDetailsModal = true;
+    dispatch('showDetails', { product });
   }
 
   // Generate random rating between 3.5 and 5 for demo
@@ -283,264 +209,218 @@
   }
 </script>
 
-<div 
-  class="card-product__container" 
-  bind:this={cardElement} 
-  style="background-image: url('{product.image_url}'); background-size: cover; background-position: center; position: relative;" 
-  role="article"
-  aria-label="Product card for {product.name}"
->
-  <div class="card-product__body">
-    <div class="card-product__body-container cannabis-product">
-      <div class="card-product__title">{product.name}</div>
-      <div class="product__price-row">
-        <span class="product__price">R{product.price}</span>
-      </div>
-      <div class="product__details-row">
-        <button 
-          class="card-product__image" 
-          on:click={handleCardClick}
-          on:keydown={e => e.key === 'Enter' && handleCardClick(e)}
-          aria-label="View product details"
-        >
-          <div class="card-product__image">
-            <img 
-              src={product.image_url + '?width=300&quality=75'} 
-              srcset="
-                {product.image_url}?width=300&quality=75 300w,
-                {product.image_url}?width=400&quality=75 400w,
-                {product.image_url}?width=500&quality=75 500w
-              "
-              sizes="
-                (max-width: 480px) 300px,
-                (max-width: 768px) 400px,
-                500px
-              "
-              alt={product.name}
-              loading="lazy"
-              decoding="async"
-              width="300"
-              height="400"
-              style="aspect-ratio: 3/4;"
-            />
-          </div>
-        </button>
-        <div class="card-product__details product__details product__details--cannabis">
-          <div class="product__strain-type">
-            <div class="strain-type__labels">
-              <span class="strain-type__label">{(100 - (product.indica ?? 0))}% Sativa</span>
-              <span class="strain-type__label">{product.indica ?? 0}% Indica</span>
-            </div>
-            <div class="strain-type__bar">
-              <div 
-                class="strain-type__indicator" 
-                style="left: {product.indica ?? 0}%"
-                title="{product.indica ?? 0}% Indica, {(100 - (product.indica ?? 0))}% Sativa"
-              ></div>
-            </div>
-          </div>
-          <div class="product__cannabis-potency">
-            <h4 class="product__cannabis-potency-title">
-              THC
-              <span class="product__cannabis-potency-unit">
-                {#if (product as any).thc_min !== undefined && (product as any).thc_max !== undefined && (product as any).thc_min !== (product as any).thc_max}
-                  {Math.round((product as any).thc_min * 0.1 * 100) / 100}% - {Math.round((product as any).thc_max * 0.1 * 100) / 100}%
-                {:else if (product as any).thc_max !== undefined}
-                  {Math.round((product as any).thc_max * 0.1 * 100) / 100}%
-                {:else if (product as any).thc_min !== undefined}
-                  {Math.round((product as any).thc_min * 0.1 * 100) / 100}%
-                {:else}
-                  0%
-                {/if}
-              </span>
-            </h4>
-            <div class="product__cannabis-potency-bar">
-              {#each Array(5) as _, i}
-                <div
-                  class="product__cannabis-potency-value product__cannabis-potency-value--thc"
-                  style="background: {i < getPotencyBarCount((product as any).thc_min, (product as any).thc_max) ? thcBarColors[i] : '#eee'}"
-                ></div>
-              {/each}
-            </div>
-          </div>
-          <div class="product__cannabis-potency">
-            <h4 class="product__cannabis-potency-title">
-              CBD
-              <span class="product__cannabis-potency-unit">
-                {#if (product as any).cbd_min !== undefined && (product as any).cbd_max !== undefined && (product as any).cbd_min !== (product as any).cbd_max}
-                  {Math.round((product as any).cbd_min * 0.1 * 100) / 100}% - {Math.round((product as any).cbd_max * 0.1 * 100) / 100}%
-                {:else if (product as any).cbd_max !== undefined}
-                  {Math.round((product as any).cbd_max * 0.1 * 100) / 100}%
-                {:else if (product as any).cbd_min !== undefined}
-                  {Math.round((product as any).cbd_min * 0.1 * 100) / 100}%
-                {:else}
-                  0%
-                {/if}
-              </span>
-            </h4>
-            <div class="product__cannabis-potency-bar">
-              {#each Array(5) as _, i}
-                <div
-                  class="product__cannabis-potency-value product__cannabis-potency-value--cbd"
-                  style="background: {i < getPotencyBarCount((product as any).cbd_min, (product as any).cbd_max) ? cbdBarColors[i] : '#eee'}"
-                ></div>
-              {/each}
-            </div>
-          </div>
-          <div class="stock-status" 
-            class:out-of-stock={displayStock <= 0} 
-            class:low-stock={displayStock > 0 && displayStock <= 5}
+<div class="card-product__border" class:trippy={product.is_special || product.is_new}>
+  <div 
+    class="card-product__container" 
+    bind:this={cardElement} 
+    style="background-image: url('{product.image_url}'); background-size: cover; background-position: center; position: relative;" 
+    role="article"
+    aria-label="Product card for {product.name}"
+  >
+    {#if product.is_special}
+      <div class="product-badge special">Special</div>
+    {:else if product.is_new}
+      <div class="product-badge new">New</div>
+    {/if}
+    <div class="card-product__body">
+      <div class="card-product__body-container cannabis-product">
+        <div class="card-product__title">{product.name}</div>
+        <div class="product__price-row">
+          <span class="product__price">R{product.price}</span>
+        </div>
+        <div class="product__details-row">
+          <button 
+            class="card-product__image" 
+            on:click={handleCardClick}
+            on:keydown={e => e.key === 'Enter' && handleCardClick(e)}
+            aria-label="View product details"
           >
-            {stockStatus}
-          </div>
-          <div 
-            class="quantity-controls" 
-            on:click={handleQuantityClick}
-            role="group"
-            aria-label="Product quantity controls"
-          >
+            <div class="card-product__image">
+              <img 
+                src={product.image_url + '?width=300&quality=75'} 
+                srcset="
+                  {product.image_url}?width=300&quality=75 300w,
+                  {product.image_url}?width=400&quality=75 400w,
+                  {product.image_url}?width=500&quality=75 500w
+                "
+                sizes="
+                  (max-width: 480px) 300px,
+                  (max-width: 768px) 400px,
+                  500px
+                "
+                alt={product.name}
+                loading="lazy"
+                decoding="async"
+                width="300"
+                height="400"
+                style="aspect-ratio: 3/4;"
+              />
+            </div>
+          </button>
+          <div class="card-product__details product__details product__details--cannabis">
+            <div class="product__strain-type">
+              <div class="strain-type__labels">
+                <span class="strain-type__label">{(100 - (product.indica ?? 0))}% Sativa</span>
+                <span class="strain-type__label">{product.indica ?? 0}% Indica</span>
+              </div>
+              <div class="strain-type__bar">
+                <div 
+                  class="strain-type__indicator" 
+                  style="left: {product.indica ?? 0}%"
+                  title="{product.indica ?? 0}% Indica, {(100 - (product.indica ?? 0))}% Sativa"
+                ></div>
+              </div>
+            </div>
+            <div class="product__cannabis-potency">
+              <h4 class="product__cannabis-potency-title">
+                THC
+                <span class="product__cannabis-potency-unit">
+                  {#if (product as any).thc_min !== undefined && (product as any).thc_max !== undefined && (product as any).thc_min !== (product as any).thc_max}
+                    {Math.round((product as any).thc_min * 0.1 * 100) / 100}% - {Math.round((product as any).thc_max * 0.1 * 100) / 100}%
+                  {:else if (product as any).thc_max !== undefined}
+                    {Math.round((product as any).thc_max * 0.1 * 100) / 100}%
+                  {:else if (product as any).thc_min !== undefined}
+                    {Math.round((product as any).thc_min * 0.1 * 100) / 100}%
+                  {:else}
+                    0%
+                  {/if}
+                </span>
+              </h4>
+              <div class="product__cannabis-potency-bar">
+                {#each Array(5) as _, i}
+                  <div
+                    class="product__cannabis-potency-value product__cannabis-potency-value--thc"
+                    style="background: {i < getPotencyBarCount((product as any).thc_min, (product as any).thc_max) ? thcBarColors[i] : '#eee'}"
+                  ></div>
+                {/each}
+              </div>
+            </div>
+            <div class="product__cannabis-potency">
+              <h4 class="product__cannabis-potency-title">
+                CBD
+                <span class="product__cannabis-potency-unit">
+                  {#if (product as any).cbd_min !== undefined && (product as any).cbd_max !== undefined && (product as any).cbd_min !== (product as any).cbd_max}
+                    {Math.round((product as any).cbd_min * 0.1 * 100) / 100}% - {Math.round((product as any).cbd_max * 0.1 * 100) / 100}%
+                  {:else if (product as any).cbd_max !== undefined}
+                    {Math.round((product as any).cbd_max * 0.1 * 100) / 100}%
+                  {:else if (product as any).cbd_min !== undefined}
+                    {Math.round((product as any).cbd_min * 0.1 * 100) / 100}%
+                  {:else}
+                    0%
+                  {/if}
+                </span>
+              </h4>
+              <div class="product__cannabis-potency-bar">
+                {#each Array(5) as _, i}
+                  <div
+                    class="product__cannabis-potency-value product__cannabis-potency-value--cbd"
+                    style="background: {i < getPotencyBarCount((product as any).cbd_min, (product as any).cbd_max) ? cbdBarColors[i] : '#eee'}"
+                  ></div>
+                {/each}
+              </div>
+            </div>
+            <div class="stock-status" 
+              class:out-of-stock={displayStock <= 0} 
+              class:low-stock={displayStock > 0 && displayStock <= 5}
+            >
+              {stockStatus}
+            </div>
+            <div
+               
+              class="quantity-controls" 
+              
+              role="group"
+              aria-label="Product quantity controls"
+              
+            >
+              <button 
+                class="quantity-btn" 
+                aria-label="Decrease quantity" 
+                on:click|stopPropagation={() => handleQuantityChange(-1)}
+                disabled={selectedQuantity <= 1 || loading || displayStock <= 0}
+              >-</button>
+              <input
+                type="number"
+                class="quantity-input"
+                value={selectedQuantity}
+                min="1"
+                max={displayStock}
+                on:input={handleQuantityInput}
+                on:blur={handleQuantityBlur}
+                on:click|stopPropagation
+                disabled={loading || displayStock <= 0}
+                aria-label="Product quantity"
+              />
+              <button 
+                class="quantity-btn" 
+                aria-label="Increase quantity" 
+                on:click|stopPropagation={() => handleQuantityChange(1)}
+                disabled={selectedQuantity >= displayStock || loading || displayStock <= 0}
+              >+</button>
+            </div>
             <button 
-              class="quantity-btn" 
-              aria-label="Decrease quantity" 
-              on:click|stopPropagation={() => handleQuantityChange(-1)}
-              disabled={selectedQuantity <= 1 || loading || displayStock <= 0}
-            >-</button>
-            <input
-              type="number"
-              class="quantity-input"
-              value={selectedQuantity}
-              min="1"
-              max={displayStock}
-              on:input={handleQuantityInput}
-              on:blur={handleQuantityBlur}
-              on:click|stopPropagation
+              class="add-to-cart-btn" 
+              on:click|stopPropagation={handleAddToCart}
               disabled={loading || displayStock <= 0}
-              aria-label="Product quantity"
-            />
-            <button 
-              class="quantity-btn" 
-              aria-label="Increase quantity" 
-              on:click|stopPropagation={() => handleQuantityChange(1)}
-              disabled={selectedQuantity >= displayStock || loading || displayStock <= 0}
-            >+</button>
-          </div>
-          <button 
-            class="add-to-cart-btn" 
-            on:click|stopPropagation={handleAddToCart}
-            disabled={loading || displayStock <= 0}
-            aria-label="Add {product.name} to cart"
-          >
-            {#if loading}
-              <span class="loading-spinner" aria-hidden="true"></span>
-              <span>Adding...</span>
-            {:else if displayStock <= 0}
-              <span>Out of Stock</span>
-            {:else}
-              <svg 
-                xmlns="http://www.w3.org/2000/svg" 
-                width="16" 
-                height="16" 
-                viewBox="0 0 24 24" 
-                fill="none" 
-                stroke="currentColor" 
-                stroke-width="2" 
-                stroke-linecap="round" 
-                stroke-linejoin="round"
-                aria-hidden="true"
-              >
-                <circle cx="9" cy="21" r="1"></circle>
-                <circle cx="20" cy="21" r="1"></circle>
-                <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path>
-              </svg>
-              <span>Add to Cart</span>
-            {/if}
-          </button>
-          <button 
-            class="product__rating" 
-            on:click={() => showReviewModal = true}
-            on:keydown={e => e.key === 'Enter' && (showReviewModal = true)}
-            aria-label="View product reviews"
-          >
-            <div class="stars" aria-hidden="true">
-              {#each Array(5) as _, i}
+              aria-label="Add {product.name} to cart"
+            >
+              {#if loading}
+                <span class="loading-spinner" aria-hidden="true"></span>
+                <span>Adding...</span>
+              {:else if displayStock <= 0}
+                <span>Out of Stock</span>
+              {:else}
                 <svg 
-                  class="star" 
-                  viewBox="0 0 24 24" 
+                  xmlns="http://www.w3.org/2000/svg" 
                   width="16" 
-                  height="16"
-                  style="fill: {getStarColor(i, product.average_rating ?? 0)}"
+                  height="16" 
+                  viewBox="0 0 24 24" 
+                  fill="none" 
+                  stroke="currentColor" 
+                  stroke-width="2" 
+                  stroke-linecap="round" 
+                  stroke-linejoin="round"
+                  aria-hidden="true"
                 >
-                  <path d={getStarPath(i, product.average_rating ?? 0)} />
+                  <circle cx="9" cy="21" r="1"></circle>
+                  <circle cx="20" cy="21" r="1"></circle>
+                  <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path>
                 </svg>
-              {/each}
-            </div>
-            <span class="rating-value" aria-label="Average rating: {product.average_rating?.toFixed(1) ?? '0.0'} out of 5">
-              {product.average_rating?.toFixed(1) ?? '0.0'}
-            </span>
-            <span class="rating-count" aria-label="{product.review_count ?? 0} reviews">
-              ({product.review_count ?? 0})
-            </span>
-          </button>
+                <span>Add to Cart</span>
+              {/if}
+            </button>
+            <button 
+              class="product__rating" 
+              on:click={() => dispatch('showReview', { product })}
+              on:keydown={e => e.key === 'Enter' && dispatch('showReview', { product })}
+              aria-label="View product reviews"
+            >
+              <div class="stars" aria-hidden="true">
+                {#each Array(5) as _, i}
+                  <svg 
+                    class="star" 
+                    viewBox="0 0 24 24" 
+                    width="16" 
+                    height="16"
+                    style="fill: {getStarColor(i, product.average_rating ?? 0)}"
+                  >
+                    <path d={getStarPath(i, product.average_rating ?? 0)} />
+                  </svg>
+                {/each}
+              </div>
+              <span class="rating-value" aria-label="Average rating: {product.average_rating?.toFixed(1) ?? '0.0'} out of 5">
+                {product.average_rating?.toFixed(1) ?? '0.0'}
+              </span>
+              <span class="rating-count" aria-label="{product.review_count ?? 0} reviews">
+                ({product.review_count ?? 0})
+              </span>
+            </button>
+          </div>
         </div>
       </div>
     </div>
   </div>
 </div>
-
-{#if showReviewModal}
-  <div class="review-modal" on:click|stopPropagation>
-    <div class="review-modal__content">
-      <button 
-        class="close-button" 
-        on:click={() => showReviewModal = false}
-        aria-label="Close review modal"
-      >
-        ×
-      </button>
-      <h3>{userReview ? 'Update Your Review' : 'Write a Review'}</h3>
-      <div class="rating-input">
-        {#each Array(5) as _, i}
-          <button 
-            class="star-button" 
-            on:click={() => newReview.rating = i + 1}
-            disabled={submittingReview}
-            aria-label={`Rate ${i + 1} out of 5`}
-          >
-            <span class="star" class:filled={i < newReview.rating}>★</span>
-          </button>
-        {/each}
-      </div>
-      <textarea
-        bind:value={newReview.comment}
-        placeholder="Write your review..."
-        rows="4"
-        disabled={submittingReview}
-        aria-label="Review comment"
-      ></textarea>
-      <button 
-        class="submit-review" 
-        on:click={handleReviewSubmit}
-        disabled={submittingReview}
-        aria-label={userReview ? "Update review" : "Submit review"}
-      >
-        {#if submittingReview}
-          <span class="loading-spinner"></span>
-          {userReview ? 'Updating...' : 'Submitting...'}
-        {:else}
-          {userReview ? 'Update Review' : 'Submit Review'}
-        {/if}
-      </button>
-    </div>
-  </div>
-{/if}
-
-{#if showDetailsModal}
-  <ProductDetailsModal 
-    {product} 
-    show={showDetailsModal} 
-    on:close={() => showDetailsModal = false} 
-  />
-{/if}
 
 {#if showSnackbar}
   <div class="snackbar" class:error={snackbarType === 'error'} transition:fade>
@@ -549,35 +429,34 @@
 {/if}
 
 <style>
+.card-product__border {
+  padding: 4px;
+  border-radius: 16px;
+  display: flex;
+  width: 100%;
+  max-width: 280px;
+  margin: 0 auto;
+}
+.card-product__border.trippy {
+  background: linear-gradient(270deg, #ff00de, #00f0ff, #39ff14, #fcdd43, #ff00de);
+  background-size: 1000% 1000%;
+  animation: trippy-gradient 6s ease-in-out infinite;
+  box-shadow: 0 0 16px #00f0ff, 0 0 32px #ff00de;
+}
 .card-product__container {
   border-radius: 12px;
   box-shadow: 0 4px 12px rgba(0,0,0,0.08);
   overflow: hidden;
   width: 100%;
   max-width: 280px;
-  margin: 0 auto;
   display: flex;
   flex-direction: column;
   position: relative;
   transition: transform 0.3s ease, box-shadow 0.3s ease;
   cursor: pointer;
-}
-
-.card-product__container:focus-visible {
-  outline: 2px solid #2196f3;
-  outline-offset: 2px;
-}
-
-.card-product__body,
-.card-product__body-container,
-.card-product__image,
-.card-product__details {
-  position: relative;
   z-index: 1;
-}
-
-.card-product__container::before {
-  display: none;
+  background: #23272f; /* Ensure card has a solid background */
+  margin: 0;
 }
 
 .card-product__container::after {
@@ -588,6 +467,14 @@
   opacity: 0.85;
   z-index: 0;
   pointer-events: none;
+}
+
+.card-product__body,
+.card-product__body-container,
+.card-product__image,
+.card-product__details {
+  position: relative;
+  z-index: 1;
 }
 
 .card-product__body {
@@ -791,79 +678,76 @@
 }
 
 .add-to-cart-btn {
-  background: linear-gradient(135deg, #2196f3, #1976d2);
-  color: white;
+  background: linear-gradient(270deg, #ff00de, #00f0ff, #39ff14, #fcdd43, #ff00de);
+  background-size: 1000% 1000%;
+  animation: trippy-gradient 6s ease-in-out infinite;
+  color: #fff;
   border: none;
   padding: 0.5rem 1rem;
   border-radius: 6px;
-  font-size: 0.85rem;
-  font-weight: 500;
+  font-size: 0.95rem;
+  font-weight: 600;
   width: 100%;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: box-shadow 0.2s, background 0.2s, color 0.2s, transform 0.2s;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 0.35rem;
-  box-shadow: 0 2px 4px rgba(33, 150, 243, 0.2);
+  box-shadow: 0 0 12px #00f0ff, 0 0 24px #ff00de, 0 0 32px #39ff14;
+  text-shadow: 0 0 8px #00f0ff, 0 0 16px #ff00de;
+  letter-spacing: 0.5px;
 }
 
-.add-to-cart-btn::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 5px;
-  height: 5px;
-  background: rgba(255, 255, 255, 0.5);
-  opacity: 0;
-  border-radius: 100%;
-  transform: scale(1, 1) translate(-50%);
-  transform-origin: 50% 50%;
-}
-
-.add-to-cart-btn:active::after {
-  animation: ripple 0.6s ease-out;
-}
-
-@keyframes ripple {
+@keyframes trippy-gradient {
   0% {
-    transform: scale(0, 0);
-    opacity: 0.5;
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
   }
   100% {
-    transform: scale(20, 20);
-    opacity: 0;
+    background-position: 0% 50%;
   }
 }
 
-.add-to-cart-btn:hover:not(:disabled) {
-  background: linear-gradient(135deg, #1976d2, #1565c0);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 8px rgba(33, 150, 243, 0.3);
+.add-to-cart-btn:hover:not(:disabled),
+.add-to-cart-btn:focus-visible {
+  box-shadow: 0 0 24px #00f0ff, 0 0 48px #ff00de, 0 0 64px #39ff14;
+  text-shadow: 0 0 16px #00f0ff, 0 0 32px #ff00de;
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+  transform: scale(1.05);
 }
 
 .add-to-cart-btn:active:not(:disabled) {
-  transform: translateY(0);
-  box-shadow: 0 2px 4px rgba(33, 150, 243, 0.2);
+  box-shadow: 0 0 8px #00f0ff, 0 0 16px #ff00de;
+  transform: scale(0.98);
 }
 
 .add-to-cart-btn:disabled {
-  background: #e0e0e0;
+  background: #222b2b;
   color: #9e9e9e;
   cursor: not-allowed;
   box-shadow: none;
+  text-shadow: none;
   transform: none;
 }
 
 .add-to-cart-btn:focus-visible {
-  outline: 2px solid #2196f3;
+  outline: 2px solid #fff;
   outline-offset: 2px;
 }
 
 @media (max-width: 600px) {
+  .card-product__border {
+    border-radius: 14px; /* 10px (container) + 4px (border) */
+    max-width: 100%;
+    padding: 4px;
+  }
   .card-product__container {
     max-width: 100%;
+    border-radius: 10px;
   }
   
   .card-product__body {
@@ -1037,182 +921,6 @@
   }
 }
 
-.review-modal {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-
-.review-modal__content {
-  position: relative;
-  background: white;
-  padding: 2rem;
-  border-radius: 12px;
-  width: 90%;
-  max-width: 400px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-}
-
-.review-modal__content h3 {
-  font-size: 1.5rem;
-  font-weight: 600;
-  color: #333;
-  margin: 0 0 1rem 0;
-  text-align: center;
-}
-
-.review-modal__content textarea {
-  width: 100%;
-  padding: 0.75rem;
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  margin: 1rem 0;
-  resize: vertical;
-  min-height: 100px;
-  font-family: inherit;
-  font-size: 1rem;
-  line-height: 1.5;
-  color: #333;
-  background: #f8f9fa;
-  transition: border-color 0.2s ease;
-}
-
-.review-modal__content textarea:focus {
-  outline: none;
-  border-color: #2196f3;
-  box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.1);
-}
-
-.review-modal__content textarea:disabled {
-  background: #f0f0f0;
-  cursor: not-allowed;
-  opacity: 0.7;
-}
-
-.submit-review {
-  background: linear-gradient(135deg, #2196f3, #1976d2);
-  color: white;
-  border: none;
-  padding: 0.75rem 1.5rem;
-  border-radius: 8px;
-  font-size: 1rem;
-  font-weight: 500;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  transition: all 0.2s ease;
-  width: 100%;
-  margin-top: 1rem;
-}
-
-.submit-review:hover:not(:disabled) {
-  background: linear-gradient(135deg, #1976d2, #1565c0);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 8px rgba(33, 150, 243, 0.3);
-}
-
-.submit-review:active:not(:disabled) {
-  transform: translateY(0);
-  box-shadow: 0 2px 4px rgba(33, 150, 243, 0.2);
-}
-
-.submit-review:disabled {
-  background: #e0e0e0;
-  cursor: not-allowed;
-  box-shadow: none;
-  transform: none;
-}
-
-.loading-spinner {
-  width: 20px;
-  height: 20px;
-  border: 2px solid #ffffff;
-  border-radius: 50%;
-  border-top-color: transparent;
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.rating-input {
-  display: flex;
-  gap: 0.5rem;
-  margin: 1rem 0;
-  justify-content: center;
-}
-
-.star-button {
-  background: none;
-  border: none;
-  padding: 0;
-  cursor: pointer;
-  font-size: 2rem;
-  color: #E0E0E0;
-  transition: all 0.2s ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.star-button:hover:not(:disabled) {
-  transform: scale(1.2);
-}
-
-.star-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.7;
-}
-
-.star {
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1));
-  transition: transform 0.2s ease;
-}
-
-.star.filled {
-  color: #FFD700;
-}
-
-.close-button {
-  position: absolute;
-  top: 1rem;
-  right: 1rem;
-  background: none;
-  border: none;
-  font-size: 1.5rem;
-  cursor: pointer;
-  color: #666;
-  padding: 0.5rem;
-  border-radius: 50%;
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s ease;
-}
-
-.close-button:hover {
-  background-color: rgba(0, 0, 0, 0.1);
-  transform: scale(1.1);
-}
-
-.close-button:active {
-  transform: scale(0.95);
-}
-
 .snackbar {
   position: fixed;
   bottom: 2rem;
@@ -1223,7 +931,7 @@
   padding: 1rem 2rem;
   border-radius: 8px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  z-index: 10000;
+  z-index: 10;
   font-weight: 500;
   animation: slideUp 0.3s ease-out;
 }
@@ -1250,5 +958,29 @@
   to {
     opacity: 1;
   }
+}
+
+.product-badge {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 2;
+  padding: 0.25rem 0.75rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #fff;
+  background: #2196f3;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  letter-spacing: 1px;
+}
+
+.product-badge.special {
+  background: #ff00de;
+}
+
+.product-badge.new {
+  background: #39ff14;
+  color: #23272f;
 }
 </style> 

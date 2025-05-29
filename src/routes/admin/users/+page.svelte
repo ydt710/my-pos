@@ -22,10 +22,6 @@
     id: string;
     email: string;
     created_at: string;
-    user_metadata: {
-      name?: string;
-      is_admin?: boolean;
-    };
     is_admin?: boolean;
     role?: string;
     balance?: number;
@@ -49,7 +45,17 @@
   onMount(async () => {
     // Check if current user is admin
     const { data: { user: currentUser } } = await supabase.auth.getUser();
-    if (!currentUser?.user_metadata?.is_admin) {
+    if (!currentUser) {
+      goto('/');
+      return;
+    }
+    // Fetch profile for admin check
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('is_admin')
+      .eq('auth_user_id', currentUser.id)
+      .maybeSingle();
+    if (!profile?.is_admin) {
       goto('/');
       return;
     }
@@ -65,7 +71,7 @@
       if (!currentUser) {
         throw new Error('Not authenticated');
       }
-      if (!currentUser.user_metadata?.is_admin) {
+      if (!currentUser.is_admin) {
         throw new Error('Not authorized - Admin access required');
       }
 
@@ -81,7 +87,6 @@
           id: p.id,
           email: p.email,
           created_at: p.created_at,
-          user_metadata: { name: p.display_name },
           is_admin: p.is_admin,
           role: p.role,
           balance: p.balance ?? 0
@@ -116,11 +121,7 @@
         if (user.id === userId) {
           return {
             ...user,
-            is_admin: makeAdmin,
-            user_metadata: {
-              ...user.user_metadata,
-              is_admin: makeAdmin
-            }
+            is_admin: makeAdmin
           };
         }
         return user;
@@ -247,7 +248,7 @@
               {@const balance = userBalances?.[user.id]}
               <tr>
                 <td>{user.email}</td>
-                <td>{user.user_metadata?.name || '-'}</td>
+                <td>{user.display_name || '-'}</td>
                 <td>{formatDate(user.created_at)}</td>
                 <td>
                   <span class="role-badge" class:admin={user.is_admin}>
