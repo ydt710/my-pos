@@ -168,7 +168,7 @@
     background: rgba(255, 255, 255, 0.15);
   }
 
-  @media (max-width: 768px) {
+  @media (max-width: 800px) {
     .menu-toggle {
       display: block;
     }

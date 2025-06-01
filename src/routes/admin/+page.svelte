@@ -1803,7 +1803,7 @@
         box-shadow: 0 0 0 2px rgba(0,123,255,0.25);
     }
 
-    @media (max-width: 768px) {
+    @media (max-width: 800px) {
         .filters-grid {
             grid-template-columns: 1fr;
         }

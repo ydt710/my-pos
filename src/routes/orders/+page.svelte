@@ -427,7 +427,7 @@
     background: #218838;
   }
 
-  @media (max-width: 768px) {
+  @media (max-width: 800px) {
     .order-header {
       flex-direction: column;
       align-items: flex-start;

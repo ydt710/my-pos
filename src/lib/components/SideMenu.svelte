@@ -39,7 +39,7 @@
 
   onMount(async () => {
     try {
-      const bgData = supabase.storage.from('route420').getPublicUrl('field.jpeg');
+      const bgData = supabase.storage.from('route420').getPublicUrl('field.webp');
       backgroundUrl = bgData.data.publicUrl;
     } catch (err) {
       console.error('Error getting background URL:', err);

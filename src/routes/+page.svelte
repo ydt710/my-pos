@@ -53,16 +53,6 @@
     'headshop': 'Headshop'
   };
 
-  // Category-specific background images
-  const categoryBackgrounds: Record<string, string> = {
-    home: "https://cannabisimages.co.uk/wp-content/uploads/2023/07/cannabis-plants-sunset-2-scaled.jpeg",
-    flower: "https://m.foolcdn.com/media/dubs/original_images/Slide_7_-_marijuana_greenhouse.jpg",
-    concentrate: "https://bulkweedinbox.cc/wp-content/uploads/2024/12/Greasy-Pink.jpg",
-    joints: "https://mjbizdaily.com/wp-content/uploads/2024/08/Pre-rolls_-joints-_2_.webp",
-    edibles: "https://longislandinterventions.com/wp-content/uploads/2024/12/Edibles-1.jpg",
-    headshop: "https://wglybohfygczpapjxwwz.supabase.co/storage/v1/object/public/route420//bongs.webp"
-  };
-
   // Icon mapping for categories
   const categoryIcons: Record<string, string> = {
     joints: 'fa-joint',
@@ -219,7 +209,7 @@
 
   onMount(async () => {
     try {
-      const { data } = supabase.storage.from('route420').getPublicUrl('logo.png');
+      const { data } = supabase.storage.from('route420').getPublicUrl('logo.webp');
       logoUrl = data.publicUrl;
     } catch (err) {
       console.error('Error getting logo URL:', err);
@@ -243,11 +233,7 @@
 
     // Only run browser-specific code if window is defined
     if (typeof window !== 'undefined') {
-      Object.values(categoryBackgrounds).forEach(url => {
-        const img = new window.Image();
-        img.src = url;
-      });
-
+      // Removed category background preloading logic
       // Initial page size update
       updatePageSize();
 
@@ -494,7 +480,7 @@
 
 {#if showReviewModal && reviewProduct}
   <ProductReviewModal
-    product={reviewProduct}
+    
     userReview={userReview}
     newReview={newReview}
     submittingReview={submittingReview}
@@ -599,7 +585,7 @@
     }
   }
 
-  @media (max-width: 768px) {
+  @media (max-width: 800px) {
     .products-grid {
       grid-template-columns: repeat(2, 1fr);
       gap: 1rem;
@@ -659,7 +645,7 @@
     }
   }
   
-  @media (max-width: 768px) {
+  @media (max-width: 800px) {
     .products-container {
       padding-left: 1rem;
       padding-right: 1rem;
@@ -738,7 +724,7 @@
 
   .category-header-icon {
     font-size: 2.5rem;
-    color: #007bff;
+    color: #ced9e4;
     display: block;
     text-align: center;
     

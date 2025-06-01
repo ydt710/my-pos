@@ -350,7 +350,7 @@
     color: #666;
   }
 
-  @media (max-width: 768px) {
+  @media (max-width: 800px) {
     .filters {
       flex-direction: column;
     }

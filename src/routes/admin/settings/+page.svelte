@@ -414,7 +414,7 @@
     color: #666;
   }
 
-  @media (max-width: 768px) {
+  @media (max-width: 800px) {
     .settings-section {
       padding: 1.5rem;
     }

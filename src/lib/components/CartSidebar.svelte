@@ -596,7 +596,7 @@
     outline: none;
   }
 
-  @media (max-width: 768px) {
+  @media (max-width: 800px) {
     .cart-container {
       max-height: 100vh;
       top: 0;

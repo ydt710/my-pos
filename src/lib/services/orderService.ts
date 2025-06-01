@@ -24,7 +24,10 @@ export async function createOrder(
   debt: number = 0,
   cashGiven: number = 0,
   changeGiven: number = 0,
-  isPosOrder: boolean = false
+  isPosOrder: boolean = false,
+  extraCashOption: 'change' | 'credit' = 'change',
+  currentUserDebt: number = 0, // Pass this from frontend if needed
+  creditUsed: number = 0
 ): Promise<{ success: boolean; error: string | null; orderId?: string }> {
   try {
     // Validate items before proceeding
@@ -71,7 +74,8 @@ export async function createOrder(
         payment_method: paymentMethod,
         debt: debt,
         cash_given: cashGiven,
-        change_given: changeGiven
+        change_given: changeGiven,
+        is_pos_order: isPosOrder
       })
       .select()
       .single();
@@ -174,26 +178,53 @@ export async function createOrder(
       guestEmail: guestInfo?.email
     });
 
-    // Only insert a debt ledger entry for POS/credit orders
+    // Ledger logic for POS/credit orders
     if (userId && isPosOrder) {
-      await supabase.from('credit_ledger').insert({
-        user_id: userId,
-        type: 'order',
-        amount: -total, // negative for full order total
-        order_id: order.id,
-        note: 'Order placed (POS/credit)'
-      });
-    }
-
-    // Only log a payment if cashGiven > 0 and isPosOrder is true
-    if (userId && cashGiven > 0 && isPosOrder) {
-      await supabase.from('credit_ledger').insert({
-        user_id: userId,
-        type: 'payment',
-        amount: cashGiven,
-        order_id: order.id,
-        note: 'Order payment'
-      });
+      const totalDue = total + Math.abs(currentUserDebt || 0);
+      const netPayment = Math.min((cashGiven || 0) - (changeGiven || 0), totalDue);
+      // If credit covers the whole order, only log credit_used
+      if (creditUsed >= total) {
+        if (creditUsed > 0) {
+          await supabase.from('credit_ledger').insert({
+            user_id: userId,
+            type: 'credit_used',
+            amount: -creditUsed, // NEGATIVE: reduces credit
+            order_id: order.id,
+            note: 'Credit used for order'
+          });
+        }
+        // Do not log order or payment entries
+      } else {
+        // Partial credit or only cash
+        // Always log the order entry (debt)
+        await supabase.from('credit_ledger').insert({
+          user_id: userId,
+          type: 'order',
+          amount: -total, // negative for full order total
+          order_id: order.id,
+          note: 'Order placed (POS/credit)'
+        });
+        // Log credit used if any
+        if (creditUsed > 0) {
+          await supabase.from('credit_ledger').insert({
+            user_id: userId,
+            type: 'credit_used',
+            amount: -creditUsed, // NEGATIVE: reduces credit
+            order_id: order.id,
+            note: 'Credit used for order'
+          });
+        }
+        // Log payment if any cash was given
+        if (netPayment > 0) {
+          await supabase.from('credit_ledger').insert({
+            user_id: userId,
+            type: 'payment',
+            amount: netPayment,
+            order_id: order.id,
+            note: 'Order payment'
+          });
+        }
+      }
     }
 
     return { success: true, error: null, orderId: order.id };
@@ -295,11 +326,24 @@ export async function getAllOrders(filters?: OrderFilters): Promise<{ orders: Or
       
       if (filters.search) {
         const searchTerm = `%${filters.search}%`;
-        query = query.or(
-          `guest_info->>'email'.ilike.${searchTerm},` +
-          `guest_info->>'name'.ilike.${searchTerm},` +
-          `user_id.in.(select id from profiles where email ilike ${searchTerm} or display_name ilike ${searchTerm})`
-        );
+        // Step 1: Find matching user IDs in profiles
+        let userIds: string[] = [];
+        const { data: profiles, error: profilesError } = await supabase
+          .from('profiles')
+          .select('id')
+          .or(`email.ilike.${searchTerm},display_name.ilike.${searchTerm}`);
+        if (profiles && Array.isArray(profiles)) {
+          userIds = profiles.map((p: any) => p.id);
+        }
+        // Step 2: Build orFilters
+        let orFilters = [
+          `guest_info->>email.ilike.${searchTerm}`,
+          `guest_info->>name.ilike.${searchTerm}`
+        ];
+        if (userIds.length > 0) {
+          orFilters.push(`user_id.in.(${userIds.join(',')})`);
+        }
+        query = query.or(orFilters.join(','));
       }
 
       // Apply sorting
@@ -401,24 +445,28 @@ export async function updateOrderStatus(
       }
       // Only for registered users (not POS/credit)
       if (order.user_id && !order.is_pos_order) {
-        // Check if a payment ledger entry already exists for this order
-        const { data: existingPayments } = await supabase
+        // Sum all credit_used and payment ledger entries for this order
+        const { data: ledgerEntries } = await supabase
           .from('credit_ledger')
-          .select('id')
-          .eq('order_id', orderId)
-          .eq('type', 'payment');
-        if (!existingPayments || existingPayments.length === 0) {
-          // Insert payment entry for the order total (cash collected)
-          await supabase.from('credit_ledger').insert({
-            user_id: order.user_id,
-            type: 'payment',
-            amount: order.total,
-            order_id: order.id,
-            note: 'Cash collected on order completion'
-          });
+          .select('amount, type')
+          .eq('order_id', orderId);
+        const totalPaid = (ledgerEntries || [])
+          .filter(e => e.type === 'payment' || e.type === 'credit_used')
+          .reduce((sum, e) => sum + Math.abs(Number(e.amount)), 0);
+        if (totalPaid < order.total) {
+          // Only log payment for the remaining amount
+          const paymentToLog = order.total - totalPaid;
+          if (paymentToLog > 0) {
+            await supabase.from('credit_ledger').insert({
+              user_id: order.user_id,
+              type: 'payment',
+              amount: paymentToLog,
+              order_id: order.id,
+              note: 'Cash collected on order completion'
+            });
+          }
         }
-        // If any debt remains (e.g., partial payment), insert debt entry (not typical for normal users)
-        // (Optional: implement if you support partial payments)
+        // else: already fully paid, do not log another payment
       }
     }
 
@@ -440,10 +488,12 @@ export async function logPaymentToLedger(userId: string, paymentAmount: number, 
   });
 }
 
+// Returns the user's net balance (credit minus debt). Sums all ledger entries.
+// 'order' and 'credit_used' are negative, 'payment' is positive.
 export async function getUserBalance(userId: string): Promise<number> {
   const { data, error } = await supabase
     .from('credit_ledger')
-    .select('amount')
+    .select('amount, type')
     .eq('user_id', userId);
 
   if (error || !data) {
@@ -451,7 +501,9 @@ export async function getUserBalance(userId: string): Promise<number> {
     return 0;
   }
 
-  return data.reduce((sum, entry) => sum + entry.amount, 0);
+  // Sum all amounts as they are (order, credit_used, payment, refund, etc.)
+  // This ensures that after a credit-paid order, the balance is correct (zero if fully paid)
+  return data.reduce((sum, entry) => sum + Number(entry.amount), 0);
 }
 
 // Batch fetch all user balances as a map { user_id: balance }

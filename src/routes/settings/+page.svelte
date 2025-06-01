@@ -421,7 +421,7 @@
     color: #666;
   }
 
-  @media (max-width: 768px) {
+  @media (max-width: 800px) {
     .settings-grid {
       grid-template-columns: 1fr;
     }

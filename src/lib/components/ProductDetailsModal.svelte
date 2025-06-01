@@ -166,7 +166,7 @@
             {product.image_url}?width=800&quality=80 800w
           "
           sizes="
-            (max-width: 768px) 400px,
+            (max-width: 800px) 400px,
             (max-width: 1024px) 600px,
             800px
           "
@@ -327,7 +327,7 @@
   .modal-content {
     background: white;
     border-radius: 12px;
-    width: 90%;
+    
     max-width: 1000px;
     max-height: 90vh;
     overflow-y: auto;
@@ -665,7 +665,7 @@
     }
   }
 
-  @media (max-width: 768px) {
+  @media (max-width: 800px) {
     .product-details {
       grid-template-columns: 1fr;
     }
@@ -679,11 +679,7 @@
       max-width: 100%;
     }
 
-    .modal-content {
-      width: 95%;
-      max-height: 95vh;
-      padding: 1rem;
-    }
+
 
     .product-info {
       padding-right: 0;

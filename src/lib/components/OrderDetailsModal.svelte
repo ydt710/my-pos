@@ -265,20 +265,20 @@
               </tr>
               <tr>
                 <td>Credit Used</td>
-                <td>{formatCurrency(ledgerEntries.filter(e => e.type === 'payment' && e.amount < 0).reduce((sum, e) => sum + e.amount, 0))}</td>
+                <td>{formatCurrency(Math.abs(ledgerEntries.filter(e => e.type === 'credit_used').reduce((sum, e) => sum + e.amount, 0)))}</td>
               </tr>
               <tr>
                 <td><strong>Outstanding Debt</strong></td>
-                <td><strong>{formatCurrency(order.total - ledgerEntries.filter(e => e.type === 'payment' && e.amount > 0).reduce((sum, e) => sum + e.amount, 0))}</strong></td>
+                <td><strong>{formatCurrency(order.total - (ledgerEntries.filter(e => e.type === 'payment' && e.amount > 0).reduce((sum, e) => sum + e.amount, 0) + Math.abs(ledgerEntries.filter(e => e.type === 'credit_used').reduce((sum, e) => sum + e.amount, 0))) )}</strong></td>
               </tr>
               <tr>
                 <td>Refunds/Adjustments</td>
                 <td>{formatCurrency(ledgerEntries.filter(e => (e.type === 'refund' || e.type === 'adjustment')).reduce((sum, e) => sum + e.amount, 0))}</td>
               </tr>
-              <!-- Net Paid: sum of all positive payment ledger entries -->
+              <!-- Net Paid: sum of all positive payment ledger entries + credit used -->
               <tr>
                 <td>Net Paid</td>
-                <td>{formatCurrency(ledgerEntries.filter(e => e.type === 'payment' && e.amount > 0).reduce((sum, e) => sum + e.amount, 0))}</td>
+                <td>{formatCurrency(ledgerEntries.filter(e => e.type === 'payment' && e.amount > 0).reduce((sum, e) => sum + e.amount, 0) + Math.abs(ledgerEntries.filter(e => e.type === 'credit_used').reduce((sum, e) => sum + e.amount, 0)))}</td>
               </tr>
             </tbody>
           </table>
@@ -472,7 +472,7 @@
     margin-bottom: 1rem;
   }
 
-  @media (max-width: 768px) {
+  @media (max-width: 800px) {
     .modal-backdrop {
       padding: 1rem;
     }

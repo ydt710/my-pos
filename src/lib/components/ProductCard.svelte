@@ -245,7 +245,7 @@
                 "
                 sizes="
                   (max-width: 480px) 300px,
-                  (max-width: 768px) 400px,
+                  (max-width: 800px) 400px,
                   500px
                 "
                 alt={product.name}
@@ -678,9 +678,9 @@
 }
 
 .add-to-cart-btn {
-  background: linear-gradient(270deg, #ff00de, #00f0ff, #39ff14, #fcdd43, #ff00de);
-  background-size: 1000% 1000%;
-  animation: trippy-gradient 6s ease-in-out infinite;
+  background: linear-gradient(270deg, hsl(64, 100%, 50%), #00ff6a, #ff1414);
+  
+  
   color: #fff;
   border: none;
   padding: 0.5rem 1rem;
@@ -689,7 +689,7 @@
   font-weight: 600;
   width: 100%;
   cursor: pointer;
-  transition: box-shadow 0.2s, background 0.2s, color 0.2s, transform 0.2s;
+  transition: box-shadow 0.7s, background 0.7s, color 0.7s, transform 0.7s;
   display: flex;
   align-items: center;
   justify-content: center;

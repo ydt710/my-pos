@@ -28,7 +28,8 @@
   let selectedCustomer: PosUser = null;
   const FLOAT_USER_ID = '27cfee48-5b04-4ee1-885f-b3ef31417099'; // Float user for guest POS payments
   const FLOAT_USER_EMAIL = 'float@pos.local';
-  let extraCashOption = 'change'; // default
+  let extraCashOption: 'change' | 'credit' = 'change'; // default
+  let creditUsed = 0; // Ensure creditUsed is always defined and a number
   
   // Check if user is logged in
   onMount(async () => {
@@ -143,15 +144,22 @@
     let currentUserDebt = 0;
     let userProfileId = undefined;
     if (!isGuest && posUser && posUser.id) {
-      // Fetch current user debt from ledger
-      currentUserDebt = await getUserBalance(posUser.id);
-      if (currentUserDebt > 0) currentUserDebt = 0; // Only consider negative (debt)
-      const totalDue = total + Math.abs(currentUserDebt);
+      // Fetch current user balance from ledger
+      let userBalance = await getUserBalance(posUser.id);
+      let userCredit = userBalance > 0 ? userBalance : 0;
+      let userDebt = userBalance < 0 ? Math.abs(userBalance) : 0;
+      let totalDue = Math.max(total + userDebt - userCredit, 0);
+      creditUsed = Math.min(userCredit, total + userDebt);
+      // If credit covers the whole order, set cashGiven to 0
+      if (creditUsed >= total + userDebt) {
+        cashGiven = 0;
+      }
       const cash = Number(cashGiven) || 0;
-      paymentAmount = Math.min(cash, totalDue); // Only pay up to the total due (order + debt)
-      overpayment = Math.max(0, cash - totalDue); // Only extra after all debt/order is paid
+      paymentAmount = Math.min(cash, totalDue); // Only pay up to the total due
+      overpayment = Math.max(0, cash - totalDue);
       debt = totalDue - Math.min(cash, totalDue);
       paymentUserId = posUser.id;
+      currentUserDebt = -userDebt; // For backend compatibility
     }
 
     // For regular logged-in users (not POS), fetch their profile id
@@ -207,23 +215,18 @@
         debt,
         cash,
         change,
-        isPosUser && posUser && posUser.id ? true : false
+        isPosUser && posUser && posUser.id ? true : false,
+        extraCashOption,
+        currentUserDebt,
+        creditUsed
       );
 
       if (result.success) {
-        // Always log the payment amount (even if partial or exact)
-        if (!isGuest && posUser && posUser.id && paymentAmount > 0) {
-          await logPaymentToLedger(posUser.id, paymentAmount, result.orderId, 'Order payment at POS', paymentMethod);
-        }
         // Log guest payments to float user if no customer is selected
         if ((!selectedCustomer || !selectedCustomer.id) && Number(cashGiven) > 0) {
           const cashInAmount = Math.min(Number(cashGiven), total);
           console.log('Logging guest payment to float user:', FLOAT_USER_ID, cashInAmount);
           await logPaymentToLedger(FLOAT_USER_ID, cashInAmount, result.orderId, 'Guest payment (float)', paymentMethod);
-        }
-        // If there is overpayment, log it as credit (not tied to order)
-        if (!isGuest && posUser && posUser.id && overpayment > 0 && extraCashOption === 'credit') {
-          await logPaymentToLedger(posUser.id, overpayment, undefined, 'Overpayment credit at POS', paymentMethod);
         }
         // Update order status to completed if POS user
         if (isPosUser && result.orderId) {
@@ -305,6 +308,32 @@
 
   $: orderTotal = cartStore.getTotal($cartStore);
   $: floatChange = !isGuest && cashGiven !== '' ? Number(cashGiven) - orderTotal : 0;
+
+  // Derived values for summary
+  $: cashPaid = Number(cashGiven) || 0;
+  $: netPaid = cashPaid + creditUsed;
+  $: outstandingDebt = Math.max(0, orderTotal - netPaid);
+
+  // Track starting and remaining credit for POS user
+  let startingCredit = 0;
+  let remainingCredit = 0;
+
+  $: if (!isGuest && selectedCustomer && selectedCustomer.id && $cartStore.length > 0) {
+    getUserBalance(selectedCustomer.id).then(userBalance => {
+      startingCredit = userBalance > 0 ? userBalance : 0;
+      const userDebt = userBalance < 0 ? Math.abs(userBalance) : 0;
+      creditUsed = Math.min(startingCredit, orderTotal + userDebt);
+      remainingCredit = Math.max(0, startingCredit - creditUsed);
+      // If credit covers the whole order, set cashGiven to 0
+      if (creditUsed >= orderTotal + userDebt) {
+        cashGiven = 0;
+      }
+    });
+  } else {
+    creditUsed = 0;
+    startingCredit = 0;
+    remainingCredit = 0;
+  }
 </script>
 
 <StarryBackground />
@@ -476,25 +505,46 @@
               required
             />
           </div>
-          {#if Number(cashGiven) > orderTotal && selectedCustomer && selectedCustomer.id}
-            <div class="form-group">
-              <label>Extra Cash Handling:</label>
-              <label>
-                <input type="radio" bind:group={extraCashOption} value="change" checked>
-                Give Change (return R{(Number(cashGiven) - orderTotal).toFixed(2)})
-              </label>
-              <label>
-                <input type="radio" bind:group={extraCashOption} value="credit">
-                Credit Extra (add R{(Number(cashGiven) - orderTotal).toFixed(2)} to account)
-              </label>
+          {#if startingCredit > 0}
+            <div class="summary-row">
+              <span>Starting Credit:</span>
+              <span>R{startingCredit.toFixed(2)}</span>
+            </div>
+          {/if}
+          {#if creditUsed > 0}
+            <div class="summary-row">
+              <span>Credit Used:</span>
+              <span>R{creditUsed.toFixed(2)}</span>
+            </div>
+          {/if}
+          {#if remainingCredit > 0}
+            <div class="summary-row">
+              <span>Remaining Credit:</span>
+              <span>R{remainingCredit.toFixed(2)}</span>
+            </div>
+          {/if}
+          {#if cashPaid > 0}
+            <div class="summary-row">
+              <span>Cash Paid:</span>
+              <span>R{cashPaid.toFixed(2)}</span>
             </div>
           {/if}
           <div class="summary-row">
-            <span>{floatChange < 0 ? 'Balance Due:' : 'Change to Give:'}</span>
-            <span style="color: {floatChange < 0 ? '#dc3545' : floatChange > 0 ? '#28a745' : '#666'};">
-              R{Math.abs(floatChange).toFixed(2)}
-            </span>
+            <span>Net Paid:</span>
+            <span>R{netPaid.toFixed(2)}</span>
           </div>
+          {#if outstandingDebt > 0}
+            <div class="summary-row" style="color: #dc3545;">
+              <span>Outstanding Debt:</span>
+              <span>R{outstandingDebt.toFixed(2)}</span>
+            </div>
+          {/if}
+          {#if floatChange > 0 && creditUsed === 0}
+            <div class="summary-row" style="color: #28a745;">
+              <span>Change to Give:</span>
+              <span>R{floatChange.toFixed(2)}</span>
+            </div>
+          {/if}
           <div class="summary-row">
             <span>Balance:</span>
             <span style="color: {(posUserBalance ?? 0) > 0 ? '#28a745' : (posUserBalance ?? 0) < 0 ? '#dc3545' : '#666'};">
@@ -844,7 +894,7 @@
     }
   }
   
-  @media (max-width: 768px) {
+  @media (max-width: 800px) {
     .checkout-content {
       grid-template-columns: 1fr;
     }

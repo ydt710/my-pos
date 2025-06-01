@@ -73,7 +73,7 @@
     color: #666;
   }
 
-  @media (max-width: 768px) {
+  @media (max-width: 800px) {
     .admin-content {
       padding: 7rem 1rem 1rem;
     }

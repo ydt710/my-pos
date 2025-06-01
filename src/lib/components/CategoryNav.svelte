@@ -38,7 +38,7 @@
       id: 'flower', 
       name: 'Flower', 
       icon: 'fa-cannabis',
-      background: 'https://m.foolcdn.com/media/dubs/original_images/Slide_7_-_marijuana_greenhouse.jpg'
+      background: 'https://wglybohfygczpapjxwwz.supabase.co/storage/v1/object/public/route420//dagga%20cat.webp'
     },
     { 
       id: 'edibles', 
@@ -350,7 +350,7 @@
     }
   }
 
-  @media (max-width: 768px) {
+  @media (max-width: 800px) {
     .nav-container {
       gap: 0.5rem;
       padding: 0 0.5rem;

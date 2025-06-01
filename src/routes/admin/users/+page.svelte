@@ -25,6 +25,7 @@
     is_admin?: boolean;
     role?: string;
     balance?: number;
+    display_name?: string;
   }
 
   let users: User[] = [];
@@ -71,7 +72,13 @@
       if (!currentUser) {
         throw new Error('Not authenticated');
       }
-      if (!currentUser.is_admin) {
+      // FIX: Check admin status from profiles table, not from currentUser.is_admin
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('is_admin')
+        .eq('auth_user_id', currentUser.id)
+        .maybeSingle();
+      if (!profile?.is_admin) {
         throw new Error('Not authorized - Admin access required');
       }
 
@@ -89,7 +96,8 @@
           created_at: p.created_at,
           is_admin: p.is_admin,
           role: p.role,
-          balance: p.balance ?? 0
+          balance: p.balance ?? 0,
+          display_name: p.display_name ?? ''
         }))
         .sort((a, b) => (a.balance ?? 0) - (b.balance ?? 0));
     } catch (err) {
@@ -464,7 +472,7 @@
     background: #c82333;
   }
 
-  @media (max-width: 768px) {
+  @media (max-width: 800px) {
     .users-table-container {
       margin: 0 -1rem;
       border-radius: 0;

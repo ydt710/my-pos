@@ -8,6 +8,7 @@
   export let onClose: () => void;
   export let setRating: (rating: number) => void;
   export let setComment: (comment: string) => void;
+ 
 </script>
 
 {#if show}
