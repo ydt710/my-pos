@@ -6,6 +6,7 @@
   import { supabase } from '$lib/supabase';
   import { createEventDispatcher } from 'svelte';
   import { getProductReviews, addReview, updateProductRating } from '$lib/services/reviewService';
+  import { getStock } from '$lib/services/stockService';
   
   interface Review {
     id: string;
@@ -25,8 +26,8 @@
   };
   
   let loading = false;
-  let currentStock = product.quantity;
-  let displayStock = currentStock;
+  let currentStock = 0;
+  let displayStock = 0;
   let stockStatus = '';
   let selectedQuantity = 1;
   let cardElement: HTMLElement;
@@ -47,17 +48,9 @@
 
   // Check current stock level
   async function checkStock() {
-    const { data, error } = await supabase
-      .from('products')
-      .select('quantity')
-      .eq('id', product.id)
-      .single();
-
-    if (!error && data) {
-      currentStock = data.quantity;
-      displayStock = currentStock - cartItemQuantity;
-      updateStockStatus(displayStock);
-    }
+    currentStock = await getStock(String(product.id), 'shop');
+    displayStock = currentStock - cartItemQuantity;
+    updateStockStatus(displayStock);
   }
 
   function updateStockStatus(stock: number) {

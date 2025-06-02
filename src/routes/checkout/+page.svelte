@@ -10,6 +10,7 @@
   import { supabase } from '$lib/supabase';
   import { get } from 'svelte/store';
   import StarryBackground from '$lib/components/StarryBackground.svelte';
+  import { getStock } from '$lib/services/stockService';
   
   let loading = false;
   let error = '';
@@ -81,8 +82,13 @@
     goto('/');
   }
   
-  function updateQuantity(item: CartItem, newQuantity: number) {
-    cartStore.updateQuantity(item.id, newQuantity);
+  async function updateQuantity(item: CartItem, newQuantity: number) {
+    const shopStock = await getStock(item.id, 'shop');
+    if (newQuantity > shopStock) {
+      cartStore.updateQuantity(item.id, shopStock);
+    } else {
+      cartStore.updateQuantity(item.id, newQuantity);
+    }
   }
 
   function validateGuestInfo(): string | null {
@@ -373,10 +379,9 @@
                 <input
                   type="number"
                   min="1"
-                  max="99"
                   class="quantity-input"
                   bind:value={item.quantity}
-                  on:change={(e) => updateQuantity(item, Number(e.currentTarget.value))}
+                  on:change={async (e) => await updateQuantity(item, Number(e.currentTarget.value))}
                 />
                 <button 
                   class="quantity-btn" 
@@ -505,6 +510,31 @@
               required
             />
           </div>
+          {#if isPosUser && selectedCustomer && selectedCustomer.id && cashPaid > orderTotal}
+            <div class="form-group">
+              <label>Extra Cash Handling:</label>
+              <div class="extra-cash-options">
+                <label>
+                  <input
+                    type="radio"
+                    name="extra-cash"
+                    value="change"
+                    bind:group={extraCashOption}
+                  />
+                  Give Change
+                </label>
+                <label>
+                  <input
+                    type="radio"
+                    name="extra-cash"
+                    value="credit"
+                    bind:group={extraCashOption}
+                  />
+                  Credit to Account
+                </label>
+              </div>
+            </div>
+          {/if}
           {#if startingCredit > 0}
             <div class="summary-row">
               <span>Starting Credit:</span>
@@ -910,5 +940,18 @@
     .order-review, .payment-section {
       padding: 1rem;
     }
+  }
+
+  .extra-cash-options {
+    display: flex;
+    gap: 1.5rem;
+    margin-top: 0.5rem;
+  }
+  .extra-cash-options label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 500;
+    cursor: pointer;
   }
 </style> 

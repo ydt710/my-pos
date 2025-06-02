@@ -152,12 +152,12 @@ body {
 
 .close-btn {
     position: absolute;
-    top: 1rem;
+    
     right: 1rem;
     background: none;
     border: none;
     font-size: 1.5rem;
-    color: #888;
+    color: #ffffff;
     cursor: pointer;
     transition: color 0.2s;
 }

@@ -2,6 +2,7 @@ import { writable } from 'svelte/store';
 import type { CartItem, Product, User } from '$lib/types/index';
 import { supabase } from '$lib/supabase';
 import { writable as writableStore } from 'svelte/store';
+import { getStock } from '$lib/services/stockService';
 
 // Create a notification store for cart messages
 export const cartNotification = writable<{ type: 'error' | 'warning' | 'success', message: string } | null>(null);
@@ -13,27 +14,16 @@ function createCartStore() {
   return {
     subscribe,
     addItem: async (product: Product) => {
-      if (product.quantity <= 0) {
+      // Check current shop stock level
+      const currentStock = await getStock(product.id, 'shop');
+      if (currentStock <= 0) {
         cartNotification.set({ type: 'error', message: 'This item is out of stock.' });
-        return false;
-      }
-
-      // Check current stock level
-      const { data: currentProduct, error } = await supabase
-        .from('products')
-        .select('quantity')
-        .eq('id', String(product.id))
-        .single();
-
-      if (error || !currentProduct) {
-        cartNotification.set({ type: 'error', message: 'Failed to check stock level.' });
         return false;
       }
 
       let success = true;
       update(items => {
         const existing = items.find(item => String(item.id) === String(product.id));
-        const currentStock = currentProduct.quantity;
         const requestedQuantity = product.quantity || 1; // Fallback to 1 if not specified
 
         if (existing) {
@@ -87,28 +77,23 @@ function createCartStore() {
         return false;
       }
 
-      // Check current stock level
-      const { data: currentProduct, error } = await supabase
-        .from('products')
-        .select('quantity')
-        .eq('id', String(productId))
-        .single();
-
-      if (error || !currentProduct) {
-        cartNotification.set({ type: 'error', message: 'Failed to check stock level.' });
+      // Check current shop stock level
+      const currentStock = await getStock(productId, 'shop');
+      if (currentStock <= 0) {
+        cartNotification.set({ type: 'error', message: 'This item is out of stock.' });
         return false;
       }
 
-      if (newQuantity > currentProduct.quantity) {
+      if (newQuantity > currentStock) {
         cartNotification.set({ 
           type: 'warning', 
-          message: `Only ${currentProduct.quantity} items available in stock.` 
+          message: `Only ${currentStock} items available in stock.` 
         });
         // Update to maximum available
         update(items => {
           return items.map(item =>
             String(item.id) === String(productId)
-              ? { ...item, quantity: currentProduct.quantity }
+              ? { ...item, quantity: currentStock }
               : item
           );
         });
@@ -201,13 +186,4 @@ export async function updateIsPosOrAdmin() {
   } else {
     isPosOrAdmin.set(false);
   }
-}
-
-// Update isPosOrAdmin when selectedPosUser changes
-selectedPosUser.subscribe(user => {
-  if (user) {
-    isPosOrAdmin.set(true);
-  } else {
-    updateIsPosOrAdmin();
-  }
-}); 
+} 

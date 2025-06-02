@@ -10,6 +10,7 @@
   let lastTime = 0;
   const FPS = 30;
   const frameInterval = 1000 / FPS;
+  let isMobile = false;
 
   interface Star {
     x: number;
@@ -52,6 +53,32 @@
     { icon: 'fa-cookie', color: '#9C27B0' },
     { icon: 'fa-store', color: '#E91E63' }
   ];
+
+  function detectMobile() {
+    return /Mobi|Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+  }
+
+  let OPTIMIZED = {
+    starDensity: 1000, // px per star
+    iconCount: 3,
+    FPS: 30,
+    shootingFlowerChance: 0.005
+  };
+
+  function applyOptimizations() {
+    isMobile = detectMobile();
+    if (isMobile) {
+      OPTIMIZED.starDensity = 2000; // fewer stars
+      OPTIMIZED.iconCount = 1;
+      OPTIMIZED.FPS = 18;
+      OPTIMIZED.shootingFlowerChance = 0.002;
+    } else {
+      OPTIMIZED.starDensity = 1000;
+      OPTIMIZED.iconCount = 3;
+      OPTIMIZED.FPS = 30;
+      OPTIMIZED.shootingFlowerChance = 0.005;
+    }
+  }
 
   function createStar(): Star {
     const colors = [
@@ -107,9 +134,9 @@
   }
 
   function initStars() {
-    const starCount = Math.floor((canvas.width * canvas.height) / 1000); // Increased star density
+    const starCount = Math.floor((canvas.width * canvas.height) / OPTIMIZED.starDensity);
     stars = Array.from({ length: starCount }, createStar);
-    icons = Array.from({ length: 3 }, createFloatingIcon);
+    icons = Array.from({ length: OPTIMIZED.iconCount }, createFloatingIcon);
     shootingFlowers = [];
   }
 
@@ -209,6 +236,10 @@
   }
 
   function animate(currentTime: number) {
+    if (document.hidden) {
+      animationFrameId = requestAnimationFrame(animate);
+      return;
+    }
     if (currentTime - lastTime < frameInterval) {
       animationFrameId = requestAnimationFrame(animate);
       return;
@@ -267,7 +298,7 @@
     });
 
     // Randomly add new shooting flowers
-    if (Math.random() < 0.005) { // Reduced frequency to 0.5%
+    if (Math.random() < OPTIMIZED.shootingFlowerChance) {
       shootingFlowers.push(createShootingFlower());
     }
 
@@ -276,17 +307,18 @@
 
   function handleResize() {
     if (!canvas) return;
-    
-    // Set canvas size to match display size
+
+    applyOptimizations();
     const dpr = window.devicePixelRatio || 1;
-    const rect = canvas.getBoundingClientRect();
-    
-    canvas.width = rect.width * dpr;
-    canvas.height = rect.height * dpr;
-    
-    // Scale context to match display size
+    // Always use window.innerWidth/innerHeight for full viewport coverage
+    canvas.width = window.innerWidth * dpr;
+    canvas.height = window.innerHeight * dpr;
+    canvas.style.width = '100vw';
+    canvas.style.height = '100vh';
+
+    ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset transform before scaling
     ctx.scale(dpr, dpr);
-    
+
     initStars();
   }
 
@@ -294,13 +326,22 @@
     if (!canvas) return;
     
     ctx = canvas.getContext('2d', { alpha: false })!;
+    applyOptimizations();
     handleResize();
     animate(0);
 
     window.addEventListener('resize', handleResize);
+    // Pause animation when not visible
+    const handleVisibility = () => {
+      if (!document.hidden) {
+        animate(0);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
 
     return () => {
       window.removeEventListener('resize', handleResize);
+      document.removeEventListener('visibilitychange', handleVisibility);
       cancelAnimationFrame(animationFrameId);
     };
   });
@@ -317,9 +358,11 @@
     position: fixed;
     top: 0;
     left: 0;
-    width: 100%;
-    height: 100%;
+    width: 100vw;
+    height: 100vh;
     z-index: -1;
     background: #000510;
+    pointer-events: none; /* Prevents accidental scroll/drag on canvas */
+    touch-action: none;
   }
 </style> 

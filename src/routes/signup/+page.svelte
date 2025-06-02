@@ -70,68 +70,70 @@
         <div class="success" transition:fade>{success}</div>
       {/if}
 
-      <form on:submit|preventDefault={signup}>
-        <div class="form-group">
-          <label for="displayName">Display Name</label>
-          <input
-            id="displayName"
-            type="text"
-            bind:value={displayName}
-            placeholder="Enter your display name"
-            required
-          />
-        </div>
+      {#if !success}
+        <form on:submit|preventDefault={signup}>
+          <div class="form-group">
+            <label for="displayName">Display Name</label>
+            <input
+              id="displayName"
+              type="text"
+              bind:value={displayName}
+              placeholder="Enter your display name"
+              required
+            />
+          </div>
 
-        <div class="form-group">
-          <label for="phoneNumber">Phone Number</label>
-          <input
-            id="phoneNumber"
-            type="tel"
-            bind:value={phoneNumber}
-            placeholder="Enter your phone number"
-            required
-          />
-        </div>
+          <div class="form-group">
+            <label for="phoneNumber">Phone Number</label>
+            <input
+              id="phoneNumber"
+              type="tel"
+              bind:value={phoneNumber}
+              placeholder="Enter your phone number"
+              required
+            />
+          </div>
 
-        <div class="form-group">
-          <label for="email">Email</label>
-          <input
-            id="email"
-            type="email"
-            bind:value={email}
-            placeholder="Enter your email"
-            required
-            autocomplete="username"
-          />
-        </div>
+          <div class="form-group">
+            <label for="email">Email</label>
+            <input
+              id="email"
+              type="email"
+              bind:value={email}
+              placeholder="Enter your email"
+              required
+              autocomplete="username"
+            />
+          </div>
 
-        <div class="form-group">
-          <label for="password">Password</label>
-          <input
-            id="password"
-            type="password"
-            bind:value={password}
-            placeholder="Create a password"
-            required
-            autocomplete="new-password"
-            minlength="6"
-          />
-          <small class="password-hint">Password must be at least 6 characters long</small>
-        </div>
+          <div class="form-group">
+            <label for="password">Password</label>
+            <input
+              id="password"
+              type="password"
+              bind:value={password}
+              placeholder="Create a password"
+              required
+              autocomplete="new-password"
+              minlength="6"
+            />
+            <small class="password-hint">Password must be at least 6 characters long</small>
+          </div>
 
-        <button type="submit" class="submit-btn" disabled={loading}>
-          {#if loading}
-            <span class="loading-spinner"></span>
-            Creating Account...
-          {:else}
-            Create Account
-          {/if}
-        </button>
-      </form>
+          <button type="submit" class="submit-btn" disabled={loading}>
+            {#if loading}
+              <span class="loading-spinner"></span>
+              Creating Account...
+            {:else}
+              Create Account
+            {/if}
+          </button>
+        </form>
 
-      <p class="auth-footer">
-        Already have an account? <button type="button" class="link-btn" on:click={() => goto('/login')}>Sign in</button>
-      </p>
+        <p class="auth-footer">
+          Already have an account? <button type="button" class="link-btn" on:click={() => goto('/login')}>Sign in</button>
+        </p>
+      {/if}
     </div>
   </div>
 

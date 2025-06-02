@@ -609,7 +609,7 @@
   }
 
   .add-review textarea {
-    width: 100%;
+    
     padding: 0.75rem;
     border: 1px solid #ddd;
     border-radius: 4px;

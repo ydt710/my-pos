@@ -6,7 +6,6 @@ export interface Product {
   description: string;
   price: number;
   image_url: string;
-  quantity: number;
   category: string;
   thc_min?: number;
   thc_max?: number;
@@ -19,7 +18,7 @@ export interface Product {
 }
 
 export interface CartItem extends Product {
-  quantity: number;
+  quantity: number; // This is the quantity in the cart, not stock
 }
 
 export type OrderStatus = 'pending' | 'processing' | 'completed' | 'cancelled';

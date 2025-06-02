@@ -263,7 +263,7 @@
     border-radius: 12px 0 0 12px;
     border: 1px solid rgba(255, 255, 255, 0.2);
     border-radius: 5%;
-    width:50%;
+    width:60%;
   }
 
   .cart-container.show {

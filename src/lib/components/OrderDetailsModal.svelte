@@ -5,6 +5,7 @@
   import { supabase } from '$lib/supabase';
   import type { CreditLedgerEntry } from '$lib/types/ledger';
   import { getUserBalance } from '$lib/services/orderService';
+  import { onMount } from 'svelte';
 
   export let order: Order;
   export let onClose: () => void;
@@ -16,6 +17,7 @@
   let loadingLedger = false;
   let ledgerError: string | null = null;
   let userBalance: number | null = null;
+  let userDebtAtOrderTime: number | null = null;
   const FLOAT_USER_ID = '27cfee48-5b04-4ee1-885f-b3ef31417099';
 
   function formatDate(dateString: string) {
@@ -112,6 +114,21 @@
     const changeGiven = Math.max(0, cashGiven - order.total);
     return { cashGiven, changeGiven };
   }
+
+  onMount(async () => {
+    if (order && order.user_id && order.created_at) {
+      const { data, error } = await supabase
+        .from('credit_ledger')
+        .select('amount, created_at')
+        .eq('user_id', order.user_id)
+        .lte('created_at', order.created_at);
+      if (data && Array.isArray(data)) {
+        userDebtAtOrderTime = data.reduce((sum, entry) => sum + Number(entry.amount), 0);
+      } else {
+        userDebtAtOrderTime = null;
+      }
+    }
+  });
 </script>
 
 <div class="modal-backdrop"
@@ -267,10 +284,28 @@
                 <td>Credit Used</td>
                 <td>{formatCurrency(Math.abs(ledgerEntries.filter(e => e.type === 'credit_used').reduce((sum, e) => sum + e.amount, 0)))}</td>
               </tr>
+              {#if Math.abs(ledgerEntries.filter(e => e.type === 'credit_used').reduce((sum, e) => sum + e.amount, 0)) > 0}
+                <tr>
+                  <td style="color:#007bff">Credit Used Toward Order</td>
+                  <td style="color:#007bff">{formatCurrency(Math.abs(ledgerEntries.filter(e => e.type === 'credit_used').reduce((sum, e) => sum + e.amount, 0)))}</td>
+                </tr>
+              {/if}
+              {#if ledgerEntries.find(e => e.note && e.note.toLowerCase().includes('overpayment credited'))}
+                <tr>
+                  <td style="color:#28a745">Overpayment Credited to Account</td>
+                  <td style="color:#28a745">{formatCurrency(ledgerEntries.filter(e => e.note && e.note.toLowerCase().includes('overpayment credited')).reduce((sum, e) => sum + e.amount, 0))}</td>
+                </tr>
+              {/if}
               <tr>
                 <td><strong>Outstanding Debt</strong></td>
-                <td><strong>{formatCurrency(order.total - (ledgerEntries.filter(e => e.type === 'payment' && e.amount > 0).reduce((sum, e) => sum + e.amount, 0) + Math.abs(ledgerEntries.filter(e => e.type === 'credit_used').reduce((sum, e) => sum + e.amount, 0))) )}</strong></td>
+                <td><strong>{formatCurrency(Math.max(0, order.total - (ledgerEntries.filter(e => e.type === 'payment' && e.amount > 0).reduce((sum, e) => sum + e.amount, 0) + Math.abs(ledgerEntries.filter(e => e.type === 'credit_used').reduce((sum, e) => sum + e.amount, 0)))) )}</strong></td>
               </tr>
+              {#if (ledgerEntries.filter(e => e.type === 'payment' && e.amount > 0).reduce((sum, e) => sum + e.amount, 0) + Math.abs(ledgerEntries.filter(e => e.type === 'credit_used').reduce((sum, e) => sum + e.amount, 0)) > order.total)}
+                <tr>
+                  <td><strong>Credit/Overpayment</strong></td>
+                  <td><strong>{formatCurrency((ledgerEntries.filter(e => e.type === 'payment' && e.amount > 0).reduce((sum, e) => sum + e.amount, 0) + Math.abs(ledgerEntries.filter(e => e.type === 'credit_used').reduce((sum, e) => sum + e.amount, 0))) - order.total)}</strong></td>
+                </tr>
+              {/if}
               <tr>
                 <td>Refunds/Adjustments</td>
                 <td>{formatCurrency(ledgerEntries.filter(e => (e.type === 'refund' || e.type === 'adjustment')).reduce((sum, e) => sum + e.amount, 0))}</td>
@@ -280,6 +315,12 @@
                 <td>Net Paid</td>
                 <td>{formatCurrency(ledgerEntries.filter(e => e.type === 'payment' && e.amount > 0).reduce((sum, e) => sum + e.amount, 0) + Math.abs(ledgerEntries.filter(e => e.type === 'credit_used').reduce((sum, e) => sum + e.amount, 0)))}</td>
               </tr>
+              {#if userDebtAtOrderTime !== null}
+                <tr>
+                  <td style="color:#dc3545">User Debt at Order Time</td>
+                  <td style="color:#dc3545">{formatCurrency(userDebtAtOrderTime < 0 ? Math.abs(userDebtAtOrderTime) : 0)}</td>
+                </tr>
+              {/if}
             </tbody>
           </table>
         </div>

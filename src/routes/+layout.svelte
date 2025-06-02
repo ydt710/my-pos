@@ -48,7 +48,7 @@
 
 	onDestroy(() => {
 		if (channel) {
-			channel.unsubscribe();
+			supabase.removeChannel(channel);
 		}
 	});
 

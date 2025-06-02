@@ -26,13 +26,13 @@
       goto('/login');
       return false;
     }
-    // Query profiles for is_admin
+    // Query profiles for is_admin or POS role
     const { data: profile } = await supabase
       .from('profiles')
-      .select('is_admin')
+      .select('is_admin, role')
       .eq('auth_user_id', user.id)
       .maybeSingle();
-    if (!profile?.is_admin) {
+    if (!profile?.is_admin && profile?.role !== 'pos') {
       goto('/');
       return false;
     }

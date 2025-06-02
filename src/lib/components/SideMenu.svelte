@@ -10,6 +10,7 @@
   let menuSidebar: HTMLDivElement;
   let user: any = null;
   let isAdmin = false;
+  let isPosUser = false;
   let backgroundUrl = '';
   let productsExpanded = false;
 
@@ -29,20 +30,28 @@
     tick().then(() => menuSidebar?.focus());
   }
 
-  // Check user and admin status on mount and when menu opens
-  $: if (visible) {
-    supabase.auth.getUser().then(({ data }) => {
-      user = data.user;
-      isAdmin = !!data.user?.user_metadata?.is_admin;
-    });
-  }
-
   onMount(async () => {
     try {
       const bgData = supabase.storage.from('route420').getPublicUrl('field.webp');
       backgroundUrl = bgData.data.publicUrl;
     } catch (err) {
       console.error('Error getting background URL:', err);
+    }
+
+    // Fetch user and profile once on mount
+    const { data: { user: currentUser } } = await supabase.auth.getUser();
+    user = currentUser;
+    if (user) {
+      isAdmin = !!user.user_metadata?.is_admin;
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('auth_user_id', user.id)
+        .single();
+      isPosUser = profile?.role === 'pos';
+    } else {
+      isAdmin = false;
+      isPosUser = false;
     }
   });
   
@@ -120,6 +129,9 @@
     {/each}
     {#if isAdmin}
       <a href="/admin" class="menu-item">Admin</a>
+    {/if}
+    {#if isAdmin || isPosUser}
+      <a href="/admin/stock-management" class="menu-item">Stock Management</a>
     {/if}
     {#if !user}
       <a href="/login" class="menu-item">Login</a>

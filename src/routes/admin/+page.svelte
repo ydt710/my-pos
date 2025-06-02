@@ -28,7 +28,6 @@
       name: '', 
       price: 0, 
       image_url: '', 
-      quantity: 1,
       category: 'flower' // Default category
     };
     let imageFile: File | null = null;
@@ -327,17 +326,34 @@
                 editing = null;
             } else {
                 // Insert
-                const { error: err } = await supabase
+                const { data, error: err } = await supabase
                     .from('products')
-                    .insert([{ ...newProduct, image_url: imageUrl }]);
-                if (err) error = err.message;
+                    .insert([{ ...newProduct, image_url: imageUrl }])
+                    .select()
+                    .single();
+                
+                if (err) {
+                  error = err.message;
+                } else if (data) {
+                  // Insert initial stock level for the new product at the 'shop' location
+                  const newProductId = data.id; // Assuming the inserted data includes the new product's ID
+                  const shopLocationId = 'e0ff9565-e490-45e9-991f-298918e4514a'; // Replace with dynamic lookup if needed
+                  const { error: stockError } = await supabase
+                    .from('stock_levels')
+                    .insert([{ product_id: newProductId, location_id: shopLocationId, quantity: 0 }]);
+                  
+                  if (stockError) {
+                    console.error('Error inserting initial stock level:', stockError);
+                    // Optionally set an error message for the user, but the product was created
+                  }
+
                 newProduct = { 
                     name: '', 
                     price: 0, 
                     image_url: '', 
-                    quantity: 1,
                     category: 'flower'
                 };
+                }
             }
             
             // Reset file input
@@ -1365,28 +1381,6 @@
                         </div>
                     </div>
                     <div class="form-group">
-                        <label for="quantity">Quantity</label>
-                        {#if editing}
-                            <input 
-                                id="quantity"
-                                type="number" 
-                                min="0" 
-                                bind:value={editing.quantity}
-                                placeholder="Quantity" 
-                                required 
-                            />
-                        {:else}
-                            <input 
-                                id="quantity"
-                                type="number" 
-                                min="0" 
-                                bind:value={newProduct.quantity}
-                                placeholder="Quantity" 
-                                required 
-                            />
-                        {/if}
-                    </div>
-                    <div class="form-group">
                         <label for="category">Category</label>
                         {#if editing}
                             <select 
@@ -1412,7 +1406,7 @@
                     </div>
                 </div>
                 <div class="form-actions">
-                    {#if editing}
+                    {#if editing !== null}
                         <button type="submit" class="primary-btn" disabled={loading}>
                             Update Product
                         </button>

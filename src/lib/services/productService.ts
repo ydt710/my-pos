@@ -113,7 +113,6 @@ export async function fetchProducts(category?: string): Promise<{ products: Prod
     
     const products = data.map((product: Product) => ({
       ...product,
-      quantity: 1,
       category: product.category || 'flower' // Ensure category is never null
     }));
     
@@ -163,7 +162,6 @@ export async function fetchProductsLazy(
     
     const products = data.map((product: Product) => ({
       ...product,
-      quantity: 1,
       category: product.category || 'flower'
     }));
     

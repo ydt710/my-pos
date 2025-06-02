@@ -1,6 +1,7 @@
 import { supabase } from '../supabase';
 import type { CartItem } from '../types/index';
 import type { Order, OrderItem, GuestInfo, OrderStatus, OrderFilters } from '../types/orders';
+import { getLocationId } from './stockService';
 
 // Helper function to generate formatted order number
 function generateOrderNumber(timestamp: Date): string {
@@ -90,41 +91,48 @@ export async function createOrder(
     }
 
     // Process each item in the cart
+    const shopId = await getLocationId('shop');
+    if (!shopId) {
+      // Rollback by deleting the order
+      await supabase.from('orders').delete().eq('id', order.id);
+      return { success: false, error: 'Shop location not found.' };
+    }
     for (const item of items) {
-      // Get current product quantity
-      const { data: product, error: fetchError } = await supabase
-        .from('products')
+      // Get current shop stock level
+      const { data: shopStock, error: fetchError } = await supabase
+        .from('stock_levels')
         .select('quantity')
-        .eq('id', item.id)
+        .eq('product_id', item.id)
+        .eq('location_id', shopId)
         .single();
 
       if (fetchError) {
-        console.error('Error fetching product:', fetchError);
+        console.error('Error fetching shop stock:', fetchError);
         // Rollback by deleting the order
         await supabase.from('orders').delete().eq('id', order.id);
         return { 
           success: false, 
-          error: 'Failed to fetch product details. Please try again.' 
+          error: 'Failed to fetch shop stock. Please try again.' 
         };
       }
 
-      if (!product) {
+      if (!shopStock) {
         // Rollback by deleting the order
         await supabase.from('orders').delete().eq('id', order.id);
         return { 
           success: false, 
-          error: `Product ${item.name} not found. Please try again.` 
+          error: `Product ${item.name} not found in shop stock. Please try again.` 
         };
       }
 
       // Calculate new quantity and check stock
-      const newQuantity = product.quantity - item.quantity;
+      const newQuantity = shopStock.quantity - item.quantity;
       if (newQuantity < 0) {
         // Rollback by deleting the order
         await supabase.from('orders').delete().eq('id', order.id);
         return { 
           success: false, 
-          error: `Insufficient quantity for ${item.name}. Only ${product.quantity} available.` 
+          error: `Insufficient quantity for ${item.name}. Only ${shopStock.quantity} available in shop.` 
         };
       }
 
@@ -149,14 +157,15 @@ export async function createOrder(
         };
       }
 
-      // Update product quantity
+      // Update shop stock_levels
       const { error: updateError } = await supabase
-        .from('products')
+        .from('stock_levels')
         .update({ quantity: newQuantity })
-        .eq('id', item.id);
+        .eq('product_id', item.id)
+        .eq('location_id', shopId);
         
       if (updateError) {
-        console.error('Error updating product quantity:', {
+        console.error('Error updating shop stock quantity:', {
           error: updateError,
           productId: item.id,
           newQuantity
@@ -165,7 +174,7 @@ export async function createOrder(
         await supabase.from('orders').delete().eq('id', order.id);
         return { 
           success: false, 
-          error: `Failed to update quantity for ${item.name}. Please try again.` 
+          error: `Failed to update shop stock for ${item.name}. Please try again.` 
         };
       }
     }
@@ -179,14 +188,17 @@ export async function createOrder(
     });
 
     // Ledger logic for POS/credit orders
-    if (userId && isPosOrder) {
+    const GUEST_PROFILE_ID = '01da301b-6d21-45fa-b259-c2a8ce4030e0';
+    const ledgerUserId = userId ? userId : (isPosOrder && guestInfo ? GUEST_PROFILE_ID : null);
+    if (ledgerUserId && isPosOrder) {
       const totalDue = total + Math.abs(currentUserDebt || 0);
       const netPayment = Math.min((cashGiven || 0) - (changeGiven || 0), totalDue);
+      const overpayment = Math.max(0, (cashGiven || 0) - totalDue);
       // If credit covers the whole order, only log credit_used
       if (creditUsed >= total) {
         if (creditUsed > 0) {
           await supabase.from('credit_ledger').insert({
-            user_id: userId,
+            user_id: ledgerUserId,
             type: 'credit_used',
             amount: -creditUsed, // NEGATIVE: reduces credit
             order_id: order.id,
@@ -198,7 +210,7 @@ export async function createOrder(
         // Partial credit or only cash
         // Always log the order entry (debt)
         await supabase.from('credit_ledger').insert({
-          user_id: userId,
+          user_id: ledgerUserId,
           type: 'order',
           amount: -total, // negative for full order total
           order_id: order.id,
@@ -207,7 +219,7 @@ export async function createOrder(
         // Log credit used if any
         if (creditUsed > 0) {
           await supabase.from('credit_ledger').insert({
-            user_id: userId,
+            user_id: ledgerUserId,
             type: 'credit_used',
             amount: -creditUsed, // NEGATIVE: reduces credit
             order_id: order.id,
@@ -217,11 +229,20 @@ export async function createOrder(
         // Log payment if any cash was given
         if (netPayment > 0) {
           await supabase.from('credit_ledger').insert({
-            user_id: userId,
+            user_id: ledgerUserId,
             type: 'payment',
             amount: netPayment,
             order_id: order.id,
             note: 'Order payment'
+          });
+        }
+        // Log overpayment as credit if requested
+        if (extraCashOption === 'credit' && overpayment > 0) {
+          await supabase.from('credit_ledger').insert({
+            user_id: ledgerUserId,
+            type: 'payment',
+            amount: overpayment,
+            note: 'Overpayment credited to account'
           });
         }
       }
