@@ -37,6 +37,7 @@
   let snackbarMessage = '';
   let snackbarType: 'success' | 'error' = 'success';
   let snackbarTimeout: NodeJS.Timeout;
+  let imageLoaded = false;
 
   // Gradient color arrays for potency bars
   const thcBarColors = ['#4caf50', '#cddc39', '#ffeb3b', '#ff9800', '#f44336'];
@@ -237,7 +238,10 @@
             on:keydown={e => e.key === 'Enter' && handleCardClick(e)}
             aria-label="View product details"
           >
-            <div class="card-product__image">
+            <div class="card-product__image-aspect">
+              {#if !imageLoaded}
+                <div class="image-skeleton"></div>
+              {/if}
               <img 
                 src={product.image_url + '?width=300&quality=75'} 
                 srcset="
@@ -256,6 +260,8 @@
                 width="300"
                 height="400"
                 style="aspect-ratio: 3/4;"
+                on:load={() => imageLoaded = true}
+                on:error={() => imageLoaded = true}
               />
             </div>
           </button>
@@ -447,9 +453,9 @@
   flex-direction: column;
   position: relative;
   transition: transform 0.3s ease, box-shadow 0.3s ease;
-  cursor: pointer;
+  cursor: default;
   z-index: 1;
-  background: #23272f; /* Ensure card has a solid background */
+  
   margin: 0;
 }
 
@@ -976,5 +982,30 @@
 .product-badge.new {
   background: #39ff14;
   color: #23272f;
+}
+
+.card-product__image-aspect {
+  width: 100px;
+  aspect-ratio: 3/4;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.image-skeleton {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, #222 25%, #333 50%, #222 75%);
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.2s infinite linear;
+  border-radius: 3%;
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
+}
+@keyframes skeleton-loading {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 </style> 

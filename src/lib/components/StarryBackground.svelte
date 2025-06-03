@@ -11,16 +11,22 @@
   const FPS = 30;
   const frameInterval = 1000 / FPS;
   let isMobile = false;
+  let prevWidth = 0;
+  let prevHeight = 0;
+  let fadeIn = false;
 
   interface Star {
     x: number;
     y: number;
+    xPct: number;
+    yPct: number;
     size: number;
     speed: number;
     color: string;
     opacity: number;
     blinkSpeed: number;
     blinkPhase: number;
+    bounceOffset?: { x: number; y: number };
   }
 
   interface FloatingIcon {
@@ -81,6 +87,8 @@
   }
 
   function createStar(): Star {
+    const xPct = Math.random();
+    const yPct = Math.random();
     const colors = [
       'rgba(255, 255, 255, 0.8)', // White
       'rgba(76, 175, 80, 0.8)',   // Green
@@ -89,16 +97,18 @@
     ];
     const color = colors[Math.floor(Math.random() * colors.length)];
     const isWhite = color === 'rgba(255, 255, 255, 0.8)';
-    
     return {
-      x: Math.random() * canvas.width,
-      y: Math.random() * canvas.height,
+      x: xPct * canvas.width,
+      y: yPct * canvas.height,
+      xPct,
+      yPct,
       size: Math.random() * 2 + 1,
-      speed: Math.random() * 0.3 + 0.1,
+      speed: 10, // No movement (user's custom value)
       color,
-      opacity: isWhite ? 0.8 : 0,
-      blinkSpeed: isWhite ? 0 : Math.random() * 0.02 + 0.01,
-      blinkPhase: Math.random() * Math.PI * 2
+      opacity: 0.8,
+      blinkSpeed: isWhite ? (Math.random() * 0.015 + 0.008) : 0,
+      blinkPhase: Math.random() * Math.PI * 2,
+      bounceOffset: { x: 0, y: 0 }
     };
   }
 
@@ -142,7 +152,9 @@
 
   function drawStar(star: Star) {
     ctx.beginPath();
-    ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
+    const bx = star.bounceOffset?.x || 0;
+    const by = star.bounceOffset?.y || 0;
+    ctx.arc(star.x + bx, star.y + by, star.size, 0, Math.PI * 2);
     ctx.fillStyle = star.color;
     ctx.globalAlpha = star.opacity;
     ctx.fill();
@@ -235,74 +247,70 @@
     ctx.restore();
   }
 
+  function drawStaticStarfield(twinklePhase = 0) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#000510';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    stars.forEach(star => {
+      drawStar(star);
+    });
+  }
+
   function animate(currentTime: number) {
     if (document.hidden) {
       animationFrameId = requestAnimationFrame(animate);
       return;
     }
-    if (currentTime - lastTime < frameInterval) {
-      animationFrameId = requestAnimationFrame(animate);
-      return;
+    // Move stars gently downward on desktop only
+    if (!isMobile) {
+      stars.forEach(star => {
+        star.y += star.speed * 0.007; // Slow downward movement
+        if (star.y > canvas.height) {
+          star.y = 0;
+          star.x = Math.random() * canvas.width;
+        }
+      });
     }
-    lastTime = currentTime;
-
-    // Clear the entire canvas completely
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = '#000510';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    // Update and draw stars
+    // Twinkle only white stars
     stars.forEach(star => {
-      star.y += star.speed;
-      if (star.y > canvas.height) {
-        star.y = 0;
-        star.x = Math.random() * canvas.width;
-      }
-      
-      // Update blinking for colored stars
       if (star.blinkSpeed > 0) {
         star.blinkPhase += star.blinkSpeed;
-        star.opacity = (Math.sin(star.blinkPhase) + 1) * 0.4;
+        star.opacity = 0.7 + 0.3 * Math.sin(star.blinkPhase);
       }
-      
-      drawStar(star);
-    });
-
-    // Update and draw floating icons
-    icons.forEach(icon => {
-      icon.y += icon.speed;
-      icon.rotation += icon.rotationSpeed;
-      
-      if (icon.y > canvas.height) {
-        icon.y = -icon.size;
-        icon.x = Math.random() * canvas.width;
+      // Bounce decay (spring back)
+      if (star.bounceOffset) {
+        star.bounceOffset.x *= 0.85;
+        star.bounceOffset.y *= 0.85;
+        if (Math.abs(star.bounceOffset.x) < 0.1) star.bounceOffset.x = 0;
+        if (Math.abs(star.bounceOffset.y) < 0.1) star.bounceOffset.y = 0;
       }
-      
-      drawIcon(icon);
     });
-
+    drawStaticStarfield();
+    // Update and draw floating icons (optional: comment out for perf)
+    // icons.forEach(drawIcon);
     // Update and draw shooting flowers
     shootingFlowers.forEach((flower, index) => {
-      // Update position with very slight curve
       flower.rotation += flower.rotationSpeed;
-      const curveFactor = Math.sin(flower.rotation) * 0.05; // Reduced curve amount
+      const curveFactor = Math.sin(flower.rotation) * 0.05;
       flower.x += Math.cos(flower.angle + curveFactor) * flower.speed;
       flower.y += Math.sin(flower.angle + curveFactor) * flower.speed;
-      
-      // Remove if off screen
       if (flower.y > canvas.height + 50 || flower.x > canvas.width + 50) {
         shootingFlowers.splice(index, 1);
       } else {
         drawShootingFlower(flower);
       }
     });
-
-    // Randomly add new shooting flowers
     if (Math.random() < OPTIMIZED.shootingFlowerChance) {
       shootingFlowers.push(createShootingFlower());
     }
-
     animationFrameId = requestAnimationFrame(animate);
+  }
+
+  function updateStarPositions() {
+    stars.forEach(star => {
+      star.x = star.xPct * canvas.width;
+      star.y = star.yPct * canvas.height;
+    });
   }
 
   function handleResize() {
@@ -310,16 +318,53 @@
 
     applyOptimizations();
     const dpr = window.devicePixelRatio || 1;
-    // Always use window.innerWidth/innerHeight for full viewport coverage
-    canvas.width = window.innerWidth * dpr;
-    canvas.height = window.innerHeight * dpr;
-    canvas.style.width = '100vw';
-    canvas.style.height = '100vh';
+    const newWidth = window.innerWidth * dpr;
+    const newHeight = window.innerHeight * dpr;
 
-    ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset transform before scaling
-    ctx.scale(dpr, dpr);
+    // Only re-initialize if the size changed drastically (by more than 20%)
+    const widthChange = Math.abs(newWidth - prevWidth) / (prevWidth || 1);
+    const heightChange = Math.abs(newHeight - prevHeight) / (prevHeight || 1);
+    if (widthChange > 0.2 || heightChange > 0.2 || stars.length === 0) {
+      canvas.width = newWidth;
+      canvas.height = newHeight;
+      canvas.style.width = '100vw';
+      canvas.style.height = '100vh';
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.scale(dpr, dpr);
+      initStars();
+      prevWidth = newWidth;
+      prevHeight = newHeight;
+    } else if (Math.abs(newWidth - prevWidth) > 2 || Math.abs(newHeight - prevHeight) > 2) {
+      canvas.width = newWidth;
+      canvas.height = newHeight;
+      canvas.style.width = '100vw';
+      canvas.style.height = '100vh';
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.scale(dpr, dpr);
+      updateStarPositions();
+      prevWidth = newWidth;
+      prevHeight = newHeight;
+    }
+  }
 
-    initStars();
+  function handleMouseMove(e: MouseEvent) {
+    if (!canvas) return;
+    // Map window coordinates to canvas coordinates
+    const mx = (e.clientX / window.innerWidth) * canvas.width;
+    const my = (e.clientY / window.innerHeight) * canvas.height;
+    const bounceRadius = 60;
+    stars.forEach(star => {
+      const dx = star.x - mx;
+      const dy = star.y - my;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < bounceRadius) {
+        // Bounce outward from cursor, stronger when closer
+        const strength = (1 - dist / bounceRadius) * 12;
+        const angle = Math.atan2(dy, dx);
+        star.bounceOffset!.x += Math.cos(angle) * strength;
+        star.bounceOffset!.y += Math.sin(angle) * strength;
+      }
+    });
   }
 
   onMount(() => {
@@ -328,6 +373,8 @@
     ctx = canvas.getContext('2d', { alpha: false })!;
     applyOptimizations();
     handleResize();
+    drawStaticStarfield();
+    fadeIn = true;
     animate(0);
 
     window.addEventListener('resize', handleResize);
@@ -339,17 +386,20 @@
     };
     document.addEventListener('visibilitychange', handleVisibility);
 
+    window.addEventListener('mousemove', handleMouseMove);
+
     return () => {
       window.removeEventListener('resize', handleResize);
       document.removeEventListener('visibilitychange', handleVisibility);
       cancelAnimationFrame(animationFrameId);
+      window.removeEventListener('mousemove', handleMouseMove);
     };
   });
 </script>
 
 <canvas
   bind:this={canvas}
-  class="starry-background"
+  class="starry-background {fadeIn ? 'fade-in' : ''}"
   aria-hidden="true"
 ></canvas>
 
@@ -362,7 +412,11 @@
     height: 100vh;
     z-index: -1;
     background: #000510;
-    pointer-events: none; /* Prevents accidental scroll/drag on canvas */
-    touch-action: none;
+    /* pointer-events and touch-action removed to allow mouse events for bounce */
+    opacity: 0;
+  }
+  .starry-background.fade-in {
+    opacity: 1;
+    transition: opacity 1.2s cubic-bezier(0.4,0,0.2,1);
   }
 </style> 
