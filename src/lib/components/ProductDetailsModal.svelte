@@ -45,8 +45,8 @@
   const cbdBarColors = ['#2196f3', '#00bcd4', '#4caf50', '#cddc39', '#ffeb3b'];
   
   // Helper for potency bar (5 bars, 70 mg/g increments)
-  function getPotencyBarCount(min?: number, max?: number): number {
-    const value = max ?? min ?? 0;
+  function getPotencyBarCount(max?: number): number {
+    const value = max ?? 0;
     if (value > 280) return 5;
     if (value > 210) return 4;
     if (value > 140) return 3;
@@ -211,11 +211,11 @@
               {#each Array(5) as _, i}
                 <div
                   class="potency-segment"
-                  style="background: {i < getPotencyBarCount(product.thc_min, product.thc_max) ? thcBarColors[i] : '#eee'}"
+                  style="background: {i < getPotencyBarCount(product.thc_max) ? thcBarColors[i] : '#eee'}"
                 ></div>
               {/each}
             </div>
-            <span class="potency-value">{product.thc_min ?? 0}-{product.thc_max ?? 0} mg/g</span>
+            <span class="potency-value">{product.thc_max ?? 0} mg/g</span>
           </div>
           
           <div class="cbd-info">
@@ -224,11 +224,11 @@
               {#each Array(5) as _, i}
                 <div
                   class="potency-segment"
-                  style="background: {i < getPotencyBarCount(product.cbd_min, product.cbd_max) ? cbdBarColors[i] : '#eee'}"
+                  style="background: {i < getPotencyBarCount(product.cbd_max) ? cbdBarColors[i] : '#eee'}"
                 ></div>
               {/each}
             </div>
-            <span class="potency-value">{product.cbd_min ?? 0}-{product.cbd_max ?? 0} mg/g</span>
+            <span class="potency-value">{product.cbd_max ?? 0} mg/g</span>
           </div>
         </div>
         

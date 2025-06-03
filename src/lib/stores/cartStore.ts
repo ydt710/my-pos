@@ -3,6 +3,7 @@ import type { CartItem, Product, User } from '$lib/types/index';
 import { supabase } from '$lib/supabase';
 import { writable as writableStore } from 'svelte/store';
 import { getStock } from '$lib/services/stockService';
+import { get } from 'svelte/store';
 
 // Create a notification store for cart messages
 export const cartNotification = writable<{ type: 'error' | 'warning' | 'success', message: string } | null>(null);
@@ -19,6 +20,23 @@ function createCartStore() {
       if (currentStock <= 0) {
         cartNotification.set({ type: 'error', message: 'This item is out of stock.' });
         return false;
+      }
+
+      // Use custom price if available for selected POS user
+      let selectedUserId = null;
+      if (typeof window !== 'undefined') {
+        const stored = localStorage.getItem('selectedPosUser');
+        if (stored) {
+          try {
+            const user = JSON.parse(stored);
+            selectedUserId = user?.id;
+          } catch {}
+        }
+      }
+      let price = product.price;
+      if (selectedUserId) {
+        const prices = get(customPrices);
+        if (prices[product.id]) price = prices[product.id];
       }
 
       let success = true;
@@ -41,7 +59,7 @@ function createCartStore() {
           // Update existing item quantity
           return items.map(item =>
             String(item.id) === String(product.id)
-              ? { ...item, quantity: Math.min(currentStock, newQuantity) }
+              ? { ...item, quantity: Math.min(currentStock, newQuantity), price }
               : item
           );
         } else {
@@ -52,11 +70,11 @@ function createCartStore() {
               message: `Only ${currentStock} items available in stock.`
             });
             // Add item with maximum available quantity
-            return [...items, { ...product, quantity: currentStock }];
+            return [...items, { ...product, quantity: currentStock, price }];
           }
           
           // Add new item with requested quantity
-          return [...items, { ...product, quantity: requestedQuantity }];
+          return [...items, { ...product, quantity: requestedQuantity, price }];
         }
       });
 
@@ -186,4 +204,25 @@ export async function updateIsPosOrAdmin() {
   } else {
     isPosOrAdmin.set(false);
   }
+}
+
+// Store for user-specific custom prices: { [productId]: customPrice }
+export const customPrices = writableStore<{ [productId: string]: number }>({});
+
+// Fetch all custom prices for a user and update the store
+export async function fetchCustomPricesForUser(userId: string) {
+  if (!userId) { customPrices.set({}); return; }
+  const { data, error } = await supabase
+    .from('user_product_prices')
+    .select('product_id, custom_price')
+    .eq('user_id', userId);
+  if (error) { customPrices.set({}); return; }
+  const priceMap = Object.fromEntries((data || []).map(row => [row.product_id, Number(row.custom_price)]));
+  customPrices.set(priceMap);
+}
+
+// Helper to get the effective price for a product and user
+export function getEffectivePrice(product: Product, userId?: string): number {
+  const prices = get(customPrices);
+  return (userId && prices[product.id]) ? prices[product.id] : product.price;
 } 

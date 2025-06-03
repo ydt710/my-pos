@@ -27,7 +27,7 @@
   let cashGiven: number | '' = '';
   let posUserBalance: number | null = null;
   let selectedCustomer: PosUser = null;
-  const FLOAT_USER_ID = '27cfee48-5b04-4ee1-885f-b3ef31417099'; // Float user for guest POS payments
+  const FLOAT_USER_ID = 'ab54f66c-fa1c-40d2-ad2a-d9d5c1603e0f'; // Float user for guest POS payments
   const FLOAT_USER_EMAIL = 'float@pos.local';
   let extraCashOption: 'change' | 'credit' = 'change'; // default
   let creditUsed = 0; // Ensure creditUsed is always defined and a number

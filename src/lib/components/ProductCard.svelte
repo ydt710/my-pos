@@ -1,12 +1,13 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { fade } from 'svelte/transition';
-  import type { Product } from '$lib/types';
-  import { cartStore, cartNotification, isPosOrAdmin } from '$lib/stores/cartStore';
+  import type { Product } from '$lib/types/index';
+  import { cartStore, cartNotification, isPosOrAdmin, selectedPosUser, getEffectivePrice } from '$lib/stores/cartStore';
   import { supabase } from '$lib/supabase';
   import { createEventDispatcher } from 'svelte';
   import { getProductReviews, addReview, updateProductRating } from '$lib/services/reviewService';
   import { getStock } from '$lib/services/stockService';
+  import { get } from 'svelte/store';
   
   interface Review {
     id: string;
@@ -45,6 +46,10 @@
   $: cartItemQuantity = $cartStore.find(item => String(item.id) === String(product.id))?.quantity || 0;
   $: displayStock = currentStock - cartItemQuantity;
   $: updateStockStatus(displayStock);
+
+  // Get selected POS user (for custom pricing)
+  $: posUser = $selectedPosUser;
+  $: effectivePrice = getEffectivePrice({ ...product, id: String(product.id), description: product.description || '', indica: typeof product.indica === 'number' ? product.indica : 0 }, posUser?.id);
 
   // Check current stock level
   async function checkStock() {
@@ -99,11 +104,12 @@
     if (loading) return;
     
     loading = true;
-    const productToAdd = { 
+    const productToAdd: Product & { quantity: number } = {
       ...product,
-      quantity: selectedQuantity,
-      id: String(product.id), // Convert id to string
-      description: product.description || '' // Ensure description is included
+      id: String(product.id),
+      description: product.description || '',
+      indica: typeof product.indica === 'number' ? product.indica : 0,
+      quantity: selectedQuantity
     };
     const success = await cartStore.addItem(productToAdd);
     if (success) {
@@ -154,8 +160,8 @@
   }
 
   // Helper for potency bar (5 bars, 70 mg/g increments)
-  function getPotencyBarCount(min?: number, max?: number): number {
-    const value = max ?? min ?? 0;
+  function getPotencyBarCount(max?: number): number {
+    const value = max ?? 0;
     if (value > 280) return 5;
     if (value > 210) return 4;
     if (value > 140) return 3;
@@ -219,7 +225,10 @@
       <div class="card-product__body-container cannabis-product">
         <div class="card-product__title">{product.name}</div>
         <div class="product__price-row">
-          <span class="product__price">R{product.price}</span>
+          <span class="product__price">R{effectivePrice}</span>
+          {#if posUser && effectivePrice !== product.price}
+            <span class="custom-price-label" style="color:#007bff;font-size:0.85em;margin-left:0.5em;">Custom Price</span>
+          {/if}
         </div>
         <div class="product__details-row">
           <button 
@@ -268,12 +277,8 @@
               <h4 class="product__cannabis-potency-title">
                 THC
                 <span class="product__cannabis-potency-unit">
-                  {#if (product as any).thc_min !== undefined && (product as any).thc_max !== undefined && (product as any).thc_min !== (product as any).thc_max}
-                    {Math.round((product as any).thc_min * 0.1 * 100) / 100}% - {Math.round((product as any).thc_max * 0.1 * 100) / 100}%
-                  {:else if (product as any).thc_max !== undefined}
+                  {#if (product as any).thc_max !== undefined}
                     {Math.round((product as any).thc_max * 0.1 * 100) / 100}%
-                  {:else if (product as any).thc_min !== undefined}
-                    {Math.round((product as any).thc_min * 0.1 * 100) / 100}%
                   {:else}
                     0%
                   {/if}
@@ -283,7 +288,7 @@
                 {#each Array(5) as _, i}
                   <div
                     class="product__cannabis-potency-value product__cannabis-potency-value--thc"
-                    style="background: {i < getPotencyBarCount((product as any).thc_min, (product as any).thc_max) ? thcBarColors[i] : '#eee'}"
+                    style="background: {i < getPotencyBarCount((product as any).thc_max) ? thcBarColors[i] : '#eee'}"
                   ></div>
                 {/each}
               </div>
@@ -292,12 +297,8 @@
               <h4 class="product__cannabis-potency-title">
                 CBD
                 <span class="product__cannabis-potency-unit">
-                  {#if (product as any).cbd_min !== undefined && (product as any).cbd_max !== undefined && (product as any).cbd_min !== (product as any).cbd_max}
-                    {Math.round((product as any).cbd_min * 0.1 * 100) / 100}% - {Math.round((product as any).cbd_max * 0.1 * 100) / 100}%
-                  {:else if (product as any).cbd_max !== undefined}
+                  {#if (product as any).cbd_max !== undefined}
                     {Math.round((product as any).cbd_max * 0.1 * 100) / 100}%
-                  {:else if (product as any).cbd_min !== undefined}
-                    {Math.round((product as any).cbd_min * 0.1 * 100) / 100}%
                   {:else}
                     0%
                   {/if}
@@ -307,7 +308,7 @@
                 {#each Array(5) as _, i}
                   <div
                     class="product__cannabis-potency-value product__cannabis-potency-value--cbd"
-                    style="background: {i < getPotencyBarCount((product as any).cbd_min, (product as any).cbd_max) ? cbdBarColors[i] : '#eee'}"
+                    style="background: {i < getPotencyBarCount((product as any).cbd_max) ? cbdBarColors[i] : '#eee'}"
                   ></div>
                 {/each}
               </div>

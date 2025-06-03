@@ -7,11 +7,11 @@ export interface Product {
   price: number;
   image_url: string;
   category: string;
-  thc_min?: number;
-  thc_max?: number;
-  cbd_min?: number;
-  cbd_max?: number;
-  indica?: number;  // 0-100, represents indica percentage. Sativa percentage is (100 - indica)
+  thc_max: number;
+  cbd_max: number;
+  indica: number;  // 0-100, represents indica percentage. Sativa percentage is (100 - indica)
+  is_special?: boolean;
+  is_new?: boolean;
   reviews?: Review[];
   average_rating?: number;
   review_count?: number;

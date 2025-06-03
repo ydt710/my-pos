@@ -2,7 +2,7 @@
     import { onMount } from 'svelte';
     import { supabase, makeUserAdmin } from '$lib/supabase';
     import { goto } from '$app/navigation';
-    import type { Product } from '$lib/types';
+    import type { Product } from '$lib/types/index';
     import type { Order, OrderStatus, OrderFilters } from '$lib/types/orders';
     import { makeUserAdmin as userServiceMakeUserAdmin } from '$lib/services/userService';
     import { getAllOrders, updateOrderStatus, getTopBuyingUsers, getUsersWithMostDebt, getAllUserBalances, logPaymentToLedger } from '$lib/services/orderService';
@@ -26,9 +26,13 @@
     let editing: Product | null = null;
     let newProduct: Partial<Product> = { 
       name: '', 
+      description: '',
       price: 0, 
       image_url: '', 
-      category: 'flower' // Default category
+      category: 'flower', // Default category
+      thc_max: 0,
+      cbd_max: 0,
+      indica: 0
     };
     let imageFile: File | null = null;
     let uploadProgress = 0;
@@ -82,7 +86,7 @@
     let orderIdToDelete: string | null = null;
   
     let showProductConfirmModal = false;
-    let productIdToDelete: number | null = null;
+    let productIdToDelete: string | null = null;
   
     let cashIn = {
       today: 0,
@@ -103,7 +107,7 @@
     let topBuyers: { user_id: string; name?: string; email?: string; total: number }[] = [];
     let mostDebtUsers: { user_id: string; name?: string; email?: string; balance: number }[] = [];
   
-    const FLOAT_USER_ID = '27cfee48-5b04-4ee1-885f-b3ef31417099';
+    const FLOAT_USER_ID = 'ab54f66c-fa1c-40d2-ad2a-d9d5c1603e0f';
   
     // Add product filters
     let productFilters = {
@@ -114,6 +118,16 @@
       sortBy: 'name',
       sortOrder: 'asc'
     };
+  
+    // --- Custom Prices State ---
+    let showCustomPrices = false;
+    let customPrices: { id: string, user_id: string, product_id: string, custom_price: number, email?: string, display_name?: string }[] = [];
+    let customPriceUserSearch = '';
+    let customPriceUserResults: { id: string, email: string, display_name: string }[] = [];
+    let newCustomPrice = '';
+    let selectedCustomPriceUser: { id: string, email: string, display_name: string } | null = null;
+    let customPriceError = '';
+    let customPriceUserLoading = false;
   
     function scrollToSection(sectionId: string) {
         const element = document.getElementById(sectionId);
@@ -349,9 +363,13 @@
 
                 newProduct = { 
                     name: '', 
+                    description: '',
                     price: 0, 
                     image_url: '', 
-                    category: 'flower'
+                    category: 'flower',
+                    thc_max: 0,
+                    cbd_max: 0,
+                    indica: 0
                 };
                 }
             }
@@ -373,13 +391,13 @@
       editing = { ...product };
     }
   
-    async function deleteProduct(id: number) {
+    async function deleteProduct(id: string) {
       loading = true;
       error = '';
       try {
         const { error: err } = await supabase.from('products').delete().eq('id', id);
         if (err) throw err;
-        products = products.filter(p => p.id !== id);
+        products = products.filter(p => String(p.id) !== String(id));
         showSnackbar('Product deleted successfully.');
         await fetchProducts();
       } catch (err) {
@@ -801,6 +819,81 @@
 
     $: topBuyer = topBuyers && topBuyers.length > 0 ? topBuyers[0] : null;
     $: mostDebtUser = mostDebtUsers && mostDebtUsers.length > 0 ? mostDebtUsers[0] : null;
+
+    async function fetchCustomPricesForProduct(productId: string) {
+      if (!productId) { customPrices = []; return; }
+      const { data, error } = await supabase
+        .from('user_product_prices')
+        .select('id, user_id, product_id, custom_price, profiles: user_id (email, display_name)')
+        .eq('product_id', productId);
+      if (error) { customPrices = []; return; }
+      customPrices = (data || []).map(row => {
+        let profile = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles;
+        return {
+          id: row.id,
+          user_id: row.user_id,
+          product_id: row.product_id,
+          custom_price: row.custom_price,
+          email: profile?.email,
+          display_name: profile?.display_name
+        };
+      });
+    }
+
+    async function searchCustomPriceUsers() {
+      if (customPriceUserSearch.length < 2) {
+        customPriceUserResults = [];
+        return;
+      }
+      customPriceUserLoading = true;
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, email, display_name')
+        .or(`display_name.ilike.%${customPriceUserSearch}%,email.ilike.%${customPriceUserSearch}%`)
+        .limit(10);
+      customPriceUserResults = data || [];
+      customPriceUserLoading = false;
+    }
+
+    function selectCustomPriceUser(user: { id: string, email: string, display_name: string }) {
+      selectedCustomPriceUser = user;
+      customPriceUserResults = [];
+      customPriceUserSearch = user.display_name || user.email;
+    }
+
+    async function addCustomPrice() {
+      customPriceError = '';
+      if (!selectedCustomPriceUser || !editing || !newCustomPrice) {
+        customPriceError = 'Select a user and enter a price.';
+        return;
+      }
+      const { error } = await supabase
+        .from('user_product_prices')
+        .upsert([
+          {
+            user_id: selectedCustomPriceUser.id,
+            product_id: String(editing.id),
+            custom_price: Number(newCustomPrice)
+          }
+        ], { onConflict: 'user_id,product_id' });
+      if (error) {
+        customPriceError = error.message;
+        return;
+      }
+      await fetchCustomPricesForProduct(String(editing.id));
+      selectedCustomPriceUser = null;
+      customPriceUserSearch = '';
+      newCustomPrice = '';
+    }
+
+    async function removeCustomPrice(id: string) {
+      await supabase.from('user_product_prices').delete().eq('id', id);
+      if (editing) await fetchCustomPricesForProduct(String(editing.id));
+    }
+
+    $: if (editing && showCustomPrices) {
+      fetchCustomPricesForProduct(String(editing.id));
+    }
 </script>
   
 <div class="admin-container">
@@ -1233,6 +1326,9 @@
             <h2>Product Management</h2>
         </div>
 
+        <!-- DEBUG: Show editing and showCustomPrices state -->
+        <pre style="background:#f8f9fa;color:#333;padding:0.5rem 1rem;">{JSON.stringify({ editing, showCustomPrices }, null, 2)}</pre>
+
         <!-- Product Filters -->
         <div class="filters-card">
             <div class="filters-grid">
@@ -1404,6 +1500,80 @@
                             </select>
                         {/if}
                     </div>
+                    <div class="form-group">
+                        <label for="thc_max">THC Max (mg/g)</label>
+                        {#if editing}
+                            <input 
+                                id="thc_max"
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                bind:value={editing.thc_max}
+                                placeholder="THC max (mg/g)"
+                                required
+                            />
+                        {:else}
+                            <input 
+                                id="thc_max"
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                bind:value={newProduct.thc_max}
+                                placeholder="THC max (mg/g)"
+                                required
+                            />
+                        {/if}
+                    </div>
+                    <div class="form-group">
+                        <label for="cbd_max">CBD Max (mg/g)</label>
+                        {#if editing}
+                            <input 
+                                id="cbd_max"
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                bind:value={editing.cbd_max}
+                                placeholder="CBD max (mg/g)"
+                                required
+                            />
+                        {:else}
+                            <input 
+                                id="cbd_max"
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                bind:value={newProduct.cbd_max}
+                                placeholder="CBD max (mg/g)"
+                                required
+                            />
+                        {/if}
+                    </div>
+                    <div class="form-group">
+                        <label for="indica">Indica (%)</label>
+                        {#if editing}
+                            <input 
+                                id="indica"
+                                type="number"
+                                min="0"
+                                max="100"
+                                step="1"
+                                bind:value={editing.indica}
+                                placeholder="Indica % (0-100)"
+                                required
+                            />
+                        {:else}
+                            <input 
+                                id="indica"
+                                type="number"
+                                min="0"
+                                max="100"
+                                step="1"
+                                bind:value={newProduct.indica}
+                                placeholder="Indica % (0-100)"
+                                required
+                            />
+                        {/if}
+                    </div>
                 </div>
                 <div class="form-actions">
                     {#if editing !== null}
@@ -1416,6 +1586,9 @@
                             on:click={() => editing = null}
                         >
                             Cancel
+                        </button>
+                        <button type="button" class="secondary-btn" on:click={() => showCustomPrices = true} style="margin-left:1rem;">
+                            Custom Prices
                         </button>
                     {:else}
                         <button type="submit" class="primary-btn" disabled={loading}>
@@ -1450,7 +1623,7 @@
                                     />
                                 </td>
                                 <td>{product.name}</td>
-                                <td>{categories.find(c => c.id === product.category)?.name || product.category}</td>
+                                <td>{categories.find(c => String(c.id) === String(product.category))?.name || product.category}</td>
                                 <td>R{product.price}</td>
                                 <td class="action-buttons">
                                     <button 
@@ -1461,7 +1634,7 @@
                                     </button>
                                     <button 
                                         class="delete-btn"
-                                        on:click={() => { showProductConfirmModal = true; productIdToDelete = product.id; }}
+                                        on:click={() => { showProductConfirmModal = true; productIdToDelete = String(product.id); }}
                                     >
                                         Delete
                                     </button>
@@ -1473,6 +1646,57 @@
             </div>
         </div>
     </section>
+
+    {#if editing && showCustomPrices}
+      <div class="modal-backdrop" style="z-index:2000;" on:click={() => showCustomPrices = false}></div>
+      <div class="modal custom-prices-modal" style="z-index:2001;" role="dialog" aria-modal="true">
+        <button class="close-btn" on:click={() => showCustomPrices = false} aria-label="Close custom prices modal">×</button>
+        <h3>Custom Prices for this Product</h3>
+        <div style="margin-bottom:1rem;">
+          <input type="text" placeholder="Search user by name or email..." bind:value={customPriceUserSearch} on:input={searchCustomPriceUsers} style="min-width:200px; width:100%;" />
+          {#if customPriceUserLoading}
+            <span>Searching...</span>
+          {/if}
+          {#if customPriceUserResults.length > 0}
+            <ul style="background:#fff;border:1px solid #eee;max-height:120px;overflow-y:auto;margin:0;padding:0;list-style:none;">
+              {#each customPriceUserResults as user}
+                <li style="padding:0.5rem;cursor:pointer;" on:click={() => selectCustomPriceUser(user)}>{user.display_name || user.email} <span style="color:#888;font-size:0.9em;">({user.email})</span></li>
+              {/each}
+            </ul>
+          {/if}
+        </div>
+        {#if selectedCustomPriceUser}
+          <div style="margin-bottom:0.5rem;">
+            Selected: <strong>{selectedCustomPriceUser.display_name || selectedCustomPriceUser.email}</strong>
+          </div>
+        {/if}
+        <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:1rem;">
+          <input type="number" min="0" step="0.01" placeholder="Custom price" bind:value={newCustomPrice} style="width:120px;" />
+          <button type="button" class="primary-btn" on:click={addCustomPrice}>Add/Update</button>
+        </div>
+        {#if customPriceError}
+          <div style="color:#dc3545;margin-bottom:0.5rem;">{customPriceError}</div>
+        {/if}
+        <table style="width:100%;margin-top:1rem;">
+          <thead>
+            <tr><th>User</th><th>Email</th><th>Custom Price</th><th>Action</th></tr>
+          </thead>
+          <tbody>
+            {#each customPrices as cp}
+              <tr>
+                <td>{cp.display_name || '-'}</td>
+                <td>{cp.email || '-'}</td>
+                <td>R{cp.custom_price}</td>
+                <td><button type="button" class="delete-btn" on:click={() => removeCustomPrice(cp.id)}>Remove</button></td>
+              </tr>
+            {/each}
+            {#if customPrices.length === 0}
+              <tr><td colspan="4" style="text-align:center;color:#888;">No custom prices set for this product.</td></tr>
+            {/if}
+          </tbody>
+        </table>
+      </div>
+    {/if}
 </div>
   
 <style>
@@ -1855,170 +2079,44 @@
     .modal-backdrop {
         position: fixed;
         top: 0; left: 0; right: 0; bottom: 0;
-        background: rgba(0,0,0,0.35);
-        display: flex;
-        align-items: center;
-        justify-content: center;
+        background: rgba(0,0,0,0.4);
         z-index: 2000;
     }
 
-    .modal-content {
+    .modal.custom-prices-modal {
+        position: fixed;
+        top: 50%; left: 50%;
+        transform: translate(-50%, -50%);
         background: #fff;
-        border-radius: 16px;
-        box-shadow: 0 8px 32px rgba(0,0,0,0.18);
-        padding: 2rem 2.5rem 1.5rem 2.5rem;
-        min-width: 320px;
+        padding: 2rem;
+        border-radius: 12px;
+        z-index: 2001;
+        min-width: 350px;
         max-width: 95vw;
-        width: 400px;
-        position: relative;
-        display: flex;
-        flex-direction: column;
-        align-items: stretch;
+        box-shadow: 0 2px 16px rgba(0,0,0,0.2);
+        max-height: 90vh;
+        overflow-y: auto;
     }
 
-    .modal-content h3 {
-        margin-top: 0;
-        margin-bottom: 1.5rem;
-        font-size: 1.3rem;
-        color: #333;
-        text-align: center;
-    }
-
-    .modal-tabs {
-        display: flex;
-        gap: 1rem;
-        margin-bottom: 1.5rem;
-        justify-content: center;
-    }
-
-    .tab-btn {
-        background: none;
-        border: none;
-        color: #007bff;
-        font-size: 1rem;
-        padding: 0.5rem 1.2rem;
-        border-radius: 6px 6px 0 0;
-        cursor: pointer;
-        transition: background 0.2s, color 0.2s;
-        border-bottom: 2px solid transparent;
-    }
-
-    .tab-btn.active, .tab-btn:focus {
-        background: #f8f9fa;
-        color: #0056b3;
-        border-bottom: 2px solid #007bff;
-        outline: none;
-    }
-
-    .upload-area {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 1rem;
-        margin-bottom: 1rem;
-    }
-
-    .upload-label {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        cursor: pointer;
-        padding: 1.2rem 2rem;
-        border: 2px dashed #007bff;
-        border-radius: 8px;
-        background: #f8f9fa;
-        transition: border-color 0.2s;
-        width: 100%;
-        text-align: center;
-    }
-
-    .upload-label:hover {
-        border-color: #0056b3;
-    }
-
-    .upload-icon {
-        font-size: 2rem;
-        margin-bottom: 0.5rem;
-    }
-
-    .upload-hint {
-        font-size: 0.9rem;
-        color: #888;
-    }
-
-    .file-input {
-        display: none;
-    }
-
-    .upload-progress {
-        width: 100%;
-        background: #e9ecef;
-        border-radius: 4px;
-        height: 8px;
-        margin-top: 0.5rem;
-        overflow: hidden;
-    }
-
-    .progress-bar {
-        height: 100%;
-        background: #007bff;
-        transition: width 0.3s;
-    }
-
-    .modal-form-group {
-        margin-bottom: 1rem;
-    }
-
-    .modal-form-group input[type="url"] {
-        width: 100%;
-        padding: 0.75rem;
-        border: 1px solid #dee2e6;
-        border-radius: 6px;
-        font-size: 1rem;
-    }
-
-    .modal-actions {
-        display: flex;
-        justify-content: flex-end;
-        gap: 1rem;
-    }
-
-    .submit-btn {
-        background: #007bff;
-        color: #fff;
-        border: none;
-        border-radius: 6px;
-        padding: 0.75rem 1.5rem;
-        font-size: 1rem;
-        cursor: pointer;
-        transition: background 0.2s;
-    }
-
-    .submit-btn:hover {
-        background: #0056b3;
-    }
-
-    .close-btn {
+    .modal.custom-prices-modal .close-btn {
         position: absolute;
         top: 1rem;
         right: 1rem;
         background: none;
         border: none;
         font-size: 1.5rem;
-        color: #888;
         cursor: pointer;
-        transition: color 0.2s;
+        color: #666;
+        z-index: 2002;
+        padding: 0.5rem;
+        border-radius: 50%;
+        transition: background-color 0.2s ease;
     }
 
-    .close-btn:hover {
-        color: #dc3545;
-    }
-
-    @media (max-width: 500px) {
-        .modal-content {
-            padding: 1rem;
-            min-width: 0;
-            width: 98vw;
-        }
+    .modal.custom-prices-modal .close-btn:hover,
+    .modal.custom-prices-modal .close-btn:focus {
+        background-color: rgba(0, 0, 0, 0.1);
+        outline: 2px solid #2196f3;
+        outline-offset: 2px;
     }
 </style>

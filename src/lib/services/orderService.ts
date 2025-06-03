@@ -188,63 +188,56 @@ export async function createOrder(
     });
 
     // Ledger logic for POS/credit orders
-    const GUEST_PROFILE_ID = '01da301b-6d21-45fa-b259-c2a8ce4030e0';
-    const ledgerUserId = userId ? userId : (isPosOrder && guestInfo ? GUEST_PROFILE_ID : null);
-    if (ledgerUserId && isPosOrder) {
+    const GUEST_PROFILE_ID = 'ab54f66c-fa1c-40d2-ad2a-d9d5c1603e0f';
+    // Only run ledger logic for real customers, not for the float/guest account
+    if (userId && isPosOrder) {
       const totalDue = total + Math.abs(currentUserDebt || 0);
       const netPayment = Math.min((cashGiven || 0) - (changeGiven || 0), totalDue);
       const overpayment = Math.max(0, (cashGiven || 0) - totalDue);
-      // If credit covers the whole order, only log credit_used
-      if (creditUsed >= total) {
-        if (creditUsed > 0) {
-          await supabase.from('credit_ledger').insert({
-            user_id: ledgerUserId,
-            type: 'credit_used',
-            amount: -creditUsed, // NEGATIVE: reduces credit
-            order_id: order.id,
-            note: 'Credit used for order'
-          });
-        }
-        // Do not log order or payment entries
-      } else {
-        // Partial credit or only cash
-        // Always log the order entry (debt)
+      const totalPaid = (netPayment || 0) + (creditUsed || 0);
+
+      // Only log a debt if the order is not fully paid
+      if (totalPaid < total) {
+        // Log the remaining debt
         await supabase.from('credit_ledger').insert({
-          user_id: ledgerUserId,
+          user_id: userId,
           type: 'order',
-          amount: -total, // negative for full order total
+          amount: -(total - totalPaid), // negative for the unpaid portion
           order_id: order.id,
-          note: 'Order placed (POS/credit)'
+          note: 'Order placed (POS/credit, partial payment)'
         });
-        // Log credit used if any
-        if (creditUsed > 0) {
-          await supabase.from('credit_ledger').insert({
-            user_id: ledgerUserId,
-            type: 'credit_used',
-            amount: -creditUsed, // NEGATIVE: reduces credit
-            order_id: order.id,
-            note: 'Credit used for order'
-          });
-        }
-        // Log payment if any cash was given
-        if (netPayment > 0) {
-          await supabase.from('credit_ledger').insert({
-            user_id: ledgerUserId,
-            type: 'payment',
-            amount: netPayment,
-            order_id: order.id,
-            note: 'Order payment'
-          });
-        }
-        // Log overpayment as credit if requested
-        if (extraCashOption === 'credit' && overpayment > 0) {
-          await supabase.from('credit_ledger').insert({
-            user_id: ledgerUserId,
-            type: 'payment',
-            amount: overpayment,
-            note: 'Overpayment credited to account'
-          });
-        }
+      }
+
+      // Log credit used if any
+      if (creditUsed > 0) {
+        await supabase.from('credit_ledger').insert({
+          user_id: userId,
+          type: 'credit_used',
+          amount: -creditUsed, // NEGATIVE: reduces credit
+          order_id: order.id,
+          note: 'Credit used for order'
+        });
+      }
+
+      // Log payment if any cash was given
+      if (netPayment > 0) {
+        await supabase.from('credit_ledger').insert({
+          user_id: userId,
+          type: 'payment',
+          amount: netPayment,
+          order_id: order.id,
+          note: 'Order payment'
+        });
+      }
+
+      // Log overpayment as credit if requested
+      if (extraCashOption === 'credit' && overpayment > 0) {
+        await supabase.from('credit_ledger').insert({
+          user_id: userId,
+          type: 'payment',
+          amount: overpayment,
+          note: 'Overpayment credited to account'
+        });
       }
     }
 

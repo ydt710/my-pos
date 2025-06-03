@@ -1,6 +1,6 @@
 <script lang="ts">
   import { tick } from 'svelte';
-  import { cartStore, cartNotification, selectedPosUser } from '$lib/stores/cartStore';
+  import { cartStore, cartNotification, selectedPosUser, fetchCustomPricesForUser, customPrices } from '$lib/stores/cartStore';
   import { goto } from '$app/navigation';
   import CartItem from './CartItem.svelte';
   import { supabase } from '$lib/supabase';
@@ -27,7 +27,7 @@
   let addAccountLoading = false;
   let selectedUserBalance: number | null = null;
   
-  const FLOAT_USER_ID = '27cfee48-5b04-4ee1-885f-b3ef31417099';
+  const FLOAT_USER_ID = 'ab54f66c-fa1c-40d2-ad2a-d9d5c1603e0f';
   const FLOAT_USER_EMAIL = 'float@pos.local';
   
   // Clear float user if selected (e.g. from localStorage)
@@ -58,6 +58,8 @@
     selectedPosUser.set(user);
     // Fetch and display balance for selected user
     fetchUserBalance(user.id);
+    // Fetch custom prices for this user
+    fetchCustomPricesForUser(user.id);
   }
   
   async function fetchUserBalance(userId: string) {
@@ -87,6 +89,7 @@
     selectedUser = null;
     userSearch = '';
     userResults = [];
+    customPrices.set({}); // Clear custom prices when cart is closed
   }
   
   async function addAccount() {
@@ -119,6 +122,8 @@
     showAddAccountModal = false;
     newAccount = { display_name: '', phone_number: '', email: '' };
   }
+  
+  $: posUser = $selectedPosUser;
 </script>
 
 <div 
@@ -165,15 +170,20 @@
           {/each}
         </ul>
       {/if}
-      {#if selectedUser}
+      {#if posUser}
         <div class="selected-user">
-          Assigned to: <strong>{selectedUser.display_name || selectedUser.email}</strong>
+          Assigned to: <strong>{posUser.name || posUser.email}</strong>
           <br />
           <span>
             Balance: <span style="color: {(selectedUserBalance ?? 0) > 0 ? '#28a745' : (selectedUserBalance ?? 0) < 0 ? '#dc3545' : '#666'};">
               R{selectedUserBalance ?? 0}
             </span>
           </span>
+          <button class="clear-user-btn" on:click={() => { selectedPosUser.set(null); selectedUser = null; }} style="margin-top:0.5rem;">Guest Checkout</button>
+        </div>
+      {:else}
+        <div class="selected-customer-info warning">
+          <strong>No customer selected.</strong> Guest checkout mode.
         </div>
       {/if}
     </div>
