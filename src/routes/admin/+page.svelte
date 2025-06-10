@@ -129,6 +129,9 @@
     let customPriceError = '';
     let customPriceUserLoading = false;
   
+    let showDescriptionModal = false;
+    let tempDescription = '';
+  
     function scrollToSection(sectionId: string) {
         const element = document.getElementById(sectionId);
         if (element) {
@@ -1326,8 +1329,7 @@
             <h2>Product Management</h2>
         </div>
 
-        <!-- DEBUG: Show editing and showCustomPrices state -->
-        <pre style="background:#f8f9fa;color:#333;padding:0.5rem 1rem;">{JSON.stringify({ editing, showCustomPrices }, null, 2)}</pre>
+  
 
         <!-- Product Filters -->
         <div class="filters-card">
@@ -1574,6 +1576,17 @@
                             />
                         {/if}
                     </div>
+                    <div class="form-group">
+                        <label for="description">Description</label>
+                        <div style="display:flex;align-items:center;gap:0.5rem;">
+                            {#if editing}
+                                <textarea id="description" bind:value={editing!.description} rows="2" readonly style="flex:1;resize:none;background:#f8f9fa;cursor:pointer;" on:click={() => { tempDescription = editing!.description || ''; showDescriptionModal = true; }} placeholder="Product description..."></textarea>
+                            {:else}
+                                <textarea id="description" bind:value={newProduct.description} rows="2" readonly style="flex:1;resize:none;background:#f8f9fa;cursor:pointer;" on:click={() => { tempDescription = newProduct.description || ''; showDescriptionModal = true; }} placeholder="Product description..."></textarea>
+                            {/if}
+                            <button type="button" class="secondary-btn" on:click={() => { tempDescription = editing ? (editing.description || '') : (newProduct.description || ''); showDescriptionModal = true; }}>Edit</button>
+                        </div>
+                    </div>
                 </div>
                 <div class="form-actions">
                     {#if editing !== null}
@@ -1695,6 +1708,23 @@
             {/if}
           </tbody>
         </table>
+      </div>
+    {/if}
+
+    {#if showDescriptionModal}
+        <div class="modal-backdrop" style="z-index:2100;" on:click={() => showDescriptionModal = false}></div>
+        <div class="modal" style="z-index:2101;min-width:350px;max-width:95vw;top:50%;left:50%;transform:translate(-50%,-50%);position:fixed;background:#fff;padding:2rem;border-radius:12px;box-shadow:0 2px 16px rgba(0,0,0,0.2);" role="dialog" aria-modal="true">
+            <button class="close-btn" on:click={() => showDescriptionModal = false} aria-label="Close description modal" style="position:absolute;top:1rem;right:1rem;font-size:1.5rem;background:none;border:none;cursor:pointer;">×</button>
+            <h3>Edit Description</h3>
+            <textarea bind:value={tempDescription} rows="8" style="width:100%;margin-bottom:1rem;"></textarea>
+            <div style="display:flex;justify-content:flex-end;gap:1rem;">
+                <button type="button" class="primary-btn" on:click={() => {
+                    if (editing) editing.description = tempDescription;
+                    else newProduct.description = tempDescription;
+                    showDescriptionModal = false;
+                }}>Save</button>
+                <button type="button" class="secondary-btn" on:click={() => showDescriptionModal = false}>Cancel</button>
+            </div>
       </div>
     {/if}
 </div>

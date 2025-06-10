@@ -311,7 +311,7 @@
   }
 
   .close-btn:hover {
-    color: #333;
+    color: #00ff62;
     transform: scale(1.1);
   }
 
@@ -376,21 +376,21 @@
 
   .loading {
     text-align: center;
-    color: #666;
+    color: rgb(247, 247, 247)fff;
     padding: 1rem;
   }
 
   .pos-user-search {
     margin-bottom: 1rem;
     padding-bottom: 1rem;
-    border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+    border-bottom: 1px solid rgb(255, 255, 255);
   }
 
   .pos-user-search label {
     font-weight: 500;
     display: block;
     margin-bottom: 0.25rem;
-    color: #333;
+    color: #16ff1a;
   }
 
   .pos-user-search input {

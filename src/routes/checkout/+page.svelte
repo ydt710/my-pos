@@ -330,7 +330,7 @@
       const userDebt = userBalance < 0 ? Math.abs(userBalance) : 0;
       creditUsed = Math.min(startingCredit, orderTotal + userDebt);
       remainingCredit = Math.max(0, startingCredit - creditUsed);
-      // If credit covers the whole order, set cashGiven to 0
+      // If credit covers the whole order, set cashGiven to 0123456
       if (creditUsed >= orderTotal + userDebt) {
         cashGiven = 0;
       }

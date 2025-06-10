@@ -88,10 +88,11 @@
   .quantity-btn,
   .remove-btn {
     background: none;
-    border: 1px solid #ddd;
+    
     border-radius: 4px;
     padding: 0.25rem 0.5rem;
     cursor: pointer;
+    color: wheat;
   }
 
   .quantity-btn:disabled {

@@ -20,6 +20,7 @@
   let address = '';
   let notifications = true;
   let darkMode = false;
+  let signedContractUrl: string | null = null;
 
   onMount(async () => {
     const { data: { user: currentUser } } = await supabase.auth.getUser();
@@ -47,12 +48,14 @@
       address = profile.address || '';
       notifications = profile.notifications ?? true;
       darkMode = profile.dark_mode ?? false;
+      signedContractUrl = profile.signed_contract_url || null;
     } else {
       displayName = '';
       phoneNumber = '';
       address = '';
       notifications = true;
       darkMode = false;
+      signedContractUrl = null;
     }
     loading = false;
   });
@@ -147,6 +150,22 @@
     cartVisible = !cartVisible;
     if (menuVisible) menuVisible = false;
   }
+
+  async function handleDownloadContract() {
+    if (signedContractUrl) {
+      // Always use createSignedUrl for private bucket
+      const { data, error } = await supabase.storage
+        .from('signed.contracts')
+        .createSignedUrl(signedContractUrl, 600); // 10 minutes
+      if (data && data.signedUrl) {
+        window.open(data.signedUrl, '_blank');
+      } else {
+        showSnackbar('Could not generate download link. Please try again.');
+      }
+    } else {
+      showSnackbar('No contract file found.');
+    }
+  }
 </script>
 
 <main class="settings-container">
@@ -157,7 +176,16 @@
   {/if}
 
   {#if success}
-    <div class="success-message">{success}</div>
+    <div class="success">{success}</div>
+  {/if}
+
+  {#if signedContractUrl}
+    <div class="success" style="margin-bottom: 1.5rem;">
+      <p>Your signed contract is available.</p>
+      <button type="button" class="submit-btn" on:click={handleDownloadContract}>
+        Download Signed Contract
+      </button>
+    </div>
   {/if}
 
   {#if loading}
@@ -259,171 +287,180 @@
 <SideMenu visible={menuVisible} toggleVisibility={toggleMenu} />
 
 <style>
-  .settings-container {
-    max-width: 1200px;
+input {
+  text-align: center;
+}
+
+  .auth-container {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+    position: relative;
+    z-index: 1;
+  }
+
+  .auth-card, .settings-container {
+    backdrop-filter: blur(10px);
+    padding: 1.5rem;
+    border-radius: 16px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+    max-width: 400px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
     margin: 2rem auto;
-    padding: 0 1rem;
+  }
+
+  .logo {
+    width: 120px;
+    height: auto;
+    margin: 0 auto 2rem;
+    display: block;
   }
 
   h1 {
+    font-size: 2rem;
+    color: wheat;
+    margin: 0 0 0.5rem;
+    text-align: center;
+  }
+
+  .subtitle {
+    color: #ffffff;
     text-align: center;
     margin-bottom: 2rem;
-    color: #333;
-  }
-
-  .settings-grid {
-    display: grid;
-    grid-template-columns: 2fr 1fr;
-    gap: 2rem;
-  }
-
-  .settings-section {
-    background: white;
-    border-radius: 12px;
-    padding: 1.5rem;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-  }
-
-  h2 {
-    margin-bottom: 1.5rem;
-    color: #333;
-    font-size: 1.5rem;
   }
 
   .form-group {
     margin-bottom: 1.5rem;
+    text-align: center;
   }
 
   label {
     display: block;
     margin-bottom: 0.5rem;
-    color: #555;
+    color: #e0e0e0;
     font-weight: 500;
   }
 
-  input[type="text"],
-  input[type="email"],
-  input[type="tel"],
-  textarea {
+  input, textarea {
     width: 100%;
-    padding: 0.75rem;
-    border: 1px solid #ddd;
-    border-radius: 6px;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
     font-size: 1rem;
-    transition: border-color 0.2s;
+    transition: all 0.2s;
+    background: rgba(255, 255, 255, 0.9);
   }
 
-  input[type="text"]:focus,
-  input[type="email"]:focus,
-  input[type="tel"]:focus,
-  textarea:focus {
-    border-color: #007bff;
+  input:focus, textarea:focus {
     outline: none;
+    border-color: #2196f3;
+    box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.1);
   }
 
-  input:disabled {
-    background: #f5f5f5;
-    cursor: not-allowed;
-  }
-
-  .checkbox {
-    display: flex;
-    align-items: center;
-  }
-
-  .checkbox label {
-    display: flex;
-    align-items: center;
-    margin: 0;
-    cursor: pointer;
-  }
-
-  .checkbox input {
-    margin-right: 0.5rem;
-  }
-
-  .save-button {
+  .submit-btn, .save-button, .security-button, .delete-button {
     width: 100%;
-    padding: 1rem;
-    background: #28a745;
-    color: white;
-    border: none;
-    border-radius: 8px;
-    font-size: 1.1rem;
-    cursor: pointer;
-    transition: background-color 0.2s;
-  }
-
-  .save-button:hover:not(:disabled) {
-    background: #218838;
-  }
-
-  .save-button:disabled {
-    background: #ccc;
-    cursor: not-allowed;
-  }
-
-  .security-actions {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-  }
-
-  .security-button {
     padding: 0.75rem;
-    background: #007bff;
+    background: linear-gradient(135deg, #2196f3, #1976d2);
     color: white;
     border: none;
     border-radius: 8px;
     font-size: 1rem;
+    font-weight: 600;
     cursor: pointer;
-    transition: background-color 0.2s;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
   }
 
-  .security-button:hover:not(:disabled) {
-    background: #0056b3;
+  .submit-btn:hover:not(:disabled), .save-button:hover:not(:disabled), .security-button:hover:not(:disabled) {
+    background: linear-gradient(135deg, #1976d2, #1565c0);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(33, 150, 243, 0.3);
+  }
+
+  .submit-btn:disabled, .save-button:disabled, .security-button:disabled {
+    background: #e0e0e0;
+    cursor: not-allowed;
   }
 
   .delete-button {
-    padding: 0.75rem;
     background: #dc3545;
-    color: white;
-    border: none;
-    border-radius: 8px;
-    font-size: 1rem;
-    cursor: pointer;
-    transition: background-color 0.2s;
   }
-
   .delete-button:hover:not(:disabled) {
     background: #bd2130;
   }
 
-  .error-message {
-    background: #f8d7da;
+  .error, .error-message {
+    background: rgba(248, 215, 218, 0.9);
     color: #721c24;
     padding: 1rem;
     border-radius: 8px;
-    margin-bottom: 1rem;
+    margin-bottom: 1.5rem;
+    text-align: center;
+    backdrop-filter: blur(4px);
   }
 
-  .success-message {
-    background: #d4edda;
+  .success {
+    background: rgba(212, 237, 218, 0.9);
     color: #155724;
     padding: 1rem;
     border-radius: 8px;
-    margin-bottom: 1rem;
+    margin-bottom: 1.5rem;
+    text-align: center;
+    backdrop-filter: blur(4px);
   }
 
-  .loading {
+  .auth-footer {
     text-align: center;
-    padding: 2rem;
+    margin-top: 1.5rem;
     color: #666;
   }
 
-  @media (max-width: 800px) {
-    .settings-grid {
-      grid-template-columns: 1fr;
+  .link-btn {
+    background: none;
+    border: none;
+    color: #2196f3;
+    text-decoration: underline;
+    font-weight: 500;
+    cursor: pointer;
+    padding: 0;
+    font: inherit;
+  }
+
+  .link-btn:hover {
+    text-decoration: none;
+  }
+
+  .loading-spinner {
+    width: 20px;
+    height: 20px;
+    border: 2px solid #ffffff;
+    border-radius: 50%;
+    border-top-color: transparent;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  @media (max-width: 480px) {
+    .auth-container {
+      padding: 1rem;
+    }
+
+    .auth-card, .settings-container {
+      padding: 1.5rem;
+    }
+
+    h1 {
+      font-size: 1.75rem;
     }
   }
 </style> 
