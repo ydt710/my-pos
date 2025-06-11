@@ -39,8 +39,10 @@
 	},
 	"dependencies": {
 		"@supabase/supabase-js": "^2.49.4",
+		"frappe-charts": "^1.6.2",
 		"html2pdf.js": "^0.10.3",
 		"pdf-lib": "^1.17.1",
-		"signature_pad": "^5.0.9"
+		"signature_pad": "^5.0.9",
+		"svelte-frappe-charts": "^1.10.0"
 	}
 }

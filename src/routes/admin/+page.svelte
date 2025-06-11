@@ -10,6 +10,7 @@
     import OrderDetailsModal from '$lib/components/OrderDetailsModal.svelte';
     import { showSnackbar } from '$lib/stores/snackbarStore';
     import ConfirmModal from '$lib/components/ConfirmModal.svelte';
+    import ProductEditModal from '$lib/components/ProductEditModal.svelte';
   
     // Add Profile type
     interface Profile {
@@ -23,7 +24,7 @@
     let loading = true;
     let error = '';
     let success = '';
-    let editing: Product | null = null;
+    let editing: Partial<Product> | null = null;
     let newProduct: Partial<Product> = { 
       name: '', 
       description: '',
@@ -32,7 +33,9 @@
       category: 'flower', // Default category
       thc_max: 0,
       cbd_max: 0,
-      indica: 0
+      indica: 0,
+      is_new: false,
+      is_special: false
     };
     let imageFile: File | null = null;
     let uploadProgress = 0;
@@ -131,6 +134,20 @@
   
     let showDescriptionModal = false;
     let tempDescription = '';
+  
+    // Add state for modal
+    let showEditModal = false;
+    let isAddMode = false;
+  
+    function openEditModal(product: Product) {
+      editing = { ...product };
+      showEditModal = true;
+      isAddMode = false;
+    }
+    function closeEditModal() {
+      editing = null;
+      showEditModal = false;
+    }
   
     function scrollToSection(sectionId: string) {
         const element = document.getElementById(sectionId);
@@ -320,7 +337,7 @@
         loading = true;
         error = '';
         try {
-            let imageUrl = editing ? editing.image_url : newProduct.image_url;
+            let imageUrl = editing ? editing.image_url : '';
             
             // If there's a new file to upload
             if (imageFile) {
@@ -333,7 +350,7 @@
                 }
             }
             
-            if (editing) {
+            if (editing && editing.id) {
                 // Update
                 const { error: err } = await supabase
                     .from('products')
@@ -345,7 +362,7 @@
                 // Insert
                 const { data, error: err } = await supabase
                     .from('products')
-                    .insert([{ ...newProduct, image_url: imageUrl }])
+                    .insert([{ ...editing, image_url: imageUrl }])
                     .select()
                     .single();
                 
@@ -372,7 +389,9 @@
                     category: 'flower',
                     thc_max: 0,
                     cbd_max: 0,
-                    indica: 0
+                    indica: 0,
+                    is_new: false,
+                    is_special: false
                 };
                 }
             }
@@ -938,13 +957,7 @@
     <section id="stats" class="stats-section">
         <div class="section-header">
             <h2>Sales Statistics</h2>
-            <button 
-                class="danger-btn" 
-                on:click={deleteAllOrders}
-                disabled={loading}
-            >
-                Delete All Orders
-            </button>
+            
         </div>
         <div class="stats-grid">
             <div class="stat-card">
@@ -1407,210 +1420,24 @@
             </div>
         </div>
         
-        <!-- Product Form -->
+        <!-- Product Form (Add only) -->
         <div class="form-card">
-            <h3>{editing ? 'Edit Product' : 'Add Product'}</h3>
-            <form on:submit|preventDefault={saveProduct}>
-                <div class="form-grid">
-                    <div class="form-group">
-                        <label for="name">Name</label>
-                        {#if editing}
-                            <input 
-                                id="name"
-                                bind:value={editing.name}
-                                placeholder="Product name" 
-                                required 
-                            />
-                        {:else}
-                            <input 
-                                id="name"
-                                bind:value={newProduct.name}
-                                placeholder="Product name" 
-                                required 
-                            />
-                        {/if}
-                    </div>
-                    <div class="form-group">
-                        <label for="price">Price</label>
-                        {#if editing}
-                            <input 
-                                id="price"
-                                type="number" 
-                                min="0" 
-                                step="0.01"
-                                bind:value={editing.price}
-                                placeholder="Price" 
-                                required 
-                            />
-                        {:else}
-                            <input 
-                                id="price"
-                                type="number" 
-                                min="0" 
-                                step="0.01"
-                                bind:value={newProduct.price}
-                                placeholder="Price" 
-                                required 
-                            />
-                        {/if}
-                    </div>
-                    <div class="form-group">
-                        <label for="image">Product Image</label>
-                        <div class="image-input-container">
-                            {#if (editing?.image_url || newProduct.image_url)}
-                                <div class="image-preview">
-                                    <img 
-                                        src={editing ? editing.image_url : newProduct.image_url} 
-                                        alt="Product preview" 
-                                        class="preview-image"
-                                    />
-                                </div>
-                            {/if}
-                            <button 
-                                type="button" 
-                                class="image-btn"
-                                on:click={() => {
-                                    showImageModal = true;
-                                    tempImageUrl = (editing ? editing.image_url : newProduct.image_url) || '';
-                                }}
-                            >
-                                Add Image
-                            </button>
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <label for="category">Category</label>
-                        {#if editing}
-                            <select 
-                                id="category"
-                                bind:value={editing.category}
-                                required
-                            >
-                                {#each categories as category}
-                                    <option value={category.id}>{category.name}</option>
-                                {/each}
-                            </select>
-                        {:else}
-                            <select 
-                                id="category"
-                                bind:value={newProduct.category}
-                                required
-                            >
-                                {#each categories as category}
-                                    <option value={category.id}>{category.name}</option>
-                                {/each}
-                            </select>
-                        {/if}
-                    </div>
-                    <div class="form-group">
-                        <label for="thc_max">THC Max (mg/g)</label>
-                        {#if editing}
-                            <input 
-                                id="thc_max"
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                bind:value={editing.thc_max}
-                                placeholder="THC max (mg/g)"
-                                required
-                            />
-                        {:else}
-                            <input 
-                                id="thc_max"
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                bind:value={newProduct.thc_max}
-                                placeholder="THC max (mg/g)"
-                                required
-                            />
-                        {/if}
-                    </div>
-                    <div class="form-group">
-                        <label for="cbd_max">CBD Max (mg/g)</label>
-                        {#if editing}
-                            <input 
-                                id="cbd_max"
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                bind:value={editing.cbd_max}
-                                placeholder="CBD max (mg/g)"
-                                required
-                            />
-                        {:else}
-                            <input 
-                                id="cbd_max"
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                bind:value={newProduct.cbd_max}
-                                placeholder="CBD max (mg/g)"
-                                required
-                            />
-                        {/if}
-                    </div>
-                    <div class="form-group">
-                        <label for="indica">Indica (%)</label>
-                        {#if editing}
-                            <input 
-                                id="indica"
-                                type="number"
-                                min="0"
-                                max="100"
-                                step="1"
-                                bind:value={editing.indica}
-                                placeholder="Indica % (0-100)"
-                                required
-                            />
-                        {:else}
-                            <input 
-                                id="indica"
-                                type="number"
-                                min="0"
-                                max="100"
-                                step="1"
-                                bind:value={newProduct.indica}
-                                placeholder="Indica % (0-100)"
-                                required
-                            />
-                        {/if}
-                    </div>
-                    <div class="form-group">
-                        <label for="description">Description</label>
-                        <div style="display:flex;align-items:center;gap:0.5rem;">
-                            {#if editing}
-                                <textarea id="description" bind:value={editing!.description} rows="2" readonly style="flex:1;resize:none;background:#f8f9fa;cursor:pointer;" on:click={() => { tempDescription = editing!.description || ''; showDescriptionModal = true; }} placeholder="Product description..."></textarea>
-                            {:else}
-                                <textarea id="description" bind:value={newProduct.description} rows="2" readonly style="flex:1;resize:none;background:#f8f9fa;cursor:pointer;" on:click={() => { tempDescription = newProduct.description || ''; showDescriptionModal = true; }} placeholder="Product description..."></textarea>
-                            {/if}
-                            <button type="button" class="secondary-btn" on:click={() => { tempDescription = editing ? (editing.description || '') : (newProduct.description || ''); showDescriptionModal = true; }}>Edit</button>
-                        </div>
-                    </div>
-                </div>
-                <div class="form-actions">
-                    {#if editing !== null}
-                        <button type="submit" class="primary-btn" disabled={loading}>
-                            Update Product
-                        </button>
-                        <button 
-                            type="button" 
-                            class="secondary-btn" 
-                            on:click={() => editing = null}
-                        >
-                            Cancel
-                        </button>
-                        <button type="button" class="secondary-btn" on:click={() => showCustomPrices = true} style="margin-left:1rem;">
-                            Custom Prices
-                        </button>
-                    {:else}
-                        <button type="submit" class="primary-btn" disabled={loading}>
-                            Add Product
-                        </button>
-                    {/if}
-                </div>
-            </form>
+          <button class="primary-btn" style="margin-bottom:1rem;" on:click={() => { editing = { name: '', description: '', price: 0, image_url: '', category: 'flower', thc_max: 0, cbd_max: 0, indica: 0, is_new: false, is_special: false }; showEditModal = true; isAddMode = true; }}>
+            Add Product
+          </button>
         </div>
+        
+        <!-- Edit/Add Product Modal -->
+        {#if showEditModal && editing}
+          <ProductEditModal
+            product={editing}
+            categories={categories}
+            loading={loading}
+            isAdd={isAddMode}
+            on:save={async (e) => { editing = e.detail.product; await saveProduct(); closeEditModal(); isAddMode = false; }}
+            on:cancel={() => { closeEditModal(); isAddMode = false; }}
+          />
+        {/if}
         
         <!-- Product List -->
         <div class="table-card">
@@ -1622,6 +1449,7 @@
                             <th>Name</th>
                             <th>Category</th>
                             <th>Price</th>
+                            <th>Tags</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
@@ -1637,11 +1465,26 @@
                                 </td>
                                 <td>{product.name}</td>
                                 <td>{categories.find(c => String(c.id) === String(product.category))?.name || product.category}</td>
-                                <td>R{product.price}</td>
+                                <td>
+                                    {#if product.is_new}
+                                      <span class="tag-badge new">New</span>
+                                    {/if}
+                                    {#if product.is_special}
+                                      <span class="tag-badge special">Special</span>
+                                    {/if}
+                                </td>
+                                <td>
+                                    {#if product.is_special && product.special_price}
+                                      <span style="text-decoration: line-through; color: #888;">R{product.price}</span>
+                                      <span style="color: #e67e22; font-weight: bold; margin-left: 0.5em;">R{product.special_price}</span>
+                                    {:else}
+                                      R{product.price}
+                                    {/if}
+                                </td>
                                 <td class="action-buttons">
                                     <button 
                                         class="edit-btn"
-                                        on:click={() => editProduct(product)}
+                                        on:click={() => { editing = product; showEditModal = true; isAddMode = false; }}
                                     >
                                         Edit
                                     </button>
@@ -1727,7 +1570,7 @@
             </div>
       </div>
     {/if}
-</div>
+  </div>
   
 <style>
     .admin-container {
@@ -1736,6 +1579,7 @@
         padding: 2rem;
         background: #f8f9fa;
         min-height: 100vh;
+        overflow-x: hidden; /* Prevent horizontal scroll */
     }
 
     .admin-nav {
@@ -2052,11 +1896,78 @@
     }
 
     @media (max-width: 800px) {
-        .filters-grid {
+        .admin-container {
+            padding: 1rem 0.5rem;
+            width: 100vw;
+            max-width: 100vw;
+            overflow-x: hidden;
+        }
+        .stats-grid, .stats-details {
             grid-template-columns: 1fr;
         }
+        section {
+            padding: 1rem 0;
+        }
+        .section-header {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 1rem;
+        }
+        .table-responsive {
+            width: 100vw;
+            margin-left: -0.5rem;
+            margin-right: -0.5rem;
+            overflow-x: auto;
+        }
+        table {
+            min-width: 600px;
+            font-size: 0.95rem;
+        }
+        th, td {
+            padding: 0.5rem;
+        }
+        .form-actions {
+            flex-direction: column;
+            gap: 0.5rem;
+            align-items: stretch;
+        }
+        .action-buttons {
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+        .product-thumbnail {
+            width: 40px;
+        }
     }
-
+    @media (max-width: 600px) {
+        .admin-container {
+            padding: 0.5rem 0.25rem;
+        }
+        .nav-content {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 0.5rem;
+        }
+        .nav-links {
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+        .stats-grid, .stats-details {
+            gap: 0.75rem;
+        }
+        .stat-card {
+            padding: 0.75rem;
+        }
+        .modal.custom-prices-modal {
+            padding: 1rem;
+            min-width: 90vw;
+        }
+        .modal {
+            padding: 1rem;
+            min-width: 90vw;
+        }
+    }
+    /* Show mobile card views for orders and products */
     .mobile-only {
         display: none;
     }
@@ -2068,85 +1979,59 @@
             display: none;
         }
     }
-
-    .image-input-container {
-        display: flex;
-        align-items: center;
-        gap: 1rem;
+    /* Add mobile card view for products */
+    @media (max-width: 800px) {
+        .product-card-list {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        .product-card {
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            padding: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+        .product-card img {
+            width: 50px;
+            height: 50px;
+            object-fit: cover;
+            border-radius: 4px;
+        }
+        .product-card-details {
+            flex: 1;
+        }
+        .product-card-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
     }
-
-    .image-preview {
-        display: flex;
-        align-items: center;
+    .tag-badge {
+      display: inline-block;
+      padding: 0.2em 0.6em;
+      margin-right: 0.3em;
+      border-radius: 8px;
+      font-size: 0.85em;
+      font-weight: 600;
+      color: #fff;
     }
-
-    .preview-image {
-        width: 60px;
-        height: 60px;
-        object-fit: cover;
-        border-radius: 6px;
-        border: 1px solid #eee;
+    .tag-badge.new {
+      background: #007bff;
     }
-
-    .image-btn {
-        padding: 0.5rem 1.2rem;
-        border: 1px solid #007bff;
-        background: #f8f9fa;
-        color: #007bff;
-        border-radius: 6px;
-        font-size: 1rem;
-        cursor: pointer;
-        transition: background 0.2s, color 0.2s;
-        margin-left: 0.5rem;
-        white-space: nowrap;
+    .tag-badge.special {
+      background: #e67e22;
     }
-
-    .image-btn:hover {
-        background: #007bff;
-        color: #fff;
-    }
-
-    .modal-backdrop {
-        position: fixed;
-        top: 0; left: 0; right: 0; bottom: 0;
-        background: rgba(0,0,0,0.4);
-        z-index: 2000;
-    }
-
-    .modal.custom-prices-modal {
-        position: fixed;
-        top: 50%; left: 50%;
-        transform: translate(-50%, -50%);
-        background: #fff;
-        padding: 2rem;
-        border-radius: 12px;
-        z-index: 2001;
-        min-width: 350px;
-        max-width: 95vw;
-        box-shadow: 0 2px 16px rgba(0,0,0,0.2);
-        max-height: 90vh;
-        overflow-y: auto;
-    }
-
-    .modal.custom-prices-modal .close-btn {
-        position: absolute;
-        top: 1rem;
-        right: 1rem;
-        background: none;
-        border: none;
-        font-size: 1.5rem;
-        cursor: pointer;
-        color: #666;
-        z-index: 2002;
-        padding: 0.5rem;
-        border-radius: 50%;
-        transition: background-color 0.2s ease;
-    }
-
-    .modal.custom-prices-modal .close-btn:hover,
-    .modal.custom-prices-modal .close-btn:focus {
-        background-color: rgba(0, 0, 0, 0.1);
-        outline: 2px solid #2196f3;
-        outline-offset: 2px;
+    .image-preview img {
+      max-width: 80px;
+      max-height: 80px;
+      width: auto;
+      height: auto;
+      object-fit: contain;
+      border-radius: 4px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
     }
 </style>

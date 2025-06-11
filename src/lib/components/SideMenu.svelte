@@ -42,12 +42,12 @@
     const { data: { user: currentUser } } = await supabase.auth.getUser();
     user = currentUser;
     if (user) {
-      isAdmin = !!user.user_metadata?.is_admin;
       const { data: profile } = await supabase
         .from('profiles')
-        .select('role')
+        .select('is_admin, role')
         .eq('auth_user_id', user.id)
-        .single();
+        .maybeSingle();
+      isAdmin = !!profile?.is_admin;
       isPosUser = profile?.role === 'pos';
     } else {
       isAdmin = false;

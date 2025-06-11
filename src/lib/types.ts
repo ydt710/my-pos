@@ -6,6 +6,7 @@ export interface Product {
   category: string;
   is_special?: boolean;
   is_new?: boolean;
+  quantity?: number;
 }
 
 export interface CartItem extends Product {

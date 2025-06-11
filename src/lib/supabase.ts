@@ -26,11 +26,10 @@ if (browser) {
 
 // Function to make a user an admin
 export async function makeUserAdmin(userId: string) {
-  const { error } = await supabase.auth.admin.updateUserById(
-    userId,
-    { user_metadata: { is_admin: true } }
-  );
-  
+  const { error } = await supabase
+    .from('profiles')
+    .update({ is_admin: true })
+    .eq('auth_user_id', userId);
   if (error) {
     console.error('Error making user admin:', error);
     return false;

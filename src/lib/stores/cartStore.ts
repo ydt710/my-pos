@@ -96,7 +96,7 @@ function createCartStore() {
       }
 
       // Check current shop stock level
-      const currentStock = await getStock(productId, 'shop');
+      const currentStock = await getStock(String(productId), 'shop');
       if (currentStock <= 0) {
         cartNotification.set({ type: 'error', message: 'This item is out of stock.' });
         return false;
@@ -188,19 +188,14 @@ export const isPosOrAdmin = writableStore<boolean>(false);
 export async function updateIsPosOrAdmin() {
   const { data: { user } } = await supabase.auth.getUser();
   if (user) {
-    // Check if user is admin
-    const isAdmin = !!user.user_metadata?.is_admin;
-    if (isAdmin) {
-      isPosOrAdmin.set(true);
-      return;
-    }
-    // Check if user is POS
+    // Query the profiles table for admin/role
     const { data: profile } = await supabase
       .from('profiles')
-      .select('role')
+      .select('is_admin, role')
       .eq('auth_user_id', user.id)
-      .single();
-    isPosOrAdmin.set(profile?.role === 'pos');
+      .maybeSingle();
+    const isAdmin = !!profile?.is_admin;
+    isPosOrAdmin.set(isAdmin || profile?.role === 'pos');
   } else {
     isPosOrAdmin.set(false);
   }

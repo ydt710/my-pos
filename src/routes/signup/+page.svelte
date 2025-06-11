@@ -271,7 +271,7 @@
           .createSignedUrl(signedContractDownloadUrl, 600);
         if (data && data.signedUrl) {
           window.open(data.signedUrl, '_blank');
-          goto('/');
+        goto('/');
         } else {
           showSnackbar('Could not generate download link. Please try again.');
         }
@@ -293,13 +293,13 @@
       };
       const pdfBlob = await html2pdf().from(element).set(opt).outputPdf('blob');
       const filename = `${userId}/${Date.now()}.pdf`;
-      const { data: uploadData, error: uploadError } = await supabase.storage
+        const { data: uploadData, error: uploadError } = await supabase.storage
         .from('signed.contracts')
         .upload(filename, pdfBlob, { contentType: 'application/pdf', upsert: false });
-      if (uploadError) {
-        console.error('Error uploading signed PDF:', uploadError);
-        return null;
-      }
+        if (uploadError) {
+          console.error('Error uploading signed PDF:', uploadError);
+          return null;
+        }
       return filename;
     }
   </script>

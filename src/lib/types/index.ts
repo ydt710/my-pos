@@ -12,9 +12,11 @@ export interface Product {
   indica: number;  // 0-100, represents indica percentage. Sativa percentage is (100 - indica)
   is_special?: boolean;
   is_new?: boolean;
+  special_price?: number;
   reviews?: Review[];
   average_rating?: number;
   review_count?: number;
+  quantity?: number; // Optional: for cart and cartStore logic
 }
 
 export interface CartItem extends Product {
@@ -54,11 +56,9 @@ export interface Order {
   order_items?: OrderItem[];
   user?: {
     email: string;
-    user_metadata?: {
-      name?: string;
-      phone?: string;
-      address?: string;
-    };
+    display_name?: string;
+    phone_number?: string;
+    address?: string;
   };
 }
 

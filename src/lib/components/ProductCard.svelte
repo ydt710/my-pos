@@ -226,9 +226,14 @@
       <div class="card-product__body-container cannabis-product">
         <div class="card-product__title">{product.name}</div>
         <div class="product__price-row">
-          <span class="product__price">R{effectivePrice}</span>
-          {#if posUser && effectivePrice !== product.price}
-            <span class="custom-price-label" style="color:#007bff;font-size:0.85em;margin-left:0.5em;">Custom Price</span>
+          {#if product.is_special && product.special_price}
+            <span class="product__price" style="text-decoration: line-through; color: #888;">R{product.price}</span>
+            <span class="product__price" style="color: #e67e22; font-weight: bold; margin-left: 0.5em;">R{product.special_price}</span>
+          {:else}
+            <span class="product__price">R{effectivePrice}</span>
+            {#if posUser && effectivePrice !== product.price}
+              <span class="custom-price-label" style="color:#007bff;font-size:0.85em;margin-left:0.5em;">Custom Price</span>
+            {/if}
           {/if}
         </div>
         <div class="product__details-row">

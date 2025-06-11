@@ -409,11 +409,9 @@ export async function getAllOrders(filters?: OrderFilters): Promise<{ orders: Or
           ...order,
           user: {
             email: profile.email,
-            user_metadata: {
-              name: profile.display_name,
-              phone: profile.phone_number,
-              address: profile.address
-            }
+            display_name: profile.display_name,
+            phone_number: profile.phone_number,
+            address: profile.address
           }
         };
       }

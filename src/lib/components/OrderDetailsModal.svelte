@@ -57,10 +57,10 @@
       };
     } else if (order.user) {
       return {
-        name: order.user.user_metadata?.name || 'N/A',
+        name: order.user.display_name || order.user.email || 'N/A',
         email: order.user.email,
-        phone: order.user.user_metadata?.phone || 'N/A',
-        address: order.user.user_metadata?.address || 'N/A',
+        phone: order.user.phone_number || 'N/A',
+        address: order.user.address || 'N/A',
         type: 'Registered User'
       };
     }

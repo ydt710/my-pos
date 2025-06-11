@@ -36,11 +36,9 @@ export interface Order {
   order_items?: OrderItem[];
   user?: {
     email: string;
-    user_metadata?: {
-      name?: string;
-      phone?: string;
-      address?: string;
-    };
+    display_name?: string;
+    phone_number?: string;
+    address?: string;
   };
   payment_method?: string;
   cash_given?: number;

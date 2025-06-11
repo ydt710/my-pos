@@ -1,5 +1,17 @@
 import { supabase } from '$lib/supabase';
 
+// Helper: Get current user's profile id
+async function getCurrentProfileId(): Promise<string | null> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('auth_user_id', user.id)
+    .maybeSingle();
+  return profile?.id ?? null;
+}
+
 // Utility: Get location ID by name
 export async function getLocationId(name: string): Promise<string | null> {
   const { data, error } = await supabase
@@ -27,7 +39,7 @@ export async function getStock(productId: string, locationName: string): Promise
 export async function addProduction(productId: string, quantity: number, note?: string) {
   const facilityId = await getLocationId('facility');
   if (!facilityId) throw new Error('Facility location not found');
-  // Insert stock_movement as pending (do not update stock_levels yet)
+  const created_by = await getCurrentProfileId();
   await supabase.from('stock_movements').insert({
     product_id: productId,
     from_location_id: null,
@@ -35,7 +47,8 @@ export async function addProduction(productId: string, quantity: number, note?: 
     quantity,
     type: 'production',
     note,
-    status: 'pending'
+    status: 'pending',
+    created_by
   });
 }
 
@@ -76,7 +89,7 @@ export async function transferToShop(productId: string, quantity: number, note?:
   const facilityId = await getLocationId('facility');
   const shopId = await getLocationId('shop');
   if (!facilityId || !shopId) throw new Error('Location not found');
-  // Decrement facility stock_levels
+  const created_by = await getCurrentProfileId();
   const { data: facilityStock } = await supabase
     .from('stock_levels')
     .select('quantity')
@@ -87,8 +100,6 @@ export async function transferToShop(productId: string, quantity: number, note?:
   await supabase
     .from('stock_levels')
     .upsert({ product_id: productId, location_id: facilityId, quantity: newFacilityQty }, { onConflict: 'product_id,location_id' });
-  // DO NOT increment shop stock yet!
-  // Insert stock_movement as pending
   await supabase.from('stock_movements').insert({
     product_id: productId,
     from_location_id: facilityId,
@@ -96,7 +107,8 @@ export async function transferToShop(productId: string, quantity: number, note?:
     quantity,
     type: 'transfer',
     note,
-    status: 'pending'
+    status: 'pending',
+    created_by
   });
 }
 
@@ -104,7 +116,7 @@ export async function transferToShop(productId: string, quantity: number, note?:
 export async function adjustStock(productId: string, locationName: string, newQuantity: number, note?: string) {
   const locationId = await getLocationId(locationName);
   if (!locationId) throw new Error('Location not found');
-  // Get current quantity
+  const created_by = await getCurrentProfileId();
   const { data } = await supabase
     .from('stock_levels')
     .select('quantity')
@@ -112,18 +124,17 @@ export async function adjustStock(productId: string, locationName: string, newQu
     .eq('location_id', locationId)
     .single();
   const oldQuantity = data?.quantity ?? 0;
-  // Update stock_levels
   await supabase
     .from('stock_levels')
     .upsert({ product_id: productId, location_id: locationId, quantity: newQuantity }, { onConflict: 'product_id,location_id' });
-  // Insert stock_movement
   await supabase.from('stock_movements').insert({
     product_id: productId,
     from_location_id: locationId,
     to_location_id: locationId,
     quantity: newQuantity - oldQuantity,
     type: 'adjustment',
-    note
+    note,
+    created_by
   });
 }
 
@@ -131,19 +142,19 @@ export async function adjustStock(productId: string, locationName: string, newQu
 export async function sellFromShop(productId: string, quantity: number, note?: string) {
   const shopId = await getLocationId('shop');
   if (!shopId) throw new Error('Shop location not found');
-  // Decrement shop
+  const created_by = await getCurrentProfileId();
   await supabase.rpc('increment_product_quantity', {
     product_id: productId,
     amount: -quantity
   });
-  // Insert stock_movement
   await supabase.from('stock_movements').insert({
     product_id: productId,
     from_location_id: shopId,
     to_location_id: null,
     quantity,
     type: 'sale',
-    note
+    note,
+    created_by
   });
 }
 
@@ -209,18 +220,7 @@ export async function rejectStockTransfer(transferId: string, actualQuantity: nu
     .eq('id', transferId);
 
   // Log discrepancy with user trackability
-  let reported_by = null;
-  const { data: { user } } = await supabase.auth.getUser();
-  if (user) {
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('auth_user_id', user.id)
-      .maybeSingle();
-    if (profile && profile.id) {
-      reported_by = profile.id;
-    }
-  }
+  const reported_by = await getCurrentProfileId();
   await supabase.from('stock_discrepancies').insert({
     transfer_id: transferId,
     product_id: transfer.product_id,

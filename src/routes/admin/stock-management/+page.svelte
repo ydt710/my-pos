@@ -29,12 +29,15 @@
     note: string | null;
     created_at: string;
     status?: string;
+    created_by?: string | null;
   };
 
   let products: Product[] = [];
   let locations: Location[] = [];
   let stockLevels: StockLevel[] = [];
   let stockMovements: StockMovement[] = [];
+  let discrepancies: any[] = [];
+  let profiles: { [id: string]: { display_name?: string; email?: string } } = {};
   let loading = true;
   let error = '';
 
@@ -84,6 +87,21 @@
     const { data: moveData, error: moveErr } = await supabase.from('stock_movements').select('*').order('created_at', { ascending: false }).limit(20);
     if (moveErr) { error = 'Failed to load stock movements'; loading = false; return; }
     stockMovements = moveData || [];
+
+    // Fetch recent discrepancies
+    const { data: discrepancyData, error: discrepancyErr } = await supabase
+      .from('stock_discrepancies')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(20);
+    if (discrepancyErr) {
+      error = 'Failed to load discrepancies';
+      discrepancies = [];
+      loading = false;
+      return;
+    } else {
+      discrepancies = discrepancyData || [];
+    }
 
     // Determine user's shop ID based on selectedPosUser store or fallback
     const posUser = get(selectedPosUser);
@@ -419,6 +437,35 @@
                 <td>{m.quantity}</td>
                 <td>{m.note}</td>
                 <td>{m.status || 'done'}</td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+      <h2>Recent Stock Discrepancies</h2>
+      <div class="table-responsive">
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Product</th>
+              <th>Expected Qty</th>
+              <th>Actual Qty</th>
+              <th>Loss</th>
+              <th>Reason</th>
+              <th>By</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each discrepancies as d}
+              <tr>
+                <td>{new Date(d.created_at).toLocaleString()}</td>
+                <td>{products.find(p => p.id === d.product_id)?.name || d.product_id}</td>
+                <td>{d.expected_quantity}</td>
+                <td>{d.actual_quantity}</td>
+                <td>{(d.expected_quantity ?? 0) - (d.actual_quantity ?? 0)}</td>
+                <td>{d.reason}</td>
+                <td>{d.reported_by && profiles[d.reported_by] ? (profiles[d.reported_by].display_name || profiles[d.reported_by].email) : 'Unknown'}</td>
               </tr>
             {/each}
           </tbody>

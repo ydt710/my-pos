@@ -7,17 +7,6 @@
   import { onDestroy } from 'svelte';
   import type { CreditLedgerEntry } from '$lib/types/ledger';
 
-  interface AuthUser {
-    id: string;
-    email: string;
-    created_at: string;
-    raw_user_meta_data: {
-      name?: string;
-      is_admin?: boolean;
-      [key: string]: any;
-    };
-  }
-
   interface User {
     id: string;
     email: string;

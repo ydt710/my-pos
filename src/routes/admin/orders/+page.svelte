@@ -185,7 +185,7 @@
               <td>#{order.order_number}</td>
               <td>{formatDate(order.created_at)}</td>
               <td>
-                {order.user?.user_metadata?.name || order.user?.email || order.guest_info?.name || 'Unknown'}
+                {order.user?.display_name || order.guest_info?.name || 'Unknown'}
               </td>
               <td>R{order.total}</td>
               <td>
