@@ -111,6 +111,9 @@
       <button type="submit" class="primary-btn" disabled={loading}>{isAdd ? 'Add' : 'Save'}</button>
       <button type="button" class="secondary-btn" on:click={handleCancel}>Cancel</button>
     </div>
+    <button type="button" class="secondary-btn" style="margin-top:1rem;" on:click={() => dispatch('customprices')}>
+      Custom Prices
+    </button>
   </form>
   {#if showImageModal}
     <div class="modal-backdrop" style="z-index:2100;" on:click={closeImageModal}></div>

@@ -1436,6 +1436,7 @@
             isAdd={isAddMode}
             on:save={async (e) => { editing = e.detail.product; await saveProduct(); closeEditModal(); isAddMode = false; }}
             on:cancel={() => { closeEditModal(); isAddMode = false; }}
+            on:customprices={() => showCustomPrices = true}
           />
         {/if}
         
@@ -1504,9 +1505,27 @@
     </section>
 
     {#if editing && showCustomPrices}
-      <div class="modal-backdrop" style="z-index:2000;" on:click={() => showCustomPrices = false}></div>
-      <div class="modal custom-prices-modal" style="z-index:2001;" role="dialog" aria-modal="true">
-        <button class="close-btn" on:click={() => showCustomPrices = false} aria-label="Close custom prices modal">×</button>
+      <div class="modal-backdrop" style="z-index:3000;" on:click={() => showCustomPrices = false}></div>
+      <div
+        class="modal custom-prices-modal"
+        style="
+          z-index: 3001;
+          position: fixed;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          min-width: 350px;
+          max-width: 95vw;
+          width: 600px;
+          background: #fff;
+          padding: 2rem;
+          border-radius: 12px;
+          box-shadow: 0 2px 16px rgba(0,0,0,0.2);
+        "
+        role="dialog"
+        aria-modal="true"
+      >
+        <button class="close-btn" on:click={() => showCustomPrices = false} aria-label="Close custom prices modal" style="position:absolute;top:1rem;right:1rem;font-size:1.5rem;background:none;border:none;cursor:pointer;">×</button>
         <h3>Custom Prices for this Product</h3>
         <div style="margin-bottom:1rem;">
           <input type="text" placeholder="Search user by name or email..." bind:value={customPriceUserSearch} on:input={searchCustomPriceUsers} style="min-width:200px; width:100%;" />
@@ -2033,5 +2052,13 @@
       object-fit: contain;
       border-radius: 4px;
       box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    }
+    .modal-backdrop {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(0,0,0,0.4);
+      z-index: 2999;
     }
 </style>

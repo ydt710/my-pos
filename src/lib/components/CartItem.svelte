@@ -1,9 +1,11 @@
 <script lang="ts">
   import type { CartItem as CartItemType } from '$lib/types/index';
   import { cartStore } from '$lib/stores/cartStore';
+  import { getEffectivePrice } from '$lib/stores/cartStore';
 
   export let item: CartItemType;
   export let loading = false;
+  export let userId: string | null = null;
   
   async function updateQuantity(newQuantity: number) {
     await cartStore.updateQuantity(item.id, newQuantity);
@@ -14,7 +16,7 @@
   <img src={item.image_url} alt={item.name} />
   <div class="cart-item-info">
     <div class="cart-item-name">{item.name}</div>
-    <div class="cart-item-price">R{item.price} × {item.quantity}</div>
+    <div class="cart-item-price">R{getEffectivePrice(item, userId)} × {item.quantity}</div>
     <div class="cart-item-quantity">
       <button 
         class="quantity-btn" 

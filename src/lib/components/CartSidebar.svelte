@@ -234,7 +234,7 @@
   {#if $cartStore.length > 0}
     <div class="cart-items">
       {#each $cartStore as item (item.id)}
-        <CartItem {item} {loading} />
+        <CartItem {item} {loading} userId={posUser ? posUser.id : null} />
       {/each}
     </div>
     
