@@ -3,13 +3,13 @@ import type { Review } from './reviews';
 export interface Product {
   id: string;
   name: string;
-  description: string;
+  description?: string;
   price: number;
   image_url: string;
   category: string;
-  thc_max: number;
-  cbd_max: number;
-  indica: number;  // 0-100, represents indica percentage. Sativa percentage is (100 - indica)
+  thc_max?: number;
+  cbd_max?: number;
+  indica?: number;  // 0-100, represents indica percentage. Sativa percentage is (100 - indica)
   is_special?: boolean;
   is_new?: boolean;
   special_price?: number;

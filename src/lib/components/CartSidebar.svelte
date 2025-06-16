@@ -124,6 +124,12 @@
   }
   
   $: posUser = $selectedPosUser;
+
+  $: if (posUser && posUser.id) {
+    fetchCustomPricesForUser(posUser.id);
+  } else {
+    customPrices.set({});
+  }
 </script>
 
 <div 
@@ -189,31 +195,35 @@
     </div>
     {#if showAddAccountModal}
       <div class="modal-backdrop" transition:fade></div>
-      <div class="modal add-account-modal" transition:fade>
-        <h3>Add New Account</h3>
-        <form on:submit|preventDefault={addAccount}>
-          <div class="form-group">
-            <label for="new-display-name">Display Name*</label>
-            <input id="new-display-name" type="text" bind:value={newAccount.display_name} required />
-          </div>
-          <div class="form-group">
-            <label for="new-phone-number">Phone Number (optional)</label>
-            <input id="new-phone-number" type="text" bind:value={newAccount.phone_number} />
-          </div>
-          <div class="form-group">
-            <label for="new-email">Email (optional)</label>
-            <input id="new-email" type="email" bind:value={newAccount.email} />
-          </div>
-          {#if addAccountError}
-            <div class="error-message">{addAccountError}</div>
-          {/if}
-          <div class="modal-actions">
-            <button type="button" on:click={() => showAddAccountModal = false} class="cancel-btn">Cancel</button>
-            <button type="submit" class="submit-btn" disabled={addAccountLoading}>
-              {addAccountLoading ? 'Adding...' : 'Add Account'}
-            </button>
-          </div>
-        </form>
+      <div class="modal add-account-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" transition:fade>
+        <div class="modal-header">
+          <h2 id="modal-title" tabindex="-1">Add New Account</h2>
+          <button type="button" on:click={() => showAddAccountModal = false} class="cancel-btn" aria-label="Close">×</button>
+        </div>
+        <div class="modal-content" role="document">
+          <form on:submit|preventDefault={addAccount}>
+            <div class="form-group">
+              <label for="new-display-name">Display Name*</label>
+              <input id="new-display-name" type="text" bind:value={newAccount.display_name} required />
+            </div>
+            <div class="form-group">
+              <label for="new-phone-number">Phone Number (optional)</label>
+              <input id="new-phone-number" type="text" bind:value={newAccount.phone_number} />
+            </div>
+            <div class="form-group">
+              <label for="new-email">Email (optional)</label>
+              <input id="new-email" type="email" bind:value={newAccount.email} />
+            </div>
+            {#if addAccountError}
+              <div class="error-message">{addAccountError}</div>
+            {/if}
+            <div class="modal-actions">
+              <button type="submit" class="submit-btn" disabled={addAccountLoading}>
+                {addAccountLoading ? 'Adding...' : 'Add Account'}
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
     {/if}
   {/if}
@@ -615,5 +625,14 @@
       
       z-index: 100;
     }
+  }
+
+  .modal-header {
+    position: sticky;
+    top: 0;
+    background: white;
+    z-index: 10;
+    padding: 1rem;
+    border-bottom: 1px solid #ccc;
   }
 </style> 

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import type { Product } from '$lib/types';
+  import type { Product } from '$lib/types/index';
   import { getProductReviews, addReview, updateReview, updateProductRating } from '$lib/services/reviewService';
   import { supabase } from '$lib/supabase';
   
@@ -136,161 +136,160 @@
 
 <div 
   class="modal-backdrop" 
-  class:show 
-  on:click={handleBackdropClick}
-  on:keydown={handleKeydown}
   role="dialog"
   aria-modal="true"
-  aria-labelledby="product-details-title"
+  aria-labelledby="modal-title"
   tabindex="-1"
+  on:click={handleBackdropClick}
+  on:keydown={handleKeydown}
 >
-  <div 
-    class="modal-content" 
-    role="document"
-  >
-    <button 
-      class="close-button" 
-      on:click={handleClose}
-      aria-label="Close product details"
-    >
-      ×
-    </button>
-    
-    <div class="product-details">
-      <div class="product-image">
-        <img 
-          src={product.image_url + '?width=400&quality=80'} 
-          srcset="
-            {product.image_url}?width=400&quality=80 400w,
-            {product.image_url}?width=600&quality=80 600w,
-            {product.image_url}?width=800&quality=80 800w
-          "
-          sizes="
-            (max-width: 800px) 400px,
-            (max-width: 1024px) 600px,
-            800px
-          "
-          alt={product.name}
-          loading="eager"
-          decoding="async"
-          width="400"
-          height="533"
-          style="aspect-ratio: 3/4;"
-        />
-      </div>
-      
-      <div class="product-info">
-        <h2 id="product-details-title" class="product-title">{product.name}</h2>
-        <div class="product__price-row">
-          <span class="product__price">R{product.price}</span>
+  <div class="modal-content" role="document">
+    <div class="modal-header">
+      <h2 id="modal-title" tabindex="-1">{product.name || 'Product Details'}</h2>
+      <button 
+        class="close-button" 
+        on:click={handleClose}
+        aria-label="Close"
+      >
+        ×
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="product-details">
+        <div class="product-image">
+          <img 
+            src={product.image_url + '?width=400&quality=80'} 
+            srcset="
+              {product.image_url}?width=400&quality=80 400w,
+              {product.image_url}?width=600&quality=80 600w,
+              {product.image_url}?width=800&quality=80 800w
+            "
+            sizes="
+              (max-width: 800px) 400px,
+              (max-width: 1024px) 600px,
+              800px
+            "
+            alt={product.name}
+            loading="eager"
+            decoding="async"
+            width="400"
+            height="533"
+            style="aspect-ratio: 3/4;"
+          />
         </div>
         
-        <p class="product-description">{product.description || 'No description available.'}</p>
-        
-        {#if product.sativa !== undefined || product.indica !== undefined}
-          <div class="strain-type">
-            <h3>Strain Type</h3>
-            <div class="strain-bar">
-              <div 
-                class="strain-indicator" 
-                style="left: {product.indica ?? 0}%"
-                title="{(product.indica ?? 0)}% Indica, {(100 - (product.indica ?? 0))}% Sativa"
-              ></div>
-            </div>
-            <div class="strain-labels">
-              <span>Sativa</span>
-              <span>Indica</span>
-            </div>
-          </div>
-        {/if}
-        
-        <div class="potency-info">
-          <div class="thc-info">
-            <h3>THC Content</h3>
-            <div class="potency-bar">
-              {#each Array(5) as _, i}
-                <div
-                  class="potency-segment"
-                  style="background: {i < getPotencyBarCount(product.thc_max) ? thcBarColors[i] : '#eee'}"
-                ></div>
-              {/each}
-            </div>
-            <span class="potency-value">{product.thc_max ?? 0} mg/g</span>
+        <div class="product-info">
+          <div class="product__price-row">
+            <span class="product__price">R{product.price}</span>
           </div>
           
-          <div class="cbd-info">
-            <h3>CBD Content</h3>
-            <div class="potency-bar">
-              {#each Array(5) as _, i}
-                <div
-                  class="potency-segment"
-                  style="background: {i < getPotencyBarCount(product.cbd_max) ? cbdBarColors[i] : '#eee'}"
+          <p class="product-description">{product.description || 'No description available.'}</p>
+          
+          {#if product.sativa !== undefined || product.indica !== undefined}
+            <div class="strain-type">
+              <h3>Strain Type</h3>
+              <div class="strain-bar">
+                <div 
+                  class="strain-indicator" 
+                  style="left: {product.indica ?? 0}%"
+                  title="{(product.indica ?? 0)}% Indica, {(100 - (product.indica ?? 0))}% Sativa"
                 ></div>
-              {/each}
+              </div>
+              <div class="strain-labels">
+                <span>Sativa</span>
+                <span>Indica</span>
+              </div>
             </div>
-            <span class="potency-value">{product.cbd_max ?? 0} mg/g</span>
-          </div>
-        </div>
-        
-        <div class="reviews-section">
-          <h3>Reviews</h3>
-          {#if reviews.length > 0}
-            <div class="reviews-list">
-              {#each reviews as review}
-                <div class="review-item">
-                  <div class="review-header">
-                    <div class="review-rating">
-                      {#each Array(5) as _, i}
-                        <span class="star" class:filled={i < review.rating}>★</span>
-                      {/each}
-                    </div>
-                    <span class="review-user">
-                      {review.user?.display_name || review.user?.email?.split('@')[0] || 'Anonymous'}
-                    </span>
-                  </div>
-                  <p class="review-comment">{review.comment}</p>
-                  <span class="review-date">{new Date(review.created_at).toLocaleDateString()}</span>
-                </div>
-              {/each}
-            </div>
-          {:else}
-            <p>No reviews yet.</p>
           {/if}
           
-          <div class="add-review">
-            <h4>{userReview ? 'Update Your Review' : 'Write a Review'}</h4>
-            <div class="rating-input">
-              {#each Array(5) as _, i}
-                <button 
-                  class="star-button" 
-                  on:click={() => newReview.rating = i + 1}
-                  disabled={submittingReview}
-                  aria-label={`Rate ${i + 1} out of 5`}
-                >
-                  <span class="star" class:filled={i < newReview.rating}>★</span>
-                </button>
-              {/each}
+          <div class="potency-info">
+            <div class="thc-info">
+              <h3>THC Content</h3>
+              <div class="potency-bar">
+                {#each Array(5) as _, i}
+                  <div
+                    class="potency-segment"
+                    style="background: {i < getPotencyBarCount(product.thc_max) ? thcBarColors[i] : '#eee'}"
+                  ></div>
+                {/each}
+              </div>
+              <span class="potency-value">{product.thc_max ?? 0} mg/g</span>
             </div>
-            <textarea
-              bind:value={newReview.comment}
-              placeholder="Write your review..."
-              rows="4"
-              disabled={submittingReview}
-              aria-label="Review comment"
-            ></textarea>
-            <button 
-              class="submit-review" 
-              on:click={handleReviewSubmit}
-              disabled={submittingReview}
-              aria-label={userReview ? "Update review" : "Submit review"}
-            >
-              {#if submittingReview}
-                <span class="loading-spinner"></span>
-                {userReview ? 'Updating...' : 'Submitting...'}
-              {:else}
-                {userReview ? 'Update Review' : 'Submit Review'}
-              {/if}
-            </button>
+            
+            <div class="cbd-info">
+              <h3>CBD Content</h3>
+              <div class="potency-bar">
+                {#each Array(5) as _, i}
+                  <div
+                    class="potency-segment"
+                    style="background: {i < getPotencyBarCount(product.cbd_max) ? cbdBarColors[i] : '#eee'}"
+                  ></div>
+                {/each}
+              </div>
+              <span class="potency-value">{product.cbd_max ?? 0} mg/g</span>
+            </div>
+          </div>
+          
+          <div class="reviews-section">
+            <h3>Reviews</h3>
+            {#if reviews.length > 0}
+              <div class="reviews-list">
+                {#each reviews as review}
+                  <div class="review-item">
+                    <div class="review-header">
+                      <div class="review-rating">
+                        {#each Array(5) as _, i}
+                          <span class="star" class:filled={i < review.rating}>★</span>
+                        {/each}
+                      </div>
+                      <span class="review-user">
+                        {review.user?.display_name || review.user?.email?.split('@')[0] || 'Anonymous'}
+                      </span>
+                    </div>
+                    <p class="review-comment">{review.comment}</p>
+                    <span class="review-date">{new Date(review.created_at).toLocaleDateString()}</span>
+                  </div>
+                {/each}
+              </div>
+            {:else}
+              <p>No reviews yet.</p>
+            {/if}
+            
+            <div class="add-review">
+              <h4>{userReview ? 'Update Your Review' : 'Write a Review'}</h4>
+              <div class="rating-input">
+                {#each Array(5) as _, i}
+                  <button 
+                    class="star-button" 
+                    on:click={() => newReview.rating = i + 1}
+                    disabled={submittingReview}
+                    aria-label={`Rate ${i + 1} out of 5`}
+                  >
+                    <span class="star" class:filled={i < newReview.rating}>★</span>
+                  </button>
+                {/each}
+              </div>
+              <textarea
+                bind:value={newReview.comment}
+                placeholder="Write your review..."
+                rows="4"
+                disabled={submittingReview}
+                aria-label="Review comment"
+              ></textarea>
+              <button 
+                class="submit-review" 
+                on:click={handleReviewSubmit}
+                disabled={submittingReview}
+                aria-label={userReview ? "Update review" : "Submit review"}
+              >
+                {#if submittingReview}
+                  <span class="loading-spinner"></span>
+                  {userReview ? 'Updating...' : 'Submitting...'}
+                {:else}
+                  {userReview ? 'Update Review' : 'Submit Review'}
+                {/if}
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -301,18 +300,13 @@
 <style>
   .modal-backdrop {
     position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.5);
+    inset: 0;
+    background: rgba(0,0,0,0.4);
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: center;
-    z-index: 2000;
-    opacity: 0;
-    visibility: hidden;
-    transition: opacity 0.3s ease, visibility 0.3s ease;
+     /* navbar height */
+    z-index: 3000;
   }
 
   .modal-backdrop:focus {
@@ -325,16 +319,19 @@
   }
 
   .modal-content {
+    position: fixed;
+   
+    transform: translateX(-50%, 0);
+    margin-top: 1.5rem;
+    max-height: calc(100vh - 90px);
+    overflow-y: auto;
+    width: 90%;
+   
+    z-index: 3001;
     background: white;
     border-radius: 12px;
-    
-    max-width: 1000px;
-    max-height: 90vh;
-    overflow-y: auto;
-    position: relative;
-    z-index: 2001;
-    padding: 2rem;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    padding: 2rem;
   }
 
   .close-button {
@@ -679,10 +676,27 @@
       max-width: 100%;
     }
 
-
-
     .product-info {
       padding-right: 0;
     }
+  }
+
+  @media (max-width: 600px) {
+    .modal-content {
+      max-width: 98vw;
+      margin: 0.5rem;
+      margin-top: 1.5rem;
+      padding: 0.5rem;
+      max-height: calc(100vh - 80px);
+    }
+  }
+
+  .modal-content .modal-header {
+    position: sticky;
+    top: 0;
+    background: white;
+    z-index: 10;
+    padding: 1rem;
+    border-bottom: 1px solid #ccc;
   }
 </style> 

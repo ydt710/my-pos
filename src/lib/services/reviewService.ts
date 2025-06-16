@@ -61,16 +61,23 @@ export async function updateProductRating(productId: string): Promise<void> {
     return;
   }
 
+  let averageRating = null;
+  let reviewCount = 0;
   if (reviews && reviews.length > 0) {
-    const averageRating = reviews.reduce((acc, review) => acc + review.rating, 0) / reviews.length;
-    
-    await supabase
-      .from('products')
-      .update({
-        average_rating: Number(averageRating.toFixed(1)),
-        review_count: reviews.length
-      })
-      .eq('id', productId);
+    averageRating = reviews.reduce((acc, review) => acc + review.rating, 0) / reviews.length;
+    reviewCount = reviews.length;
+  }
+
+  const { error: updateError } = await supabase
+    .from('products')
+    .update({
+      average_rating: averageRating !== null ? Number(averageRating.toFixed(1)) : null,
+      review_count: reviewCount
+    })
+    .eq('id', productId);
+
+  if (updateError) {
+    console.error('Error updating product row with new rating/count:', updateError);
   }
 }
 

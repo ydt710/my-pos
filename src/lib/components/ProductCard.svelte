@@ -26,6 +26,8 @@
     description?: string;
   };
   
+  export let stock: number = 0;
+  
   let loading = false;
   let currentStock = 0;
   let displayStock = 0;
@@ -38,6 +40,7 @@
   let snackbarType: 'success' | 'error' = 'success';
   let snackbarTimeout: NodeJS.Timeout;
   let imageLoaded = false;
+  let addToCartInProgress = false;
 
   // Gradient color arrays for potency bars
   const thcBarColors = ['#4caf50', '#cddc39', '#ffeb3b', '#ff9800', '#f44336'];
@@ -45,26 +48,19 @@
 
   // Subscribe to cart store to track items of this product
   $: cartItemQuantity = $cartStore.find(item => String(item.id) === String(product.id))?.quantity || 0;
-  $: displayStock = currentStock - cartItemQuantity;
+  $: displayStock = stock - cartItemQuantity;
   $: updateStockStatus(displayStock);
 
   // Get selected POS user (for custom pricing)
   $: posUser = $selectedPosUser;
   $: effectivePrice = getEffectivePrice({ ...product, id: String(product.id), description: product.description || '', indica: typeof product.indica === 'number' ? product.indica : 0 }, posUser?.id);
 
-  // Check current stock level
-  async function checkStock() {
-    currentStock = await getStock(String(product.id), 'shop');
-    displayStock = currentStock - cartItemQuantity;
-    updateStockStatus(displayStock);
-  }
-
   function updateStockStatus(stock: number) {
     if ($isPosOrAdmin) {
       // Show exact quantities for POS/Admin
       if (stock <= 0) {
         stockStatus = 'Out of Stock (0)';
-      } else if (stock <= 5) {
+      } else if (stock <= 1000) {
         stockStatus = `Low Stock (${stock})`;
       } else {
         stockStatus = `In Stock (${stock})`;
@@ -73,7 +69,7 @@
       // Show general status for regular users
       if (stock <= 0) {
         stockStatus = 'Out of Stock';
-      } else if (stock <= 5) {
+      } else if (stock <= 1000) {
         stockStatus = 'Low Stock';
       } else {
         stockStatus = 'In Stock';
@@ -97,13 +93,9 @@
     }, 3000);
   }
 
-  onMount(() => {
-    checkStock();
-  });
-
   async function handleAddToCart() {
-    if (loading) return;
-    
+    if (loading || addToCartInProgress) return;
+    addToCartInProgress = true;
     loading = true;
     const productToAdd: Product & { quantity: number } = {
       ...product,
@@ -119,13 +111,18 @@
         cardElement.classList.remove('added-to-cart');
       }, 700);
       selectedQuantity = 1;
+      dispatch('addToCart', productToAdd);
     }
     loading = false;
+    addToCartInProgress = false;
   }
 
   function handleQuantityChange(change: number) {
     const newQuantity = selectedQuantity + change;
-    // Check against displayStock instead of currentStock
+    if (newQuantity > displayStock) {
+      showMessage(`Cannot add more than available stock (${displayStock}).`, 'error');
+      return;
+    }
     if (newQuantity >= 1 && newQuantity <= displayStock) {
       selectedQuantity = newQuantity;
     }
@@ -134,30 +131,45 @@
   function handleQuantityInput(event: Event) {
     event.stopPropagation();
     const input = event.target as HTMLInputElement;
-    const value = parseInt(input.value);
-    if (!isNaN(value) && value >= 1 && value <= displayStock) {
-      selectedQuantity = value;
-    } else {
-      // Reset to previous valid value if input is invalid
-      input.value = selectedQuantity.toString();
+    const value = input.value;
+
+    // Allow empty value while typing
+    if (value === '') {
+      return;
+    }
+
+    const numberValue = parseInt(value);
+    if (numberValue > displayStock) {
+      showMessage(`Cannot add more than available stock (${displayStock}).`, 'error');
+      input.value = displayStock.toString();
+      selectedQuantity = displayStock;
+      return;
+    }
+    if (!isNaN(numberValue) && numberValue >= 1 && numberValue <= displayStock) {
+      selectedQuantity = numberValue;
     }
   }
 
   function handleQuantityBlur(event: Event) {
-    event.stopPropagation();
     const input = event.target as HTMLInputElement;
-    const value = parseInt(input.value);
-    if (isNaN(value) || value < 1) {
-      selectedQuantity = 1;
-      input.value = '1';
-    } else if (value > displayStock) {
-      selectedQuantity = displayStock;
-      input.value = displayStock.toString();
+    const value = input.value;
+
+    const numberValue = parseInt(value);
+    if (value === '' || isNaN(numberValue) || numberValue < 1) {
+      // Reset to previous valid quantity if left empty or invalid
+      input.value = selectedQuantity.toString();
     }
   }
 
   function handleQuantityClick(event: MouseEvent) {
     event.stopPropagation();
+  }
+
+  function handleQuantityKeydown(event: KeyboardEvent) {
+    if (event.key === 'Enter' && !loading && displayStock > 0) {
+      event.preventDefault();
+      handleAddToCart();
+    }
   }
 
   // Helper for potency bar (5 bars, 70 mg/g increments)
@@ -183,11 +195,6 @@
       if (e.key !== 'Enter' && e.key !== ' ') return;
     }
     dispatch('showDetails', { product });
-  }
-
-  // Generate random rating between 3.5 and 5 for demo
-  $: if (!product.rating) {
-    product.rating = Number((Math.random() * 1.5 + 3.5).toFixed(1));
   }
 
   function getStarColor(index: number, rating: number): string {
@@ -225,17 +232,7 @@
     <div class="card-product__body">
       <div class="card-product__body-container cannabis-product">
         <div class="card-product__title">{product.name}</div>
-        <div class="product__price-row">
-          {#if product.is_special && product.special_price}
-            <span class="product__price" style="text-decoration: line-through; color: #888;">R{product.price}</span>
-            <span class="product__price" style="color: #e67e22; font-weight: bold; margin-left: 0.5em;">R{product.special_price}</span>
-          {:else}
-            <span class="product__price">R{effectivePrice}</span>
-            {#if posUser && effectivePrice !== product.price}
-              <span class="custom-price-label" style="color:#007bff;font-size:0.85em;margin-left:0.5em;">Custom Price</span>
-            {/if}
-          {/if}
-        </div>
+        
         <div class="product__details-row">
           <button 
             class="card-product__image" 
@@ -271,6 +268,17 @@
             </div>
           </button>
           <div class="card-product__details product__details product__details--cannabis">
+                <div class="product__price-row">
+              {#if product.is_special && product.special_price}
+                <span class="product__price" style="text-decoration: line-through; color: #888;">R{product.price}</span>
+                <span class="product__price" style="color: #e67e22; font-weight: bold; margin-left: 0.5em;">R{product.special_price}</span>
+              {:else}
+                <span class="product__price">R{effectivePrice}</span>
+                {#if posUser && effectivePrice !== product.price}
+                  <span class="custom-price-label" style="color:#007bff;font-size:0.85em;margin-left:0.5em;">Custom Price</span>
+                {/if}
+              {/if}
+            </div>
             <div class="product__strain-type">
               <div class="strain-type__labels">
                 <span class="strain-type__label">{(100 - (product.indica ?? 0))}% Sativa</span>
@@ -304,29 +312,10 @@
                 {/each}
               </div>
             </div>
-            <div class="product__cannabis-potency">
-              <h4 class="product__cannabis-potency-title">
-                CBD
-                <span class="product__cannabis-potency-unit">
-                  {#if (product as any).cbd_max !== undefined}
-                    {Math.round((product as any).cbd_max * 0.1 * 100) / 100}%
-                  {:else}
-                    0%
-                  {/if}
-                </span>
-              </h4>
-              <div class="product__cannabis-potency-bar">
-                {#each Array(5) as _, i}
-                  <div
-                    class="product__cannabis-potency-value product__cannabis-potency-value--cbd"
-                    style="background: {i < getPotencyBarCount((product as any).cbd_max) ? cbdBarColors[i] : '#eee'}"
-                  ></div>
-                {/each}
-              </div>
-            </div>
+            
             <div class="stock-status" 
               class:out-of-stock={displayStock <= 0} 
-              class:low-stock={displayStock > 0 && displayStock <= 5}
+              class:low-stock={displayStock > 0 && displayStock <= 1000}
             >
               {stockStatus}
             </div>
@@ -352,6 +341,7 @@
                 max={displayStock}
                 on:input={handleQuantityInput}
                 on:blur={handleQuantityBlur}
+                on:keydown={handleQuantityKeydown}
                 on:click|stopPropagation
                 disabled={loading || displayStock <= 0}
                 aria-label="Product quantity"
@@ -391,7 +381,7 @@
                   <circle cx="20" cy="21" r="1"></circle>
                   <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path>
                 </svg>
-                <span>Add to Cart</span>
+                
               {/if}
             </button>
             <button 
@@ -683,7 +673,7 @@
 }
 
 .add-to-cart-btn {
-  background: linear-gradient(270deg, hsl(64, 100%, 50%), #00ff6a, #ff1414);
+  background: linear-gradient(77deg, hsl(195.35deg 67.65% 41.89%), #00deff, #14ffbd);
   
   
   color: #fff;

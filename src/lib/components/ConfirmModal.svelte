@@ -4,12 +4,18 @@
   export let onCancel: () => void;
 </script>
 
-<div class="modal-backdrop">
-  <div class="modal">
-    <p>{message}</p>
-    <div class="modal-actions">
-      <button class="confirm-btn" on:click={onConfirm}>Yes</button>
-      <button class="cancel-btn" on:click={onCancel}>No</button>
+<div class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+  <div class="modal" role="document">
+    <div class="modal-header">
+      <h2 id="modal-title" tabindex="-1">Confirm</h2>
+      <button class="close-btn" on:click={onCancel} aria-label="Close">×</button>
+    </div>
+    <div class="modal-body">
+      <p>{message}</p>
+      <div class="modal-actions">
+        <button class="confirm-btn" on:click={onConfirm}>Yes</button>
+        <button class="cancel-btn" on:click={onCancel}>No</button>
+      </div>
     </div>
   </div>
 </div>
@@ -58,4 +64,12 @@
 }
 .confirm-btn:hover { background: #b52a37; }
 .cancel-btn:hover { background: #495057; }
+.modal-header {
+  position: sticky;
+  top: 0;
+  background: white;
+  z-index: 10;
+  padding: 1rem;
+  border-bottom: 1px solid #ccc;
+}
 </style> 

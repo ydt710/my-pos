@@ -230,3 +230,28 @@ export async function rejectStockTransfer(transferId: string, actualQuantity: nu
     reported_by
   });
 } 
+
+let cachedShopId: string | null = null;
+export async function getShopLocationId(): Promise<string | null> {
+  if (cachedShopId) return cachedShopId;
+  const { data, error } = await supabase
+    .from('stock_locations')
+    .select('id')
+    .eq('name', 'shop')
+    .single();
+  if (error) return null;
+  cachedShopId = data?.id ?? null;
+  return cachedShopId;
+}
+
+export async function getShopStockLevels(productIds: string[]): Promise<{ [productId: string]: number }> {
+  const shopId = await getShopLocationId();
+  if (!shopId || productIds.length === 0) return {};
+  const { data, error } = await supabase
+    .from('stock_levels')
+    .select('product_id, quantity')
+    .eq('location_id', shopId)
+    .in('product_id', productIds);
+  if (error) return {};
+  return Object.fromEntries((data ?? []).map(row => [row.product_id, row.quantity]));
+} 

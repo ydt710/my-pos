@@ -2,9 +2,9 @@
   import { onMount, onDestroy } from 'svelte';
   import { fly, fade } from 'svelte/transition';
   import { cartStore } from '$lib/stores/cartStore';
-  import { fetchProducts, fetchProductsLazy } from '$lib/services/productService';
+  import { productsStore, loadAllProducts } from '$lib/services/productService';
   import { supabase } from '$lib/supabase';
-  import type { Product } from '$lib/types';
+  import type { Product } from '$lib/types/index';
   
   import CategoryNav from '$lib/components/CategoryNav.svelte';
   import ProductCard from '$lib/components/ProductCard.svelte';
@@ -15,35 +15,38 @@
   import StarryBackground from '$lib/components/StarryBackground.svelte';
   import ProductReviewModal from '$lib/components/ProductReviewModal.svelte';
   import { getProductReviews, addReview, updateReview, updateProductRating } from '$lib/services/reviewService';
+  import { getShopStockLevels } from '$lib/services/stockService';
+  import { clearProductCache } from '$lib/services/cacheService';
 
+  let allProducts: Product[] = [];
   let products: Product[] = [];
-  let filteredProducts: Product[] = [];
   let cartVisible = false;
   let menuVisible = false;
   let loading = false;
-  let loadingMore = false;
   let error: string | null = null;
   let activeCategory: string | undefined = undefined;
   let logoUrl = '';
   let isPosUser = false;
   let selectedProduct: Product | null = null;
-  let currentPage = 1;
-  let hasMore = false;
-  let observer: IntersectionObserver;
-  let loadMoreTrigger: HTMLElement;
-  let totalProducts = 0;
   let pageSize = 4; // Default to tablet view
-  let debounceTimer: NodeJS.Timeout;
-  let isFetching = false;
-  let lastScrollY = 0;
-  let scrollDirection: 'up' | 'down' = 'down';
-  let scrollTimeout: NodeJS.Timeout;
-  let loadedPages = new Set<number>(); // Track which pages we've already loaded
+  let currentPage = 1;
+  let totalProducts = 0;
+  let paginatedProducts: Product[] = [];
   let showReviewModal = false;
   let reviewProduct: Product | null = null;
   let userReview: any = null;
   let newReview = { rating: 5, comment: '' };
   let submittingReview = false;
+  let stockLevels: { [productId: string]: number } = {};
+
+  let productFilters = {
+    search: '',
+    category: '',
+    minPrice: '',
+    maxPrice: '',
+    sortBy: 'name',
+    sortOrder: 'asc'
+  };
 
   const categoryNames: Record<string, string> = {
     'flower': 'Flower',
@@ -62,6 +65,29 @@
     headshop: 'fa-store'
   };
 
+  let unsubscribe: (() => void) | undefined;
+
+  let loadMoreTrigger: HTMLDivElement | null = null;
+  let observer: IntersectionObserver | null = null;
+
+  function setupObserver() {
+    if (observer) observer.disconnect();
+    observer = new window.IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting) {
+        loadMoreProducts();
+      }
+    }, { threshold: 1.0 });
+    if (loadMoreTrigger) observer.observe(loadMoreTrigger);
+  }
+
+  function loadMoreProducts() {
+    // Only load more if there are more products to show
+    if (currentPage * pageSize < products.length) {
+      currentPage += 1;
+      paginateProducts();
+    }
+  }
+
   // Function to determine page size based on viewport width
   function updatePageSize() {
     const width = window.innerWidth;
@@ -73,25 +99,41 @@
       pageSize = 8;
     }
     console.log('Updated page size:', { width, pageSize });
+    paginateProducts();
   }
 
-  function handleScroll() {
-    const currentScrollY = window.scrollY;
-    // Only update direction if the change is significant (more than 5px)
-    if (Math.abs(currentScrollY - lastScrollY) > 5) {
-      scrollDirection = currentScrollY > lastScrollY ? 'down' : 'up';
-      lastScrollY = currentScrollY;
-    }
+  function filterProducts() {
+    // Always search out of allProducts array
+    products = allProducts
+      .filter(p => {
+        const matchesSearch = productFilters.search
+          ? p.name.toLowerCase().includes(productFilters.search.toLowerCase())
+          : true;
+        // If searching, ignore category filter
+        const matchesCategory = productFilters.search
+          ? true
+          : (activeCategory ? p.category === activeCategory : true);
+        return matchesCategory && matchesSearch;
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+    totalProducts = products.length;
+    paginateProducts();
+  }
 
-    // Clear any existing timeout
-    if (scrollTimeout) {
-      clearTimeout(scrollTimeout);
-    }
+  function paginateProducts() {
+    const end = currentPage * pageSize;
+    paginatedProducts = products.slice(0, end);
+  }
 
-    // Set a new timeout to update scroll direction
-    scrollTimeout = setTimeout(() => {
-      scrollDirection = 'down'; // Reset to default after scrolling stops
-    }, 300); // Increased from 150ms to 300ms for more stability
+  function handleCategoryChange(category: string) {
+    activeCategory = category;
+    currentPage = 1;
+    filterProducts();
+  }
+
+  function handlePageChange(page: number) {
+    currentPage = page;
+    paginateProducts();
   }
 
   // Debounced resize handler
@@ -100,111 +142,14 @@
     if (resizeTimeout) {
       clearTimeout(resizeTimeout);
     }
-    
     resizeTimeout = setTimeout(() => {
       const oldPageSize = pageSize;
       updatePageSize();
-      
-      // Only reload if page size actually changed
-      if (oldPageSize !== pageSize && activeCategory) {
+      if (oldPageSize !== pageSize) {
         currentPage = 1;
-        loadProducts(activeCategory, 1);
+        paginateProducts();
       }
-    }, 500); // Wait 500ms after resize stops before updating
-  }
-
-  function handleIntersection(entries: IntersectionObserverEntry[]) {
-    const target = entries[0];
-    // Only trigger if:
-    // 1. Element is intersecting
-    // 2. We have more products to load
-    // 3. We're not currently loading
-    // 4. We're not fetching
-    // 5. We have an active category
-    // 6. We're scrolling down (prevents triggers during bounce/overscroll)
-    if (target.isIntersecting && 
-        hasMore && 
-        !loadingMore && 
-        !isFetching && 
-        activeCategory && 
-        scrollDirection === 'down') {
-      
-      // Clear any existing timer
-      if (debounceTimer) {
-        clearTimeout(debounceTimer);
-      }
-      
-      // Set a new timer with increased debounce time for mobile
-      debounceTimer = setTimeout(() => {
-        console.log('Triggering load more:', { 
-          currentPage, 
-          hasMore, 
-          currentProducts: products.length,
-          scrollDirection
-        });
-        loadProducts(activeCategory, currentPage + 1);
-      }, 500); // Increased from 300ms to 500ms for better mobile handling
-    }
-  }
-
-  async function loadProducts(category?: string, page: number = 1) {
-    if (!category || isFetching) return;
-    
-    // If we've already loaded this page, don't fetch again
-    if (loadedPages.has(page)) {
-      console.log('Page already loaded:', page);
-      return;
-    }
-    
-    if (page === 1) {
-      loading = true;
-      error = null;
-      products = [];
-      loadedPages.clear(); // Clear loaded pages when changing category
-    } else {
-      loadingMore = true;
-    }
-
-    isFetching = true;
-
-    try {
-      const result = await fetchProductsLazy(category, page, pageSize);
-      
-      if (page === 1) {
-        products = result.products;
-      } else {
-        products = [...products, ...result.products];
-      }
-      
-      hasMore = result.hasMore;
-      error = result.error;
-      currentPage = page;
-      loadedPages.add(page); // Mark this page as loaded
-      
-      console.log('Products loaded:', {
-        page,
-        pageSize,
-        productsCount: products.length,
-        hasMore,
-        currentProducts: products.length,
-        loadedPages: Array.from(loadedPages)
-      });
-    } catch (err) {
-      console.error('Error loading products:', err);
-      error = 'Failed to load products. Please try again.';
-    } finally {
-      loading = false;
-      loadingMore = false;
-      isFetching = false;
-    }
-  }
-
-  function handleRetry() {
-    if (activeCategory) {
-      currentPage = 1;
-      loadedPages.clear(); // Clear loaded pages on retry
-      loadProducts(activeCategory, 1);
-    }
+    }, 500);
   }
 
   onMount(async () => {
@@ -231,70 +176,49 @@
       }
     }
 
-    // Only run browser-specific code if window is defined
+    // Load all products once and subscribe to the store
+    loading = true;
+    const { error: loadError } = await loadAllProducts();
+    loading = false;
+    if (loadError) {
+      error = loadError;
+    }
+    unsubscribe = productsStore.subscribe(async p => {
+      allProducts = p;
+      filterProducts();
+      // Fetch stock levels for all products
+      if (allProducts.length > 0) {
+        stockLevels = await getShopStockLevels(allProducts.map(prod => prod.id));
+      } else {
+        stockLevels = {};
+      }
+    });
+
     if (typeof window !== 'undefined') {
-      // Removed category background preloading logic
-      // Initial page size update
       updatePageSize();
-
-      // Listen for window resize with debounce
       window.addEventListener('resize', handleResize);
-
-      // Add scroll listener
-      window.addEventListener('scroll', handleScroll, { passive: true });
-
-      // Setup intersection observer for infinite scroll with more conservative settings
-      observer = new IntersectionObserver(handleIntersection, {
-        root: null,
-        rootMargin: '400px',
-        threshold: 0.1
-      });
     }
   });
 
-  // Cleanup observer, timer, and scroll listener on component destroy
   onDestroy(() => {
+    if (unsubscribe) unsubscribe();
     if (typeof window !== 'undefined') {
-      if (observer) {
-        observer.disconnect();
-      }
-      if (debounceTimer) {
-        clearTimeout(debounceTimer);
-      }
-      if (scrollTimeout) {
-        clearTimeout(scrollTimeout);
-      }
       if (resizeTimeout) {
         clearTimeout(resizeTimeout);
       }
-      window.removeEventListener('scroll', handleScroll);
       window.removeEventListener('resize', handleResize);
     }
+    if (observer) observer.disconnect();
   });
 
-  // Update observer when loadMoreTrigger changes
-  $: if (loadMoreTrigger && observer) {
-    observer.observe(loadMoreTrigger);
-  }
-
-  $: if (activeCategory) {
-    currentPage = 1;
-    loadedPages.clear();
-    loadProducts(activeCategory);
-  } else {
-    products = [];
-    filteredProducts = [];
-    hasMore = false;
-    loadedPages.clear();
-  }
-
-  $: filteredProducts = products;
+  $: filteredProducts = paginatedProducts;
 
   $: categoryBackgroundStyle = '';
 
   function addToCart(e: CustomEvent) {
     const product = e.detail;
-    cartStore.addItem(product);
+    
+    cartVisible = true;
   }
 
   function toggleCart() {
@@ -376,11 +300,56 @@
       }
       await updateProductRating(String(reviewProduct.id));
       closeReviewModal();
+      clearProductCache(); // Clear cache before reloading products
+      await loadAllProducts(); // Refresh products so product card updates
     } catch (error) {
       alert('Failed to submit review. Please try again.');
     } finally {
       submittingReview = false;
     }
+  }
+
+  function applyProductFilters() {
+    filteredProducts = products.filter(product => {
+      // Search filter
+      if (productFilters.search && !product.name.toLowerCase().includes(productFilters.search.toLowerCase())) {
+        return false;
+      }
+      // Category filter
+      if (productFilters.category && product.category !== productFilters.category) {
+        return false;
+      }
+      // Price range filter
+      if (productFilters.minPrice && product.price < Number(productFilters.minPrice)) {
+        return false;
+      }
+      if (productFilters.maxPrice && product.price > Number(productFilters.maxPrice)) {
+        return false;
+      }
+      return true;
+    });
+    // Apply sorting
+    filteredProducts.sort((a, b) => {
+      let comparison = 0;
+      switch (productFilters.sortBy) {
+        case 'name':
+          comparison = a.name.localeCompare(b.name);
+          break;
+        case 'price':
+          comparison = a.price - b.price;
+          break;
+        case 'category':
+          comparison = a.category.localeCompare(b.category);
+          break;
+        default:
+          comparison = 0;
+      }
+      return productFilters.sortOrder === 'asc' ? comparison : -comparison;
+    });
+  }
+
+  $: if (typeof window !== 'undefined' && loadMoreTrigger) {
+    setupObserver();
   }
 </script>
 
@@ -394,7 +363,11 @@
   onMenuToggle={toggleMenu}
   onCartToggle={toggleCart}
   onLogoClick={handleLogoClick}
+  on:selectcategory={e => handleCategoryChange(e.detail.id)}
 />
+
+<!-- Search Bar -->
+
 
 <!-- Watermark -->
 {#if !activeCategory}
@@ -403,6 +376,7 @@
 
 <!-- Main Content Area -->
 <main class="products-container">
+  
   {#if loading && currentPage === 1}
     <div class="loading-container">
       <LoadingSpinner size="60px" />
@@ -411,7 +385,7 @@
   {:else if error}
     <div class="error-container">
       <p class="error-message">{error}</p>
-      <button on:click={handleRetry} class="retry-btn">
+      <button on:click={() => location.reload()} class="retry-btn">
         Try Again
       </button>
     </div>
@@ -438,33 +412,52 @@
       <p>No products available in this category at this time.</p>
     </div>
   {:else}
+        <div class="category-header">
+      
+          {#if productFilters.search}
+            <i class="fa-solid fa-magnifying-glass category-header-icon"></i>
+          {:else if activeCategory && categoryIcons[activeCategory]}
+            <i class="fa-solid {categoryIcons[activeCategory]} category-header-icon"></i>
+          {/if}
+          <input
+              type="text"
+              class="search-bar"
+              placeholder="Search products..."
+              bind:value={productFilters.search}
+              on:input={() => { filterProducts(); }}
+              aria-label="Search products"
+              autocomplete="off"
+            />
+          
+        </div>
     <div class="category-section">
-      <div class="category-header">
-        {#if activeCategory && categoryIcons[activeCategory]}
-          <i class="fa-solid {categoryIcons[activeCategory]} category-header-icon"></i>
-        {/if}
-      </div>
+      
+      
       <div class="products-grid">
         {#each filteredProducts as product (product.id)}
           <div in:fly={{ y: 30, duration: 350 }}>
-            <ProductCard {product} on:addToCart={addToCart} on:showDetails={handleShowDetails} on:showReview={openReviewModal} />
+            <ProductCard 
+              {product}
+              stock={stockLevels[product.id] ?? 0}
+              on:addToCart={addToCart}
+              on:showDetails={handleShowDetails}
+              on:showReview={openReviewModal}
+            />
           </div>
         {/each}
+        <!-- Infinite scroll trigger -->
+        {#if currentPage * pageSize < products.length}
+          <div bind:this={loadMoreTrigger} class="load-more-trigger"></div>
+        {/if}
       </div>
-      {#if loadingMore && !isFetching}
-        <div class="loading-more">
-          <LoadingSpinner size="24px" />
-          <p>Loading more...</p>
-        </div>
-      {/if}
-      {#if hasMore && !loadingMore}
-        <div class="load-more-trigger" bind:this={loadMoreTrigger}></div>
-      {/if}
     </div>
   {/if}
 </main>
 
 <!-- Cart Sidebar Component -->
+{#if cartVisible}
+  <div class="cart-overlay" on:click={() => cartVisible = false} tabindex="-1" style="position: fixed; inset: 0; z-index: 1999; background: transparent;"></div>
+{/if}
 <CartSidebar visible={cartVisible} toggleVisibility={toggleCart} isPosUser={isPosUser} />
 
 <!-- Side Menu Component -->
@@ -494,6 +487,7 @@
 
 <style>
   /* Reserve space for Navbar + CategoryNav at the top */
+  
   .products-container {
     max-width: 1920px;
     margin-left: auto;
@@ -575,7 +569,7 @@
     grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
     gap: 1.5rem;
     padding: 1rem;
-    padding-bottom: 200px; /* Add padding to ensure trigger is always in view */
+    padding-bottom: 2rem;
   }
 
   @media (max-width: 1024px) {
@@ -635,6 +629,14 @@
   .retry-btn:hover {
     background: #0056b3;
   }
+  .category-header {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 1rem;
+      padding: 0.5rem 0;
+      margin-bottom: 1rem;
+    }
 
   @media (max-width: 1440px) {
     .products-container {
@@ -657,6 +659,7 @@
       padding: 1.5rem;
       margin: 0 1rem;
     }
+
 
     h1 {
       font-size: 2rem;
@@ -714,7 +717,7 @@
   :global(html), :global(body) {
     margin: 0;
     padding: 0;
-    background: #fff;
+    background: transparent;
   }
 
   :global(*) {
@@ -722,13 +725,7 @@
     z-index: 1;
   }
 
-  .category-header-icon {
-    font-size: 2.5rem;
-    color: #ced9e4;
-    display: block;
-    text-align: center;
-    
-  }
+
 
   .loading-more {
     display: flex;
@@ -744,9 +741,47 @@
   }
 
   .load-more-trigger {
-    height: 200px; /* Increased height for earlier triggering */
+    height: 60px;
     width: 100%;
-    position: relative;
-    z-index: 0; /* Ensure it doesn't interfere with other elements */
+    background: transparent;
+  }
+
+  .search-bar-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin: 1.5rem 0 0.5rem 0;
+  }
+  .search-bar {
+    width: 100%;
+    max-width: 400px;
+    padding: 0.75rem 1rem;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    font-size: 1rem;
+    background: #fff;
+    color: #222;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.03);
+    transition: border-color 0.2s;
+  }
+  .search-bar:focus {
+    outline: none;
+    border-color: #007bff;
+    box-shadow: 0 0 0 2px rgba(0,123,255,0.10);
+  }
+  .category-header-icon {
+    font-size: 2.5rem;
+    color: #ced9e4;
+    display: block;
+    text-align: center;
+    
+  }
+
+  .cart-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1999;
+    background: transparent;
+    cursor: pointer;
   }
 </style>

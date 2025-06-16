@@ -5,12 +5,13 @@
     import type { Product } from '$lib/types/index';
     import type { Order, OrderStatus, OrderFilters } from '$lib/types/orders';
     import { makeUserAdmin as userServiceMakeUserAdmin } from '$lib/services/userService';
-    import { getAllOrders, updateOrderStatus, getTopBuyingUsers, getUsersWithMostDebt, getAllUserBalances, logPaymentToLedger } from '$lib/services/orderService';
+    import { getAllOrders, updateOrderStatus, getTopBuyingUsers, getUsersWithMostDebt, getAllUserBalances, logPaymentToLedger, reapplyOrderStock } from '$lib/services/orderService';
     import { fade, slide } from 'svelte/transition';
     import OrderDetailsModal from '$lib/components/OrderDetailsModal.svelte';
     import { showSnackbar } from '$lib/stores/snackbarStore';
     import ConfirmModal from '$lib/components/ConfirmModal.svelte';
     import ProductEditModal from '$lib/components/ProductEditModal.svelte';
+    import { getShopStockLevels } from '$lib/services/stockService';
   
     // Add Profile type
     interface Profile {
@@ -42,6 +43,7 @@
     let isUploading = false;
     let user: any = null;
     let isAdmin = false;
+    let isPosUser = false;
     let adminStatus = '';
     let stats = {
       totalOrders: 0,
@@ -139,6 +141,11 @@
     let showEditModal = false;
     let isAddMode = false;
   
+    let stockLevels: { [productId: string]: number } = {};
+  
+    let showCancelConfirm = false;
+    let orderIdToCancel: string | null = null;
+  
     function openEditModal(product: Product) {
       editing = { ...product };
       showEditModal = true;
@@ -181,19 +188,19 @@
     }
   
     onMount(() => {
-      // Check if user is admin
+      // Check if user is admin or POS
       supabase.auth.getUser().then(({ data }) => {
         user = data.user;
-        // Query profiles for is_admin
+        // Query profiles for is_admin and role
         supabase
           .from('profiles')
-          .select('is_admin')
+          .select('is_admin, role')
           .eq('auth_user_id', user.id)
           .maybeSingle()
           .then(({ data: profile }) => {
             isAdmin = !!profile?.is_admin;
-            if (!user) goto('/login');
-            if (!isAdmin) goto('/');
+            isPosUser = profile?.role === 'pos';
+            if (!isAdmin && !isPosUser) goto('/');
             // Initial load
             Promise.all([
               fetchProducts(),
@@ -201,14 +208,11 @@
               loadOrders(),
               fetchTopBuyersAndDebtors()
             ]).catch(console.error);
-            // Set up auto-refresh
-            statsInterval = setInterval(fetchStats, 30000);
             // Add scroll event listener
             window.addEventListener('scroll', updateActiveSection);
           });
       });
       return () => {
-        if (statsInterval) clearInterval(statsInterval);
         window.removeEventListener('scroll', updateActiveSection);
       };
     });
@@ -219,7 +223,8 @@
       loading = false;
       if (err) error = err.message;
       else {
-        products = data;
+        products = (data ?? []).map(p => ({ ...p, id: String(p.id) })) as Product[];
+        stockLevels = await getShopStockLevels(products.map(p => p.id));
         applyProductFilters();
       }
     }
@@ -431,16 +436,7 @@
       }
     }
   
-    async function testMakeAdmin() {
-      if (user) {
-        const success = await userServiceMakeUserAdmin(user.id);
-        adminStatus = success ? 'Successfully made admin!' : 'Failed to make admin';
-        if (success) {
-          // Refresh the page to update admin status
-          window.location.reload();
-        }
-      }
-    }
+   
   
     async function fetchStats() {
       try {
@@ -652,44 +648,6 @@
       }
     }
 
-    async function deleteAllOrders() {
-      // TODO: Replace with a proper confirmation modal
-      showSnackbar('Delete all orders confirmation not implemented. Please add a modal.');
-      return;
-      // if (!confirm('WARNING: This will delete ALL orders and order items. This action cannot be undone. Are you sure?')) {
-      //   return;
-      // }
-
-      loading = true;
-      error = '';
-
-      try {
-        // First delete all order items
-        const { error: itemsError } = await supabase
-          .from('order_items')
-          .delete()
-          .not('id', 'is', null); // This will delete all records
-
-        if (itemsError) throw itemsError;
-
-        // Then delete all orders
-        const { error: ordersError } = await supabase
-          .from('orders')
-          .delete()
-          .not('id', 'is', null); // This will delete all records
-
-        if (ordersError) throw ordersError;
-
-        // Refresh stats
-        await fetchStats();
-        success = 'All orders have been deleted successfully.';
-      } catch (err) {
-        console.error('Error deleting all orders:', err);
-        error = 'Failed to delete orders. Please try again.';
-      } finally {
-        loading = false;
-      }
-    }
   
     async function loadOrders() {
       loadingOrders = true;
@@ -704,6 +662,12 @@
     }
   
     async function handleStatusUpdate(orderId: string, newStatus: OrderStatus) {
+      // If cancelling, show confirm dialog
+      if (newStatus === 'cancelled') {
+        showCancelConfirm = true;
+        orderIdToCancel = orderId;
+        return;
+      }
       const { success, error } = await updateOrderStatus(orderId, newStatus);
       if (success) {
         // Find the order in the orders array
@@ -734,6 +698,36 @@
       } else {
         orderError = error;
       }
+    }
+  
+    async function confirmCancelOrder() {
+      if (!orderIdToCancel) return;
+      // Reapply stock first
+      const { success: stockSuccess, error: stockError } = await reapplyOrderStock(orderIdToCancel);
+      if (!stockSuccess) {
+        orderError = stockError || 'Failed to reapply stock.';
+        showCancelConfirm = false;
+        orderIdToCancel = null;
+        return;
+      }
+      // Now update status
+      const { success, error } = await updateOrderStatus(orderIdToCancel, 'cancelled');
+      if (success) {
+        await loadOrders();
+        if (selectedOrder?.id === orderIdToCancel) {
+          selectedOrder.status = 'cancelled';
+        }
+        await fetchStats();
+      } else {
+        orderError = error;
+      }
+      showCancelConfirm = false;
+      orderIdToCancel = null;
+    }
+
+    function cancelCancelOrder() {
+      showCancelConfirm = false;
+      orderIdToCancel = null;
     }
   
     function formatDate(dateString: string) {
@@ -917,33 +911,33 @@
       fetchCustomPricesForProduct(String(editing.id));
     }
 </script>
-  
+
+  <div class="nav-content">
+      <h1>Admin Dashboard</h1>
+      <div class="nav-links">
+          <button 
+              class:active={activeSection === 'stats'} 
+              on:click={() => scrollToSection('stats')}
+          >
+              Statistics
+          </button>
+          <button 
+              class:active={activeSection === 'products'} 
+              on:click={() => scrollToSection('products')}
+          >
+              Products
+          </button>
+          <button 
+              class:active={activeSection === 'orders'} 
+              on:click={() => scrollToSection('orders')}
+          >
+              Orders
+          </button>
+      </div>
+  </div>
+
 <div class="admin-container">
-    <nav class="admin-nav">
-        <div class="nav-content">
-            <h1>Admin Dashboard</h1>
-            <div class="nav-links">
-                <button 
-                    class:active={activeSection === 'stats'} 
-                    on:click={() => scrollToSection('stats')}
-                >
-                    Statistics
-                </button>
-                <button 
-                    class:active={activeSection === 'products'} 
-                    on:click={() => scrollToSection('products')}
-                >
-                    Products
-                </button>
-                <button 
-                    class:active={activeSection === 'orders'} 
-                    on:click={() => scrollToSection('orders')}
-                >
-                    Orders
-                </button>
-            </div>
-        </div>
-    </nav>
+
 
     {#if error}
         <div class="alert error" transition:fade>{error}</div>
@@ -953,7 +947,7 @@
         <div class="alert success" transition:fade>{success}</div>
     {/if}
 
-    <!-- Statistics Section -->
+    {#if isAdmin}    <!-- Statistics Section -->
     <section id="stats" class="stats-section">
         <div class="section-header">
             <h2>Sales Statistics</h2>
@@ -1051,7 +1045,7 @@
             <!-- Remove the four stats-card tables here -->
         </div>
     </section>
-
+    {/if}
 
 
     <!-- Orders Section -->
@@ -1159,6 +1153,7 @@
                                                 class:completed={order.status === 'completed'}
                                                 class:cancelled={order.status === 'cancelled'}
                                                 on:change={(e) => handleStatusUpdate(order.id, e.currentTarget.value as OrderStatus)}
+                                                disabled={order.status === 'cancelled'}
                                             >
                                                 <option value="pending">Pending</option>
                                                 <option value="processing">Processing</option>
@@ -1173,13 +1168,15 @@
                                             >
                                                 View Details
                                             </button>
-                                            <button
-                                                class="delete-btn"
-                                                on:click={() => { showConfirmModal = true; orderIdToDelete = order.id; }}
-                                                style="margin-left: 0.5rem;"
-                                            >
-                                                Delete
-                                            </button>
+                                            {#if isAdmin}
+                                                <button
+                                                    class="delete-btn"
+                                                    on:click={() => { showConfirmModal = true; orderIdToDelete = order.id; }}
+                                                    style="margin-left: 0.5rem;"
+                                                >
+                                                    Delete
+                                                </button>
+                                            {/if}
                                         </td>
                                     </tr>
                                 {/each}
@@ -1209,6 +1206,7 @@
                                         class:completed={order.status === 'completed'}
                                         class:cancelled={order.status === 'cancelled'}
                                         on:change={(e) => handleStatusUpdate(order.id, e.currentTarget.value as OrderStatus)}
+                                        disabled={order.status === 'cancelled'}
                                     >
                                         <option value="pending">Pending</option>
                                         <option value="processing">Processing</option>
@@ -1218,7 +1216,9 @@
                                 </div>
                                 <div class="admin-card-actions">
                                     <button class="view-details-btn" on:click={() => selectedOrder = order}>View Details</button>
-                                    <button class="delete-btn" on:click={() => { showConfirmModal = true; orderIdToDelete = order.id; }}>Delete</button>
+                                    {#if isAdmin}
+                                        <button class="delete-btn" on:click={() => { showConfirmModal = true; orderIdToDelete = order.id; }}>Delete</button>
+                                    {/if}
                                 </div>
                             </div>
                         </div>
@@ -1336,6 +1336,23 @@
             onCancel={() => { showProductConfirmModal = false; productIdToDelete = null; }}
         />
     {/if}
+
+    {#if showCancelConfirm}
+      <div class="modal-backdrop" style="z-index: 3000;">
+        <div class="modal-content" style="max-width: 400px; margin: 10vh auto;" role="dialog" aria-modal="true" aria-labelledby="cancel-modal-title">
+          <div class="modal-header">
+            <h2 id="cancel-modal-title" tabindex="-1">Cancel Order?</h2>
+          </div>
+          <div class="modal-body">
+            <p>Are you sure you want to cancel this order? This action cannot be undone and will reapply all stock to inventory.</p>
+            <div style="display: flex; gap: 1rem; justify-content: flex-end; margin-top: 1.5rem;">
+              <button on:click={cancelCancelOrder}>No, keep order</button>
+              <button on:click={confirmCancelOrder} class="danger">Yes, cancel order</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    {/if}
         <!-- Product Management Section -->
     <section id="products" class="product-management">
         <div class="section-header">
@@ -1451,6 +1468,7 @@
                             <th>Category</th>
                             <th>Price</th>
                             <th>Tags</th>
+                            <th>Stock</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
@@ -1482,6 +1500,7 @@
                                       R{product.price}
                                     {/if}
                                 </td>
+                                <td>{stockLevels[product.id] ?? 0}</td>
                                 <td class="action-buttons">
                                     <button 
                                         class="edit-btn"
@@ -1755,23 +1774,7 @@
         background: #f8f9fa;
     }
 
-    .form-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-        gap: 1rem;
-        margin-bottom: 1.5rem;
-    }
-
-    .form-group {
-        display: flex;
-        flex-direction: column;
-        gap: 0.5rem;
-    }
-
-    .form-group label {
-        color: #495057;
-        font-size: 0.9rem;
-    }
+    
 
     input, select {
         padding: 0.75rem;
@@ -1787,11 +1790,7 @@
         box-shadow: 0 0 0 2px rgba(0,123,255,0.25);
     }
 
-    .form-actions {
-        display: flex;
-        gap: 1rem;
-        justify-content: flex-end;
-    }
+
 
     .primary-btn, .secondary-btn, .danger-btn, .view-details-btn {
         padding: 0.75rem 1.5rem;
@@ -1820,19 +1819,7 @@
         background: #5a6268;
     }
 
-    .danger-btn {
-        background: #dc3545;
-        color: white;
-    }
-
-    .danger-btn:hover:not(:disabled) {
-        background: #c82333;
-    }
-
-    .danger-btn:disabled {
-        background: #e9ecef;
-        cursor: not-allowed;
-    }
+    
 
     .view-details-btn {
         background: #28a745;
@@ -1917,7 +1904,7 @@
     @media (max-width: 800px) {
         .admin-container {
             padding: 1rem 0.5rem;
-            width: 100vw;
+            
             max-width: 100vw;
             overflow-x: hidden;
         }
@@ -1945,11 +1932,7 @@
         th, td {
             padding: 0.5rem;
         }
-        .form-actions {
-            flex-direction: column;
-            gap: 0.5rem;
-            align-items: stretch;
-        }
+       
         .action-buttons {
             flex-direction: column;
             gap: 0.5rem;
@@ -1999,36 +1982,7 @@
         }
     }
     /* Add mobile card view for products */
-    @media (max-width: 800px) {
-        .product-card-list {
-            display: flex;
-            flex-direction: column;
-            gap: 1rem;
-        }
-        .product-card {
-            background: #fff;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-            padding: 1rem;
-            display: flex;
-            align-items: center;
-            gap: 1rem;
-        }
-        .product-card img {
-            width: 50px;
-            height: 50px;
-            object-fit: cover;
-            border-radius: 4px;
-        }
-        .product-card-details {
-            flex: 1;
-        }
-        .product-card-actions {
-            display: flex;
-            flex-direction: column;
-            gap: 0.5rem;
-        }
-    }
+   
     .tag-badge {
       display: inline-block;
       padding: 0.2em 0.6em;
@@ -2044,21 +1998,14 @@
     .tag-badge.special {
       background: #e67e22;
     }
-    .image-preview img {
-      max-width: 80px;
-      max-height: 80px;
-      width: auto;
-      height: auto;
-      object-fit: contain;
-      border-radius: 4px;
-      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
-    }
+    
     .modal-backdrop {
       position: fixed;
-      top: 0; left: 0; right: 0; bottom: 0;
-      width: 100vw;
-      height: 100vh;
-      background: rgba(0,0,0,0.4);
-      z-index: 2999;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
     }
 </style>

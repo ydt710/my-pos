@@ -12,7 +12,7 @@
     acceptStockTransfer,
     rejectStockTransfer
   } from '$lib/services/stockService';
-  import type { Product } from '$lib/types';
+  import type { Product } from '$lib/types/index';
   import { get } from 'svelte/store';
   import { selectedPosUser } from '$lib/stores/cartStore';
 
@@ -254,8 +254,7 @@
 
   async function handleAcceptTransfer(transfer: StockMovement) {
     await acceptStockTransfer(transfer.id as string, transfer.quantity);
-    // await fetchData(); // Removed: Realtime will update
-     // The stock_movements Realtime subscription will handle updating the pending list
+    await fetchData(); // Refresh state so the UI updates immediately
   }
 
   function openRejectModal(transfer: StockMovement) {
@@ -288,29 +287,31 @@
   {#if loading}
     <div>Loading...</div>
   {:else}
-    {#if isAdmin}
+    {#if isAdmin || isActualPosUser}
       <div class="stock-forms">
-        <div class="form-section">
-          <h2>Add Production to Facility</h2>
-          <div class="field-group">
-            <label for="prod-product">Product</label>
-            <select id="prod-product" bind:value={selectedProduct}>
-              <option value="">Select Product</option>
-              {#each products as p}
-                <option value={p.id}>{p.name}</option>
-              {/each}
-            </select>
+        {#if isAdmin}
+          <div class="form-section">
+            <h2>Add Production to Facility</h2>
+            <div class="field-group">
+              <label for="prod-product">Product</label>
+              <select id="prod-product" bind:value={selectedProduct}>
+                <option value="">Select Product</option>
+                {#each products as p}
+                  <option value={p.id}>{p.name}</option>
+                {/each}
+              </select>
+            </div>
+            <div class="field-group">
+              <label for="prod-qty">Quantity</label>
+              <input id="prod-qty" type="number" min="1" bind:value={productionQty} placeholder="Quantity" />
+            </div>
+            <div class="field-group">
+              <label for="prod-note">Note</label>
+              <input id="prod-note" type="text" bind:value={note} placeholder="Note (optional)" />
+            </div>
+            <button on:click={handleAddProduction}>Add Production</button>
           </div>
-          <div class="field-group">
-            <label for="prod-qty">Quantity</label>
-            <input id="prod-qty" type="number" min="1" bind:value={productionQty} placeholder="Quantity" />
-          </div>
-          <div class="field-group">
-            <label for="prod-note">Note</label>
-            <input id="prod-note" type="text" bind:value={note} placeholder="Note (optional)" />
-          </div>
-          <button on:click={handleAddProduction}>Add Production</button>
-        </div>
+        {/if}
         <div class="form-section">
           <h2>Transfer Facility → Shop</h2>
           <div class="field-group">
@@ -332,36 +333,38 @@
           </div>
           <button on:click={handleTransferToShop}>Transfer</button>
         </div>
-        <div class="form-section">
-          <h2>Stocktake / Adjustment</h2>
-          <div class="field-group">
-            <label for="adj-product">Product</label>
-            <select id="adj-product" bind:value={selectedProduct}>
-              <option value="">Select Product</option>
-              {#each products as p}
-                <option value={p.id}>{p.name}</option>
-              {/each}
-            </select>
+        {#if isAdmin}
+          <div class="form-section">
+            <h2>Stocktake / Adjustment</h2>
+            <div class="field-group">
+              <label for="adj-product">Product</label>
+              <select id="adj-product" bind:value={selectedProduct}>
+                <option value="">Select Product</option>
+                {#each products as p}
+                  <option value={p.id}>{p.name}</option>
+                {/each}
+              </select>
+            </div>
+            <div class="field-group">
+              <label for="adj-location">Location</label>
+              <select id="adj-location" bind:value={adjustmentLocation}>
+                <option value="">Select Location</option>
+                {#each locations as l}
+                  <option value={l.name}>{l.name}</option>
+                {/each}
+              </select>
+            </div>
+            <div class="field-group">
+              <label for="adj-qty">New Quantity</label>
+              <input id="adj-qty" type="number" min="0" bind:value={adjustmentQty} placeholder="New Quantity" />
+            </div>
+            <div class="field-group">
+              <label for="adj-note">Note</label>
+              <input id="adj-note" type="text" bind:value={note} placeholder="Note (optional)" />
+            </div>
+            <button on:click={handleAdjustStock}>Adjust</button>
           </div>
-          <div class="field-group">
-            <label for="adj-location">Location</label>
-            <select id="adj-location" bind:value={adjustmentLocation}>
-              <option value="">Select Location</option>
-              {#each locations as l}
-                <option value={l.name}>{l.name}</option>
-              {/each}
-            </select>
-          </div>
-          <div class="field-group">
-            <label for="adj-qty">New Quantity</label>
-            <input id="adj-qty" type="number" min="0" bind:value={adjustmentQty} placeholder="New Quantity" />
-          </div>
-          <div class="field-group">
-            <label for="adj-note">Note</label>
-            <input id="adj-note" type="text" bind:value={note} placeholder="Note (optional)" />
-          </div>
-          <button on:click={handleAdjustStock}>Adjust</button>
-        </div>
+        {/if}
       </div>
       <h2>Current Stock Levels</h2>
       <div class="table-responsive">
@@ -659,7 +662,7 @@
     top: 50%; left: 50%;
     transform: translate(-50%, -50%);
     background: #fff;
-    padding: 2rem;
+    
     border-radius: 8px;
     z-index: 1010;
     min-width: 300px;

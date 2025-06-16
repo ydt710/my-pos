@@ -1,7 +1,7 @@
 <script lang="ts">
   import { fade, scale } from 'svelte/transition';
   import type { Order, OrderStatus } from '$lib/types/orders';
-  import { updateOrderStatus } from '$lib/services/orderService';
+  import { updateOrderStatus, reapplyOrderStock } from '$lib/services/orderService';
   import { supabase } from '$lib/supabase';
   import type { CreditLedgerEntry } from '$lib/types/ledger';
   import { getUserBalance } from '$lib/services/orderService';
@@ -19,6 +19,10 @@
   let userBalance: number | null = null;
   let userDebtAtOrderTime: number | null = null;
   const FLOAT_USER_ID = 'ab54f66c-fa1c-40d2-ad2a-d9d5c1603e0f';
+  // @ts-ignore
+  let html2pdf: any = null;
+  let showCancelConfirm = false;
+  let pendingCancelStatus: OrderStatus | null = null;
 
   function formatDate(dateString: string) {
     return new Date(dateString).toLocaleString();
@@ -31,19 +35,51 @@
   async function handleStatusChange(event: Event) {
     const select = event.target as HTMLSelectElement;
     const newStatus = select.value as OrderStatus;
-    
+
+    if (newStatus === 'cancelled') {
+      showCancelConfirm = true;
+      pendingCancelStatus = newStatus;
+      return;
+    }
+
     loading = true;
     error = null;
-    
+
     const { success, error: updateError } = await updateOrderStatus(order.id, newStatus);
-    
+
     if (success) {
       onStatusUpdate(order.id, newStatus);
     } else {
       error = updateError;
     }
-    
+
     loading = false;
+  }
+
+  async function confirmCancel() {
+    showCancelConfirm = false;
+    loading = true;
+    error = null;
+    // Reapply stock first
+    const { success: stockSuccess, error: stockError } = await reapplyOrderStock(order.id);
+    if (!stockSuccess) {
+      error = stockError || 'Failed to reapply stock.';
+      loading = false;
+      return;
+    }
+    // Now update status
+    const { success, error: updateError } = await updateOrderStatus(order.id, 'cancelled');
+    if (success) {
+      onStatusUpdate(order.id, 'cancelled');
+    } else {
+      error = updateError;
+    }
+    loading = false;
+  }
+
+  function cancelCancel() {
+    showCancelConfirm = false;
+    pendingCancelStatus = null;
   }
 
   function getCustomerInfo() {
@@ -128,265 +164,317 @@
         userDebtAtOrderTime = null;
       }
     }
+    if (typeof window !== 'undefined') {
+      html2pdf = (await import('html2pdf.js')).default;
+    }
   });
+
+  async function exportToPDF() {
+    if (!html2pdf) {
+      alert('PDF export is only available in the browser.');
+      return;
+    }
+    const element = document.getElementById('order-details-modal-body');
+    if (!element) {
+      alert('Order details content not found.');
+      return;
+    }
+    const opt = {
+      margin: 0.5,
+      filename: `order-details-${order.order_number || order.id}.pdf`,
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { scale: 2 },
+      jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' }
+    };
+    await html2pdf().from(element).set(opt).save();
+  }
 </script>
 
 <div class="modal-backdrop"
-     role="button"
-     tabindex="0"
+     role="dialog"
+     aria-modal="true"
+     aria-labelledby="modal-title"
+     tabindex="-1"
      on:click={onClose}
      on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && onClose()}
      transition:fade>
-  <div 
-    class="modal-content" 
-    on:click|stopPropagation 
-    transition:scale={{duration: 300, start: 0.95}}
-  >
+  <div class="modal-content" role="document">
     <div class="modal-header">
-      <h2>Order Details</h2>
-      <button class="close-btn" on:click={onClose}>&times;</button>
+      <h2 id="modal-title" tabindex="-1">Order Details</h2>
+      <button class="close-btn" on:click={onClose} aria-label="Close">&times;</button>
+      <button class="pdf-btn" on:click={exportToPDF} aria-label="Export to PDF" title="Export to PDF" style="margin-left: 0.5rem;">
+        🖨️ PDF
+      </button>
     </div>
-
-    {#if error}
-      <div class="error-message" transition:fade>{error}</div>
-    {/if}
-
-    <div class="order-info">
-      <div class="info-section">
-        <h3>Order Information</h3>
-        <div class="info-grid">
-          <div class="info-item">
-            <span class="label">Order ID:</span>
-            <span class="value">{order.order_number || order.id}</span>
-          </div>
-          <div class="info-item">
-            <span class="label">Date:</span>
-            <span class="value">{formatDate(order.created_at)}</span>
-          </div>
-          <div class="info-item">
-            <span class="label">Status:</span>
-            <select 
-              value={order.status} 
-              on:change={handleStatusChange}
-              disabled={loading}
-            >
-              <option value="pending">Pending</option>
-              <option value="processing">Processing</option>
-              <option value="completed">Completed</option>
-              <option value="cancelled">Cancelled</option>
-            </select>
-          </div>
-          <div class="info-item">
-            <span class="label">Total:</span>
-            <span class="value">{formatCurrency(order.total)}</span>
-          </div>
-        </div>
-      </div>
-
-      <div class="info-section">
-        <h3>Customer Information ({customer.type})</h3>
-        <div class="info-grid">
-          <div class="info-item">
-            <span class="label">Name:</span>
-            <span class="value">{customer.name}</span>
-          </div>
-          <div class="info-item">
-            <span class="label">Email:</span>
-            <span class="value">{customer.email}</span>
-          </div>
-          <div class="info-item">
-            <span class="label">Phone:</span>
-            <span class="value">{customer.phone}</span>
-          </div>
-          <div class="info-item">
-            <span class="label">Address:</span>
-            <span class="value">{customer.address}</span>
-          </div>
-          {#if order.user_id}
+    <div id="order-details-modal-body">
+      {#if error}
+        <div class="error-message" transition:fade>{error}</div>
+      {/if}
+      <div class="order-info">
+        <div class="info-section">
+          <h3>Order Information</h3>
+          <div class="info-grid">
             <div class="info-item">
-              <span class="label">Current Balance:</span>
-              <span class="value" style="color: {userBalance === null ? '#666' : userBalance < 0 ? '#dc3545' : userBalance > 0 ? '#28a745' : '#333'};">
-                {userBalance === null ? 'Loading...' : userBalance < 0 ? `Debt: R${Math.abs(userBalance).toFixed(2)}` : userBalance > 0 ? `Credit: R${userBalance.toFixed(2)}` : 'R0.00'}
-              </span>
+              <span class="label">Order ID:</span>
+              <span class="value">{order.order_number || order.id}</span>
             </div>
-          {/if}
+            <div class="info-item">
+              <span class="label">Date:</span>
+              <span class="value">{formatDate(order.created_at)}</span>
+            </div>
+            <div class="info-item">
+              <span class="label">Status:</span>
+              <select 
+                value={order.status} 
+                on:change={handleStatusChange}
+                disabled={loading || order.status === 'cancelled'}
+              >
+                <option value="pending">Pending</option>
+                <option value="processing">Processing</option>
+                <option value="completed">Completed</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+            </div>
+            <div class="info-item">
+              <span class="label">Total:</span>
+              <span class="value">{formatCurrency(order.total)}</span>
+            </div>
+          </div>
         </div>
-      </div>
 
-      <div class="info-section">
-        <h3>Order Items</h3>
-        <div class="items-table">
-          <table>
-            <thead>
-              <tr>
-                <th>Product</th>
-                <th>Price</th>
-                <th>Quantity</th>
-                <th>Subtotal</th>
-              </tr>
-            </thead>
-            <tbody>
-              {#each order.order_items || [] as item}
-                <tr>
-                  <td>
-                    <div class="product-info">
-                      {#if item.products?.image_url}
-                        <img 
-                          src={item.products.image_url} 
-                          alt={item.products.name}
-                          width="40"
-                          height="40"
-                        />
-                      {/if}
-                      <span>{item.products?.name || 'Unknown Product'}</span>
-                    </div>
-                  </td>
-                  <td>{formatCurrency(item.price)}</td>
-                  <td>{item.quantity}</td>
-                  <td>{formatCurrency(item.price * item.quantity)}</td>
-                </tr>
-              {/each}
-            </tbody>
-            <tfoot>
-              <tr>
-                <td colspan="3" class="total-label">Total</td>
-                <td class="total-value">{formatCurrency(order.total)}</td>
-              </tr>
-            </tfoot>
-          </table>
+        <div class="info-section">
+          <h3>Customer Information ({customer.type})</h3>
+          <div class="info-grid">
+            <div class="info-item">
+              <span class="label">Name:</span>
+              <span class="value">{customer.name}</span>
+            </div>
+            <div class="info-item">
+              <span class="label">Email:</span>
+              <span class="value">{customer.email}</span>
+            </div>
+            <div class="info-item">
+              <span class="label">Phone:</span>
+              <span class="value">{customer.phone}</span>
+            </div>
+            <div class="info-item">
+              <span class="label">Address:</span>
+              <span class="value">{customer.address}</span>
+            </div>
+            {#if order.user_id}
+              <div class="info-item">
+                <span class="label">Current Balance:</span>
+                <span class="value" style="color: {userBalance === null ? '#666' : userBalance < 0 ? '#dc3545' : userBalance > 0 ? '#28a745' : '#333'};">
+                  {userBalance === null ? 'Loading...' : userBalance < 0 ? `Debt: R${Math.abs(userBalance).toFixed(2)}` : userBalance > 0 ? `Credit: R${userBalance.toFixed(2)}` : 'R0.00'}
+                </span>
+              </div>
+            {/if}
+          </div>
         </div>
-        <!-- Invoice-style breakdown -->
-        {#if ledgerEntries.length > 0}
-        <div class="invoice-breakdown">
-          <h4>Invoice Summary</h4>
-          <table class="invoice-table">
-            <tbody>
-              <tr>
-                <td>Order Total</td>
-                <td>{formatCurrency(order.total)}</td>
-              </tr>
-              <!-- Payment breakdown by method -->
-              {#each Array.from(new Set(ledgerEntries.filter(e => e.type === 'payment' && e.amount > 0 && e.method).map(e => e.method))) as method}
-                <tr>
-                  <td>Paid by {method ? method.charAt(0).toUpperCase() + method.slice(1) : 'Unknown'}</td>
-                  <td>{formatCurrency(ledgerEntries.filter(e => e.type === 'payment' && e.amount > 0 && e.method === method).reduce((sum, e) => sum + e.amount, 0))}</td>
-                </tr>
-              {/each}
-              <tr>
-                <td>Cash Given</td>
-                <td>{formatCurrency(order.cash_given || 0)}</td>
-              </tr>
-              <tr>
-                <td>Change Given</td>
-                <td>{formatCurrency(order.change_given || 0)}</td>
-              </tr>
-              <tr>
-                <td>Credit Used</td>
-                <td>{formatCurrency(Math.abs(ledgerEntries.filter(e => e.type === 'credit_used').reduce((sum, e) => sum + e.amount, 0)))}</td>
-              </tr>
-              {#if Math.abs(ledgerEntries.filter(e => e.type === 'credit_used').reduce((sum, e) => sum + e.amount, 0)) > 0}
-                <tr>
-                  <td style="color:#007bff">Credit Used Toward Order</td>
-                  <td style="color:#007bff">{formatCurrency(Math.abs(ledgerEntries.filter(e => e.type === 'credit_used').reduce((sum, e) => sum + e.amount, 0)))}</td>
-                </tr>
-              {/if}
-              {#if ledgerEntries.find(e => e.note && e.note.toLowerCase().includes('overpayment credited'))}
-                <tr>
-                  <td style="color:#28a745">Overpayment Credited to Account</td>
-                  <td style="color:#28a745">{formatCurrency(ledgerEntries.filter(e => e.note && e.note.toLowerCase().includes('overpayment credited')).reduce((sum, e) => sum + e.amount, 0))}</td>
-                </tr>
-              {/if}
-              <tr>
-                <td><strong>Outstanding Debt</strong></td>
-                <td><strong>{formatCurrency(Math.max(0, order.total - (ledgerEntries.filter(e => e.type === 'payment' && e.amount > 0).reduce((sum, e) => sum + e.amount, 0) + Math.abs(ledgerEntries.filter(e => e.type === 'credit_used').reduce((sum, e) => sum + e.amount, 0)))) )}</strong></td>
-              </tr>
-              {#if (ledgerEntries.filter(e => e.type === 'payment' && e.amount > 0).reduce((sum, e) => sum + e.amount, 0) + Math.abs(ledgerEntries.filter(e => e.type === 'credit_used').reduce((sum, e) => sum + e.amount, 0)) > order.total)}
-                <tr>
-                  <td><strong>Credit/Overpayment</strong></td>
-                  <td><strong>{formatCurrency((ledgerEntries.filter(e => e.type === 'payment' && e.amount > 0).reduce((sum, e) => sum + e.amount, 0) + Math.abs(ledgerEntries.filter(e => e.type === 'credit_used').reduce((sum, e) => sum + e.amount, 0))) - order.total)}</strong></td>
-                </tr>
-              {/if}
-              <tr>
-                <td>Refunds/Adjustments</td>
-                <td>{formatCurrency(ledgerEntries.filter(e => (e.type === 'refund' || e.type === 'adjustment')).reduce((sum, e) => sum + e.amount, 0))}</td>
-              </tr>
-              <!-- Net Paid: sum of all positive payment ledger entries + credit used -->
-              <tr>
-                <td>Net Paid</td>
-                <td>{formatCurrency(ledgerEntries.filter(e => e.type === 'payment' && e.amount > 0).reduce((sum, e) => sum + e.amount, 0) + Math.abs(ledgerEntries.filter(e => e.type === 'credit_used').reduce((sum, e) => sum + e.amount, 0)))}</td>
-              </tr>
-              {#if userDebtAtOrderTime !== null}
-                <tr>
-                  <td style="color:#dc3545">User Debt at Order Time</td>
-                  <td style="color:#dc3545">{formatCurrency(userDebtAtOrderTime < 0 ? Math.abs(userDebtAtOrderTime) : 0)}</td>
-                </tr>
-              {/if}
-            </tbody>
-          </table>
-        </div>
-        {/if}
-      </div>
 
-      <div class="info-section">
-        <h3>Ledger Entries</h3>
-        {#if loadingLedger}
-          <div>Loading ledger entries...</div>
-        {:else if ledgerError}
-          <div class="error-message">{ledgerError}</div>
-        {:else if ledgerEntries.length === 0}
-          <div>No ledger entries for this order.</div>
-        {:else}
-          <div class="ledger-table">
+        <div class="info-section">
+          <h3>Order Items</h3>
+          <div class="items-table">
             <table>
               <thead>
                 <tr>
-                  <th>Date</th>
-                  <th>Type</th>
-                  <th>Amount</th>
-                  <th>Note</th>
+                  <th>Product</th>
+                  <th>Price</th>
+                  <th>Quantity</th>
+                  <th>Subtotal</th>
                 </tr>
               </thead>
               <tbody>
-                {#each ledgerEntries as entry}
+                {#each order.order_items || [] as item}
                   <tr>
-                    <td>{formatDate(entry.created_at)}</td>
-                    <td>{entry.type}</td>
-                    <td>{formatCurrency(entry.amount)}</td>
-                    <td>{entry.note}</td>
+                    <td>
+                      <div class="product-info">
+                        {#if item.products?.image_url}
+                          <img 
+                            src={item.products.image_url} 
+                            alt={item.products.name}
+                            width="40"
+                            height="40"
+                          />
+                        {/if}
+                        <span>{item.products?.name || 'Unknown Product'}</span>
+                      </div>
+                    </td>
+                    <td>{formatCurrency(item.price)}</td>
+                    <td>{item.quantity}</td>
+                    <td>{formatCurrency(item.price * item.quantity)}</td>
                   </tr>
                 {/each}
               </tbody>
+              <tfoot>
+                <tr>
+                  <td colspan="3" class="total-label">Total</td>
+                  <td class="total-value">{formatCurrency(order.total)}</td>
+                </tr>
+              </tfoot>
             </table>
           </div>
-        {/if}
+          <!-- Invoice-style breakdown -->
+          {#if ledgerEntries.length > 0}
+          <div class="invoice-breakdown">
+            <h4>Invoice Summary</h4>
+            <table class="invoice-table">
+              <tbody>
+                <tr>
+                  <td>Order Total</td>
+                  <td>{formatCurrency(order.total)}</td>
+                </tr>
+                <!-- Payment breakdown by method -->
+                {#each Array.from(new Set(ledgerEntries.filter(e => e.type === 'payment' && e.amount > 0 && e.method).map(e => e.method))) as method}
+                  <tr>
+                    <td>Paid by {method ? method.charAt(0).toUpperCase() + method.slice(1) : 'Unknown'}</td>
+                    <td>{formatCurrency(ledgerEntries.filter(e => e.type === 'payment' && e.amount > 0 && e.method === method).reduce((sum, e) => sum + e.amount, 0))}</td>
+                  </tr>
+                {/each}
+                <tr>
+                  <td>Cash Given</td>
+                  <td>{formatCurrency(order.cash_given || 0)}</td>
+                </tr>
+                <tr>
+                  <td>Change Given</td>
+                  <td>{formatCurrency(order.change_given || 0)}</td>
+                </tr>
+                <tr>
+                  <td>Credit Used</td>
+                  <td>{formatCurrency(Math.abs(ledgerEntries.filter(e => e.type === 'credit_used').reduce((sum, e) => sum + e.amount, 0)))}</td>
+                </tr>
+                {#if Math.abs(ledgerEntries.filter(e => e.type === 'credit_used').reduce((sum, e) => sum + e.amount, 0)) > 0}
+                  <tr>
+                    <td style="color:#007bff">Credit Used Toward Order</td>
+                    <td style="color:#007bff">{formatCurrency(Math.abs(ledgerEntries.filter(e => e.type === 'credit_used').reduce((sum, e) => sum + e.amount, 0)))}</td>
+                  </tr>
+                {/if}
+                {#if ledgerEntries.find(e => e.note && e.note.toLowerCase().includes('overpayment credited'))}
+                  <tr>
+                    <td style="color:#28a745">Overpayment Credited to Account</td>
+                    <td style="color:#28a745">{formatCurrency(ledgerEntries.filter(e => e.note && e.note.toLowerCase().includes('overpayment credited')).reduce((sum, e) => sum + e.amount, 0))}</td>
+                  </tr>
+                {/if}
+                <tr>
+                  <td><strong>Outstanding Debt</strong></td>
+                  <td><strong>{formatCurrency(Math.max(0, order.total - (ledgerEntries.filter(e => e.type === 'payment' && e.amount > 0).reduce((sum, e) => sum + e.amount, 0) + Math.abs(ledgerEntries.filter(e => e.type === 'credit_used').reduce((sum, e) => sum + e.amount, 0)))) )}</strong></td>
+                </tr>
+                {#if (ledgerEntries.filter(e => e.type === 'payment' && e.amount > 0).reduce((sum, e) => sum + e.amount, 0) + Math.abs(ledgerEntries.filter(e => e.type === 'credit_used').reduce((sum, e) => sum + e.amount, 0)) > order.total)}
+                  <tr>
+                    <td><strong>Credit/Overpayment</strong></td>
+                    <td><strong>{formatCurrency((ledgerEntries.filter(e => e.type === 'payment' && e.amount > 0).reduce((sum, e) => sum + e.amount, 0) + Math.abs(ledgerEntries.filter(e => e.type === 'credit_used').reduce((sum, e) => sum + e.amount, 0))) - order.total)}</strong></td>
+                  </tr>
+                {/if}
+                <tr>
+                  <td>Refunds/Adjustments</td>
+                  <td>{formatCurrency(ledgerEntries.filter(e => (e.type === 'refund' || e.type === 'adjustment')).reduce((sum, e) => sum + e.amount, 0))}</td>
+                </tr>
+                <!-- Net Paid: sum of all positive payment ledger entries + credit used -->
+                <tr>
+                  <td>Net Paid</td>
+                  <td>{formatCurrency(ledgerEntries.filter(e => e.type === 'payment' && e.amount > 0).reduce((sum, e) => sum + e.amount, 0) + Math.abs(ledgerEntries.filter(e => e.type === 'credit_used').reduce((sum, e) => sum + e.amount, 0)))}</td>
+                </tr>
+                {#if userDebtAtOrderTime !== null}
+                  <tr>
+                    <td style="color:#dc3545">User Debt at Order Time</td>
+                    <td style="color:#dc3545">{formatCurrency(userDebtAtOrderTime < 0 ? Math.abs(userDebtAtOrderTime) : 0)}</td>
+                  </tr>
+                {/if}
+              </tbody>
+            </table>
+          </div>
+          {/if}
+        </div>
+
+        <div class="info-section">
+          <h3>Ledger Entries</h3>
+          {#if loadingLedger}
+            <div>Loading ledger entries...</div>
+          {:else if ledgerError}
+            <div class="error-message">{ledgerError}</div>
+          {:else if ledgerEntries.length === 0}
+            <div>No ledger entries for this order.</div>
+          {:else}
+            <div class="ledger-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Type</th>
+                    <th>Amount</th>
+                    <th>Note</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each ledgerEntries as entry}
+                    <tr>
+                      <td>{formatDate(entry.created_at)}</td>
+                      <td>{entry.type}</td>
+                      <td>{formatCurrency(entry.amount)}</td>
+                      <td>{entry.note}</td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            </div>
+          {/if}
+        </div>
       </div>
     </div>
   </div>
 </div>
 
+{#if showCancelConfirm}
+  <div class="modal-backdrop" style="z-index: 3000;">
+    <div class="modal-content" style="max-width: 400px; margin: 10vh auto;" role="dialog" aria-modal="true" aria-labelledby="cancel-modal-title">
+      <div class="modal-header">
+        <h2 id="cancel-modal-title" tabindex="-1">Cancel Order?</h2>
+      </div>
+      <div class="modal-body">
+        <p>Are you sure you want to cancel this order? This action cannot be undone and will reapply all stock to inventory.</p>
+        <div style="display: flex; gap: 1rem; justify-content: flex-end; margin-top: 1.5rem;">
+          <button on:click={cancelCancel} disabled={loading}>No, keep order</button>
+          <button on:click={confirmCancel} class="danger" disabled={loading}>Yes, cancel order</button>
+        </div>
+      </div>
+    </div>
+  </div>
+{/if}
+
 <style>
   .modal-backdrop {
     position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.5);
+    inset: 0;
+    background: rgba(0,0,0,0.4);
     display: flex;
-    justify-content: center;
     align-items: flex-start;
-    padding: 2rem;
-    z-index: 1000;
-    overflow-y: auto;
+    justify-content: center;
+    padding-top: 70px; /* navbar height */
+    z-index: 3000;
   }
-
   .modal-content {
+    position: fixed;
+   
+    margin-top: 1.5rem;
+    max-height: calc(100vh - 90px);
+    overflow-y: auto;
+    width: 100%;
+    max-width: 600px;
+    z-index: 3001;
     background: white;
     border-radius: 12px;
-    width: 100%;
-    max-width: 800px;
-    padding: 1.5rem;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    padding: 2rem;
+  }
+  @media (max-width: 600px) {
+    .modal-content {
+
+      max-width: 98vw;
+      margin: 0.5rem 0 0 0;
+      margin-top: 1.5rem;
+      padding: 0.5rem;
+      max-height: calc(100vh - 80px);
+    }
   }
 
   .modal-header {
@@ -513,20 +601,6 @@
     margin-bottom: 1rem;
   }
 
-  @media (max-width: 800px) {
-    .modal-backdrop {
-      padding: 1rem;
-    }
-
-    .info-grid {
-      grid-template-columns: 1fr;
-    }
-
-    th, td {
-      padding: 0.75rem;
-    }
-  }
-
   .invoice-breakdown {
     margin-top: 1.5rem;
     background: #f8f9fa;
@@ -556,5 +630,30 @@
   .invoice-table td:last-child {
     text-align: right;
     font-weight: 500;
+  }
+
+  .modal-content .modal-header {
+    position: sticky;
+    top: 0;
+    background: white;
+    z-index: 10;
+    padding: 1rem;
+    border-bottom: 1px solid #ccc;
+  }
+
+  .pdf-btn {
+    background: #f8f9fa;
+    border: 1px solid #007bff;
+    color: #007bff;
+    border-radius: 6px;
+    padding: 0.5rem 1rem;
+    font-size: 1rem;
+    cursor: pointer;
+    margin-left: 0.5rem;
+    transition: background 0.2s, color 0.2s;
+  }
+  .pdf-btn:hover {
+    background: #007bff;
+    color: #fff;
   }
 </style> 

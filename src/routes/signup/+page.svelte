@@ -8,7 +8,7 @@
     import SignaturePad from '$lib/components/SignaturePad.svelte';
     import { showSnackbar } from '$lib/stores/snackbarStore';
     // @ts-ignore
-    import html2pdf from 'html2pdf.js';
+    let html2pdf: any = null;
   
     let email = '';
     let password = '';
@@ -42,10 +42,24 @@
       try {
         const { data } = supabase.storage.from('route420').getPublicUrl('logo.png');
         logoUrl = data.publicUrl;
+        if (typeof window !== 'undefined') {
+          // @ts-ignore
+          html2pdf = (await import('html2pdf.js')).default;
+        }
       } catch (err) {
         console.error('Error getting logo URL:', err);
       }
     });
+
+    // Helper to convert File to Data URL
+    function fileToDataUrl(file: File): Promise<string> {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
 
     async function handleIdImageCapture(event: Event) {
       const input = event.target as HTMLInputElement;
@@ -67,7 +81,7 @@
       }
       
       idImageFile = file;
-      idImagePreview = URL.createObjectURL(file);
+      idImagePreview = await fileToDataUrl(file); // Use Data URL
     }
 
     async function startCamera() {
@@ -121,13 +135,13 @@
       ctx.drawImage(videoElement, 0, 0);
       
       // Convert to blob
-      canvas.toBlob((blob) => {
+      canvas.toBlob(async (blob) => {
         if (!blob) return;
         
         // Create a file from the blob
         const file = new File([blob], 'id-photo.jpg', { type: 'image/jpeg' });
         idImageFile = file;
-        idImagePreview = URL.createObjectURL(blob);
+        idImagePreview = await fileToDataUrl(file); // Use Data URL
         
         // Stop camera and close modal
         stopCamera();
@@ -279,6 +293,9 @@
     }
 
     async function generateSignedContract(firstName: string, lastName: string, signatureDataUrl: string, userId: string): Promise<string | null> {
+      if (!html2pdf) {
+        throw new Error('PDF generation is only available in the browser.');
+      }
       const element = document.getElementById('contract-template');
       if (!element) {
         console.error('Contract template not found');
@@ -577,15 +594,17 @@
                 <p>
                   Signed at Route420WP on the {new Date().toLocaleDateString('en-ZA', { day: 'numeric', month: 'long', year: 'numeric' })}<br>
                   <br>
-                  <strong>For the Club (Route 420WP):</strong><br>
-                  Name: Piet Koekemoer<br>
-                  Signature: _____________________<br>
-                  <br>
+                  
                   <strong>For the Member:</strong><br>
                   Name: {firstName} {lastName}<br>
                   Signature:<br>
                   {#if signatureDataUrl}
                     <img src={signatureDataUrl} alt="Signature" style="width:200px;"/>
+                  {/if}
+                  <br>
+                  ID/Driver's License:<br>
+                  {#if idImagePreview}
+                    <img src={idImagePreview} alt="ID" style="width:400px; margin-top: 8px;"/>
                   {/if}
                   <br>
                 </p>
@@ -690,7 +709,7 @@
     }
 
     input {
-      width: 100%;
+      width: 50%;
       border: 1px solid rgba(0, 0, 0, 0.1);
       border-radius: 8px;
       font-size: 1rem;

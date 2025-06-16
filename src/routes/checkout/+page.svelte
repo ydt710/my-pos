@@ -190,6 +190,27 @@
       return;
     }
 
+    // Before calling createOrder
+    let finalUserId = undefined;
+    if (isPosUser && posUser && posUser.id) {
+      finalUserId = posUser.id;
+    } else if (!isGuest && userProfileId) {
+      finalUserId = userProfileId;
+    }
+    console.log('Checkout debug:', {
+      isGuest,
+      isPosUser,
+      posUserId: posUser?.id,
+      userProfileId,
+      finalUserId,
+      guestInfo
+    });
+    if (!isGuest && !finalUserId) {
+      error = 'Could not determine user for this order. Please select a customer or log in again.';
+      loading = false;
+      return;
+    }
+
     try {
       const cash = Number(cashGiven) || 0;
       // For guests, change is cash - total; for users, change/credit is only if cash > totalDue
@@ -203,20 +224,8 @@
       const result = await createOrder(
         total,
         $cartStore,
-        useGuest
-          ? {
-              ...guestInfo,
-              email: guestInfo.email.toLowerCase().trim(),
-              name: guestInfo.name.trim(),
-              phone: guestInfo.phone.trim(),
-              address: guestInfo.address.trim()
-            }
-          : undefined,
-        (!isGuest && posUser && posUser.id)
-          ? posUser.id
-          : (!isGuest && userProfileId)
-            ? userProfileId
-            : undefined,
+        isGuest ? guestInfo : undefined,
+        finalUserId,
         paymentMethod,
         debt,
         cash,
@@ -229,7 +238,8 @@
 
       if (result.success) {
         // Log guest payments to float user if no customer is selected
-        if ((!selectedCustomer || !selectedCustomer.id) && Number(cashGiven) > 0) {
+        if (isGuest && Number(cashGiven) > 0) {
+          // Only log to float user for true guest orders
           const cashInAmount = Math.min(Number(cashGiven), total);
           console.log('Logging guest payment to float user:', FLOAT_USER_ID, cashInAmount);
           await logPaymentToLedger(FLOAT_USER_ID, cashInAmount, result.orderId, 'Guest payment (float)', paymentMethod);

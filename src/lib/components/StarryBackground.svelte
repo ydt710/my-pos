@@ -2,9 +2,9 @@
   import { onMount } from 'svelte';
 
   let canvas: HTMLCanvasElement;
-  let ctx: CanvasRenderingContext2D;
+  let ctx: CanvasRenderingContext2D | null = null;
   let animationFrameId: number;
-  let stars: Star[] = [];
+  let stars: (Star | null)[] = [];
   let lastTime = 0;
   const FPS = 30;
   const frameInterval = 1000 / FPS;
@@ -60,7 +60,8 @@
     }
   }
 
-  function createStar(): Star {
+  function createStar(): Star | null {
+    if (!canvas) return null;
     const xPct = Math.random();
     const yPct = Math.random();
     const colors = [
@@ -86,11 +87,13 @@
   }
 
   function initStars() {
+    if (!canvas) return;
     const starCount = Math.floor((canvas.width * canvas.height) / OPTIMIZED.starDensity);
-    stars = Array.from({ length: starCount }, createStar);
+    stars = Array.from({ length: starCount }, createStar).filter(Boolean);
   }
 
   function drawStar(star: Star) {
+    if (!ctx || !star) return;
     ctx.beginPath();
     ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
     ctx.fillStyle = star.color;
@@ -100,15 +103,20 @@
   }
 
   function drawStaticStarfield() {
+    if (!canvas || !ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = '#000510';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     stars.forEach(star => {
-      drawStar(star);
+      if (star) drawStar(star);
     });
   }
 
   function animate() {
+    if (!canvas || !ctx) {
+      animationFrameId = requestAnimationFrame(animate);
+      return;
+    }
     if (document.hidden) {
       animationFrameId = requestAnimationFrame(animate);
       return;
@@ -116,6 +124,7 @@
     // Move stars gently downward on desktop only
     if (!isMobile) {
       stars.forEach(star => {
+        if (!star) return;
         star.y += star.speed * 0.007; // Slow downward movement
         if (star.y > canvas.height) {
           star.y = 0;
@@ -125,6 +134,7 @@
     }
     // Twinkle only white stars
     stars.forEach(star => {
+      if (!star) return;
       if (star.blinkSpeed > 0) {
         star.blinkPhase += star.blinkSpeed;
         star.opacity = 0.7 + 0.3 * Math.sin(star.blinkPhase);
@@ -135,14 +145,16 @@
   }
 
   function updateStarPositions() {
+    if (!canvas) return;
     stars.forEach(star => {
+      if (!star) return;
       star.x = star.xPct * canvas.width;
       star.y = star.yPct * canvas.height;
     });
   }
 
   function handleResize() {
-    if (!canvas) return;
+    if (!canvas || !ctx) return;
 
     applyOptimizations();
     const dpr = window.devicePixelRatio || 1;
@@ -155,8 +167,7 @@
     if (widthChange > 0.2 || heightChange > 0.2 || stars.length === 0) {
       canvas.width = newWidth;
       canvas.height = newHeight;
-      canvas.style.width = '100vw';
-      canvas.style.height = '100vh';
+    
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.scale(dpr, dpr);
       initStars();
@@ -178,7 +189,9 @@
   onMount(() => {
     if (!canvas) return;
     
-    ctx = canvas.getContext('2d', { alpha: false })!;
+    ctx = canvas.getContext('2d', { alpha: false });
+    if (!ctx) return;
+    
     applyOptimizations();
     handleResize();
     drawStaticStarfield();
@@ -213,8 +226,9 @@
     position: fixed;
     top: 0;
     left: 0;
-    width: 100vw;
-    height: 100vh;
+    width: 100%;
+    min-height: 100vh;
+    height: 100%;
     z-index: -1;
     background: #000510;
     pointer-events: none; /* Ensure no interaction with elements below */

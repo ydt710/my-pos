@@ -32,6 +32,16 @@
   let showDeleteModal = false;
   let userToDelete: User | null = null;
 
+  let selectedUser: User | null = null;
+  let userOrders: any[] = [];
+  let userOrdersLoading = false;
+  let userOrdersError: string | null = null;
+  let userLedger: any[] = [];
+  let userLedgerLoading = false;
+  let userLedgerError: string | null = null;
+  let userStats: { totalOrders: number; totalSpent: number; debt: number } = { totalOrders: 0, totalSpent: 0, debt: 0 };
+  let contractUrl: string | null = null;
+
   onMount(async () => {
     // Check if current user is admin
     const { data: { user: currentUser } } = await supabase.auth.getUser();
@@ -206,6 +216,78 @@
       showDeleteModal = false;
     }
   }
+
+  async function openUserDetail(user: User) {
+    selectedUser = user;
+    userOrdersLoading = true;
+    userOrdersError = null;
+    userLedgerLoading = true;
+    userLedgerError = null;
+    userOrders = [];
+    userLedger = [];
+    userStats = { totalOrders: 0, totalSpent: 0, debt: 0 };
+    contractUrl = null;
+    try {
+      // Fetch orders for this user
+      const { data: orders, error: ordersError } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+      if (ordersError) {
+        userOrdersError = 'Failed to load orders.';
+      } else {
+        userOrders = orders || [];
+        userStats.totalOrders = userOrders.length;
+        userStats.totalSpent = userOrders.reduce((sum, o) => sum + (o.total || 0), 0);
+      }
+      // Fetch ledger for this user
+      const { data: ledger, error: ledgerError } = await supabase
+        .from('credit_ledger')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+      if (ledgerError) {
+        userLedgerError = 'Failed to load ledger.';
+      } else {
+        userLedger = ledger || [];
+        userStats.debt = userLedger.reduce((sum, e) => sum + (e.amount || 0), 0);
+      }
+      // Fetch contract URL from profiles
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('signed_contract_url')
+        .eq('id', user.id)
+        .maybeSingle();
+      contractUrl = profile?.signed_contract_url || null;
+    } catch (err) {
+      userOrdersError = 'Failed to load user details.';
+      userLedgerError = 'Failed to load user details.';
+    } finally {
+      userOrdersLoading = false;
+      userLedgerLoading = false;
+    }
+  }
+
+  function closeUserDetail() {
+    selectedUser = null;
+    userOrders = [];
+    userLedger = [];
+    userStats = { totalOrders: 0, totalSpent: 0, debt: 0 };
+    contractUrl = null;
+  }
+
+  async function downloadContract() {
+    if (!contractUrl) return;
+    const { data, error } = await supabase.storage
+      .from('signed.contracts')
+      .createSignedUrl(contractUrl, 600);
+    if (data && data.signedUrl) {
+      window.open(data.signedUrl, '_blank');
+    } else {
+      alert('Could not generate download link.');
+    }
+  }
 </script>
 
 <div class="users-page" in:fade>
@@ -243,7 +325,7 @@
           <tbody>
             {#each users as user (user.id)}
               {@const balance = userBalances?.[user.id]}
-              <tr>
+              <tr on:click={() => openUserDetail(user)} style="cursor:pointer;">
                 <td>{user.email}</td>
                 <td>{user.display_name || '-'}</td>
                 <td>{formatDate(user.created_at)}</td>
@@ -263,12 +345,12 @@
                   {:else}
                     <span>R0.00</span>
                   {/if}
-                  <button class="ledger-btn" on:click={() => openLedgerModal(user)} title="View Ledger">📄</button>
+                  <button class="ledger-btn" on:click|stopPropagation={() => openLedgerModal(user)} title="View Ledger">📄</button>
                 </td>
                 <td>
                   <button 
                     class="delete-user-btn"
-                    on:click={() => confirmDeleteUser(user)}
+                    on:click|stopPropagation={() => confirmDeleteUser(user)}
                     aria-label="Delete user {user.email}"
                   >
                     Delete
@@ -334,6 +416,85 @@
           <button class="cancel-btn" on:click={cancelDeleteUser} aria-label="Cancel delete">Cancel</button>
           <button class="delete-user-btn" on:click={handleDeleteUser} aria-label="Confirm delete user">Delete</button>
         </div>
+      </div>
+    </div>
+  {/if}
+
+  {#if selectedUser}
+    <div class="modal-backdrop" on:click={closeUserDetail}>
+      <div class="modal-content" on:click|stopPropagation>
+        <button class="close-btn" on:click={closeUserDetail}>×</button>
+        <h2>User Details: {selectedUser.display_name || selectedUser.email}</h2>
+        <div><strong>Email:</strong> {selectedUser.email}</div>
+        <div><strong>Joined:</strong> {formatDate(selectedUser.created_at)}</div>
+        <div><strong>Debt/Credit:</strong> {userStats.debt < 0 ? `Debt: R${Math.abs(userStats.debt).toFixed(2)}` : `Credit: R${userStats.debt.toFixed(2)}`}</div>
+        <div><strong>Total Orders:</strong> {userStats.totalOrders}</div>
+        <div><strong>Total Spent:</strong> R{userStats.totalSpent.toFixed(2)}</div>
+        {#if contractUrl}
+          <button on:click={downloadContract}>Download Signed Contract</button>
+        {/if}
+        <h3 style="margin-top:2rem;">Orders</h3>
+        {#if userOrdersLoading}
+          <div>Loading orders...</div>
+        {:else if userOrdersError}
+          <div class="error-message">{userOrdersError}</div>
+        {:else if userOrders.length === 0}
+          <div>No orders found for this user.</div>
+        {:else}
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Status</th>
+                <th>Total</th>
+                <th>Order #</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each userOrders as order}
+                <tr>
+                  <td>{formatDate(order.created_at)}</td>
+                  <td>{order.status}</td>
+                  <td>R{order.total.toFixed(2)}</td>
+                  <td>{order.order_number}</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        {/if}
+        <h3 style="margin-top:2rem;">Ledger Entries</h3>
+        {#if userLedgerLoading}
+          <div>Loading ledger...</div>
+        {:else if userLedgerError}
+          <div class="error-message">{userLedgerError}</div>
+        {:else if userLedger.length === 0}
+          <div>No ledger entries for this user.</div>
+        {:else}
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Type</th>
+                <th>Amount</th>
+                <th>Order</th>
+                <th>Note</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each userLedger as entry}
+                <tr>
+                  <td>{formatDate(entry.created_at)}</td>
+                  <td>{entry.type}</td>
+                  <td style="color: {entry.amount < 0 ? '#dc3545' : entry.amount > 0 ? '#28a745' : '#333'};">
+                    {entry.amount < 0 ? `-R${Math.abs(entry.amount).toFixed(2)}` : `R${entry.amount.toFixed(2)}`}
+                  </td>
+                  <td>{entry.order_id || '-'}</td>
+                  <td>{entry.note}</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        {/if}
       </div>
     </div>
   {/if}

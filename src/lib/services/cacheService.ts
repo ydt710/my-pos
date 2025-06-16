@@ -109,4 +109,9 @@ export const cachedCreditLedger = derived(creditLedgerCache, $cache =>
   Object.entries($cache)
     .filter(([_, entry]) => isCacheValid(entry.timestamp))
     .reduce((acc, [key, entry]) => ({ ...acc, [key]: entry.data }), {})
-); 
+);
+
+// Add a function to clear the product cache immediately
+export function clearProductCache() {
+  productCache.set({});
+} 

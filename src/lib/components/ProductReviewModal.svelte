@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Product } from '$lib/types';
+  import type { Product } from '$lib/types/index';
   export let userReview: any = null;
   export let newReview: { rating: number; comment: string };
   export let submittingReview: boolean = false;
@@ -12,49 +12,47 @@
 </script>
 
 {#if show}
-  <div class="review-modal">
-    <div class="review-modal__content">
-      <button 
-        class="close-button" 
-        on:click={onClose}
-        aria-label="Close review modal"
-      >
-        ×
-      </button>
-      <h3>{userReview ? 'Update Your Review' : 'Write a Review'}</h3>
-      <div class="rating-input">
-        {#each Array(5) as _, i}
-          <button 
-            class="star-button" 
-            on:click={() => setRating(i + 1)}
-            disabled={submittingReview}
-            aria-label={`Rate ${i + 1} out of 5`}
-          >
-            <span class="star" class:filled={i < newReview.rating}>★</span>
-          </button>
-        {/each}
+  <div class="review-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <div class="review-modal__content" role="document">
+      <div class="modal-header">
+        <h2 id="modal-title" tabindex="-1">{userReview ? 'Update Your Review' : 'Write a Review'}</h2>
+        <button class="close-button" on:click={onClose} aria-label="Close">×</button>
       </div>
-      <textarea
-        bind:value={newReview.comment}
-        placeholder="Write your review..."
-        rows="4"
-        disabled={submittingReview}
-        aria-label="Review comment"
-        on:input={(e: Event) => setComment(((e.target as HTMLTextAreaElement)?.value) || '')}
-      ></textarea>
-      <button 
-        class="submit-review" 
-        on:click={onSubmit}
-        disabled={submittingReview}
-        aria-label={userReview ? "Update review" : "Submit review"}
-      >
-        {#if submittingReview}
-          <span class="loading-spinner"></span>
-          {userReview ? 'Updating...' : 'Submitting...'}
-        {:else}
-          {userReview ? 'Update Review' : 'Submit Review'}
-        {/if}
-      </button>
+      <div class="modal-body">
+        <div class="rating-input">
+          {#each Array(5) as _, i}
+            <button 
+              class="star-button" 
+              on:click={() => setRating(i + 1)}
+              disabled={submittingReview}
+              aria-label={`Rate ${i + 1} out of 5`}
+            >
+              <span class="star" class:filled={i < newReview.rating}>★</span>
+            </button>
+          {/each}
+        </div>
+        <textarea
+          bind:value={newReview.comment}
+          placeholder="Write your review..."
+          rows="4"
+          disabled={submittingReview}
+          aria-label="Review comment"
+          on:input={(e: Event) => setComment(((e.target as HTMLTextAreaElement)?.value) || '')}
+        ></textarea>
+        <button 
+          class="submit-review" 
+          on:click={onSubmit}
+          disabled={submittingReview}
+          aria-label={userReview ? "Update review" : "Submit review"}
+        >
+          {#if submittingReview}
+            <span class="loading-spinner"></span>
+            {userReview ? 'Updating...' : 'Submitting...'}
+          {:else}
+            {userReview ? 'Update Review' : 'Submit Review'}
+          {/if}
+        </button>
+      </div>
     </div>
   </div>
 {/if}
@@ -78,7 +76,7 @@
     padding: 2rem;
     border-radius: 12px;
     width: 90%;
-    max-width: 400px;
+    
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   }
   .review-modal__content h3 {
@@ -214,5 +212,13 @@
   }
   .close-button:active {
     transform: scale(0.95);
+  }
+  .modal-header {
+    position: sticky;
+    top: 0;
+    background: white;
+    z-index: 10;
+    padding: 1rem;
+    border-bottom: 1px solid #ccc;
   }
 </style> 

@@ -37,7 +37,7 @@ export async function createOrder(
     }
 
     // Validate total
-    if (total <= 0) {
+    if (total < 0) {
       return { success: false, error: 'Invalid order total' };
     }
 
@@ -63,7 +63,7 @@ export async function createOrder(
         total: total,
         status: 'pending',
         user_id: userId,
-        guest_info: guestInfo ? {
+        guest_info: !userId && guestInfo ? {
           email: guestInfo.email.toLowerCase().trim(),
           name: guestInfo.name.trim(),
           phone: guestInfo.phone.trim(),
@@ -605,4 +605,39 @@ export async function getUsersWithMostDebt(limit = 10) {
   }
 
   return sorted;
+}
+
+export async function reapplyOrderStock(orderId: string): Promise<{ success: boolean; error: string | null }> {
+  try {
+    // Fetch order items
+    const { data: order, error: orderError } = await supabase
+      .from('orders')
+      .select('order_items (product_id, quantity)')
+      .eq('id', orderId)
+      .single();
+    if (orderError || !order || !order.order_items) {
+      return { success: false, error: 'Failed to fetch order items for stock reapplication.' };
+    }
+    const shopId = await getLocationId('shop');
+    if (!shopId) {
+      return { success: false, error: 'Shop location not found.' };
+    }
+    for (const item of order.order_items) {
+      // Get current stock
+      const { data: stockData } = await supabase
+        .from('stock_levels')
+        .select('quantity')
+        .eq('product_id', item.product_id)
+        .eq('location_id', shopId)
+        .single();
+      const newQty = (stockData?.quantity ?? 0) + item.quantity;
+      await supabase
+        .from('stock_levels')
+        .upsert({ product_id: item.product_id, location_id: shopId, quantity: newQty }, { onConflict: 'product_id,location_id' });
+    }
+    return { success: true, error: null };
+  } catch (err) {
+    console.error('Error reapplying stock:', err);
+    return { success: false, error: 'An error occurred while reapplying stock.' };
+  }
 } 

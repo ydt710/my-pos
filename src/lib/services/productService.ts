@@ -1,6 +1,10 @@
 import { supabase } from '$lib/supabase';
 import { cacheProduct, getCachedProduct } from './cacheService';
-import type { Product } from '$lib/types';
+import type { Product } from '$lib/types/index';
+import { writable } from 'svelte/store';
+
+// Centralized products store
+export const productsStore = writable<Product[]>([]);
 
 export async function getProduct(id: string): Promise<Product | null> {
   // Try to get from cache first
@@ -187,5 +191,23 @@ export async function fetchProductsLazy(
       hasMore: false,
       error: 'Failed to fetch products. Please try again later.' 
     };
+  }
+}
+
+// Fetch all products and update the store
+export async function loadAllProducts(): Promise<{ products: Product[]; error: string | null }> {
+  try {
+    const { data, error } = await supabase.from('products').select('*');
+    if (error) {
+      console.error('Error fetching products:', error);
+      productsStore.set([]);
+      return { products: [], error: error.message };
+    }
+    productsStore.set(data || []);
+    return { products: data || [], error: null };
+  } catch (err) {
+    console.error('Unexpected error fetching products:', err);
+    productsStore.set([]);
+    return { products: [], error: 'Failed to fetch products. Please try again later.' };
   }
 } 
