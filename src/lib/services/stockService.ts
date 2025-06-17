@@ -23,9 +23,11 @@ export async function getLocationId(name: string): Promise<string | null> {
 }
 
 // Get stock level for a product at a location
-export async function getStock(productId: string, locationName: string): Promise<number> {
+export async function getStock(productId: string, locationName: string, opts?: { signal?: AbortSignal }): Promise<number> {
   const locationId = await getLocationId(locationName);
   if (!locationId) return 0;
+  // Optionally support abort signal for future fetches
+  if (opts?.signal?.aborted) return 0;
   const { data } = await supabase
     .from('stock_levels')
     .select('quantity')

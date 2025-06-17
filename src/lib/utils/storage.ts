@@ -17,13 +17,13 @@ export async function uploadSignature(file: File): Promise<string> {
 
   if (uploadError) throw uploadError;
 
-  const { data: { signedUrl } } = await supabase.storage
+  const { data } = await supabase.storage
     .from('signatures')
     .createSignedUrl(filePath, 3600);
 
-  if (!signedUrl) throw new Error('Failed to get signed URL');
+  if (!data || !('signedUrl' in data) || !data.signedUrl) throw new Error('Failed to get signed URL');
 
-  return signedUrl;
+  return data.signedUrl;
 }
 
 export async function uploadIdImage(file: File): Promise<string> {
@@ -43,21 +43,21 @@ export async function uploadIdImage(file: File): Promise<string> {
 
   if (uploadError) throw uploadError;
 
-  const { data: { signedUrl } } = await supabase.storage
+  const { data } = await supabase.storage
     .from('id_images')
     .createSignedUrl(filePath, 3600);
 
-  if (!signedUrl) throw new Error('Failed to get signed URL');
+  if (!data || !('signedUrl' in data) || !data.signedUrl) throw new Error('Failed to get signed URL');
 
-  return signedUrl;
+  return data.signedUrl;
 }
 
 export async function getSignedUrl(bucket: 'signatures' | 'id_images', path: string): Promise<string> {
-  const { data: { signedUrl } } = await supabase.storage
+  const { data } = await supabase.storage
     .from(bucket)
     .createSignedUrl(path, 3600);
 
-  if (!signedUrl) throw new Error('Failed to get signed URL');
+  if (!data || !('signedUrl' in data) || !data.signedUrl) throw new Error('Failed to get signed URL');
 
-  return signedUrl;
+  return data.signedUrl;
 } 

@@ -8,6 +8,8 @@
   import { getProductReviews, addReview, updateProductRating } from '$lib/services/reviewService';
   import { getStock } from '$lib/services/stockService';
   import { get } from 'svelte/store';
+  import { debounce, getBalanceColor } from '$lib/utils';
+  import { FLOAT_USER_ID } from '$lib/constants';
   
   interface Review {
     id: string;
@@ -54,6 +56,10 @@
   // Get selected POS user (for custom pricing)
   $: posUser = $selectedPosUser;
   $: effectivePrice = getEffectivePrice({ ...product, id: String(product.id), description: product.description || '', indica: typeof product.indica === 'number' ? product.indica : 0 }, posUser?.id);
+
+  // ARIA live region for dynamic feedback
+  let liveMessage = '';
+  $: if (showSnackbar) liveMessage = snackbarMessage;
 
   function updateStockStatus(stock: number) {
     if ($isPosOrAdmin) {
@@ -214,6 +220,28 @@
     if (index === fullStar && hasHalfStar) return 'M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77V2z';
     return 'M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z';
   }
+
+  function handleAddToCartClick() {
+    handleAddToCart();
+  }
+  function handleQuantityDecrease() {
+    handleQuantityChange(-1);
+  }
+  function handleQuantityIncrease() {
+    handleQuantityChange(1);
+  }
+  function handleQuantityInputChange(event: Event) {
+    handleQuantityInput(event);
+  }
+  function handleQuantityInputBlur(event: Event) {
+    handleQuantityBlur(event);
+  }
+  function handleQuantityInputKeydown(event: KeyboardEvent) {
+    handleQuantityKeydown(event);
+  }
+  function handleQuantityInputClick(event: MouseEvent) {
+    handleQuantityClick(event);
+  }
 </script>
 
 <div class="card-product__border" class:trippy={product.is_special || product.is_new}>
@@ -330,7 +358,7 @@
               <button 
                 class="quantity-btn" 
                 aria-label="Decrease quantity" 
-                on:click|stopPropagation={() => handleQuantityChange(-1)}
+                on:click|stopPropagation={handleQuantityDecrease}
                 disabled={selectedQuantity <= 1 || loading || displayStock <= 0}
               >-</button>
               <input
@@ -339,9 +367,9 @@
                 value={selectedQuantity}
                 min="1"
                 max={displayStock}
-                on:input={handleQuantityInput}
-                on:blur={handleQuantityBlur}
-                on:keydown={handleQuantityKeydown}
+                on:input={handleQuantityInputChange}
+                on:blur={handleQuantityInputBlur}
+                on:keydown={handleQuantityInputKeydown}
                 on:click|stopPropagation
                 disabled={loading || displayStock <= 0}
                 aria-label="Product quantity"
@@ -349,13 +377,13 @@
               <button 
                 class="quantity-btn" 
                 aria-label="Increase quantity" 
-                on:click|stopPropagation={() => handleQuantityChange(1)}
+                on:click|stopPropagation={handleQuantityIncrease}
                 disabled={selectedQuantity >= displayStock || loading || displayStock <= 0}
               >+</button>
             </div>
             <button 
               class="add-to-cart-btn" 
-              on:click|stopPropagation={handleAddToCart}
+              on:click|stopPropagation={handleAddToCartClick}
               disabled={loading || displayStock <= 0}
               aria-label="Add {product.name} to cart"
             >
@@ -416,6 +444,9 @@
     </div>
   </div>
 </div>
+
+<!-- ARIA live region for dynamic feedback -->
+<div aria-live="polite" class="sr-only" style="position:absolute;left:-9999px;">{liveMessage}</div>
 
 {#if showSnackbar}
   <div class="snackbar" class:error={snackbarType === 'error'} transition:fade>

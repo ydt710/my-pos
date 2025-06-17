@@ -1,12 +1,14 @@
 <script lang="ts">
-  import { tick } from 'svelte';
-  import { cartStore, cartNotification, selectedPosUser, fetchCustomPricesForUser, customPrices } from '$lib/stores/cartStore';
+  import { tick, onMount } from 'svelte';
+  import { cartStore, cartNotification, selectedPosUser, fetchCustomPricesForUser, customPrices, getItemCount, getTotal } from '$lib/stores/cartStore';
   import { goto } from '$app/navigation';
   import CartItem from './CartItem.svelte';
   import { supabase } from '$lib/supabase';
   import { fade } from 'svelte/transition';
   import { getUserBalance } from '$lib/services/orderService';
   import { get } from 'svelte/store';
+  import { debounce, getBalanceColor } from '$lib/utils';
+  import { FLOAT_USER_ID, FLOAT_USER_EMAIL } from '$lib/constants';
   
   export let visible = false;
   export let toggleVisibility: () => void;
@@ -26,14 +28,20 @@
   let addAccountError = '';
   let addAccountLoading = false;
   let selectedUserBalance: number | null = null;
+  let searchDebounce: NodeJS.Timeout | null = null;
+  let lastFocusedElement: HTMLElement | null = null;
   
-  const FLOAT_USER_ID = 'ab54f66c-fa1c-40d2-ad2a-d9d5c1603e0f';
-  const FLOAT_USER_EMAIL = 'float@pos.local';
+  // ARIA live region for dynamic feedback
+  let liveMessage = '';
+  $: if (userLoading) liveMessage = 'Searching users...';
+  $: if (addAccountError) liveMessage = addAccountError;
+  $: if ($cartNotification) liveMessage = $cartNotification.message;
   
-  // Clear float user if selected (e.g. from localStorage)
-  const currentSelected = get(selectedPosUser);
-  if (currentSelected && (currentSelected.id === FLOAT_USER_ID || currentSelected.email === FLOAT_USER_EMAIL)) {
-    selectedPosUser.set(null);
+  // Debounced user search
+  const debouncedSearchUsers = debounce(() => searchUsers(), 300);
+  
+  function handleUserSearchInput() {
+    debouncedSearchUsers();
   }
   
   async function searchUsers() {
@@ -72,16 +80,33 @@
     goto('/checkout');
   }
   
-  // When the cart becomes visible, focus it for accessibility
+  // Focus management for sidebar and modal
   $: if (visible) {
-    tick().then(() => cartSidebar?.focus());
+    tick().then(() => {
+      lastFocusedElement = document.activeElement as HTMLElement;
+      cartSidebar?.focus();
+    });
+  }
+  function restoreFocus() {
+    lastFocusedElement?.focus();
   }
   
-  // Handle Escape key to close cart
-  function handleKeydown(e: KeyboardEvent) {
+  // Keyboard handling for sidebar and modal
+  function handleSidebarKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape') {
       toggleVisibility();
+      restoreFocus();
     }
+    // Trap focus in sidebar (implement if needed)
+  }
+  function handleModalKeydown(e: KeyboardEvent) {
+    if (e.key === 'Escape') {
+      showAddAccountModal = false;
+      tick().then(() => {
+        document.getElementById('user-search')?.focus();
+      });
+    }
+    // Trap focus in modal (implement if needed)
   }
   
   // Clear selected user when cart is closed
@@ -90,6 +115,7 @@
     userSearch = '';
     userResults = [];
     customPrices.set({}); // Clear custom prices when cart is closed
+    restoreFocus();
   }
   
   async function addAccount() {
@@ -121,6 +147,9 @@
     selectUser(data);
     showAddAccountModal = false;
     newAccount = { display_name: '', phone_number: '', email: '' };
+    tick().then(() => {
+      document.getElementById('user-search')?.focus();
+    });
   }
   
   $: posUser = $selectedPosUser;
@@ -132,6 +161,9 @@
   }
 </script>
 
+<!-- ARIA live region for dynamic feedback -->
+<div aria-live="polite" class="sr-only" style="position:absolute;left:-9999px;">{liveMessage}</div>
+
 <div 
   class="cart-container {visible ? 'show' : ''}" 
   bind:this={cartSidebar}
@@ -139,10 +171,10 @@
   role="dialog"
   aria-modal="true"
   aria-label="Shopping cart"
-  on:keydown={handleKeydown}
+  on:keydown={handleSidebarKeydown}
 >
   <div class="cart-header">
-    <h2>Your Cart ({cartStore.getItemCount($cartStore)} items)</h2>
+    <h2>Your Cart ({getItemCount($cartStore)} items)</h2>
     <button 
       class="close-btn" 
       aria-label="Close cart" 
@@ -158,7 +190,7 @@
         type="text"
         placeholder="Search name or email..."
         bind:value={userSearch}
-        on:input={searchUsers}
+        on:input={handleUserSearchInput}
         autocomplete="off"
       />
       <button class="add-account-btn" type="button" on:click={() => showAddAccountModal = true}>+ Add Account</button>
@@ -249,7 +281,7 @@
     </div>
     
     <div class="cart-footer">
-      <h3>Total: R{cartStore.getTotal($cartStore)}</h3>
+      <h3>Total: R{getTotal($cartStore)}</h3>
       <button 
         on:click={goToCheckout} 
         class="checkout-btn" 
@@ -510,14 +542,6 @@
     border: 1px solid rgba(255, 255, 255, 0.2);
   }
 
-  .modal.add-account-modal h3 {
-    margin-top: 0;
-    margin-bottom: 1rem;
-    font-size: 1.3rem;
-    color: #333;
-    text-align: center;
-  }
-
   .modal.add-account-modal .form-group {
     margin-bottom: 1rem;
   }
@@ -531,7 +555,6 @@
 
   .modal.add-account-modal input {
     width: 100%;
- 
     border: 1px solid rgba(0, 0, 0, 0.1);
     border-radius: 8px;
     font-size: 1rem;

@@ -43,7 +43,7 @@
   }
 </script>
 
-<div class="modal-backdrop" style="z-index:2000;" on:click={handleCancel}></div>
+<div class="modal-backdrop" style="z-index:2000;" role="button" tabindex="0" on:click={handleCancel} on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleCancel(); }}></div>
 <div class="modal" style="z-index:3001;min-width:320px;max-width:95vw;top:50%;left:50%;transform:translate(-50%,-50%);position:fixed;background:#fff;padding:2rem;border-radius:12px;box-shadow:0 2px 16px rgba(0,0,0,0.2);max-height:90vh;overflow-y:auto;" role="dialog" aria-modal="true" aria-labelledby="modal-title">
   
   <div class="modal-content" role="document">
@@ -110,6 +110,22 @@
             <input id="edit-special-price" type="number" min="0" step="0.01" bind:value={localProduct.special_price} placeholder="Special price" required={localProduct.is_special} />
           </div>
         {/if}
+        <div class="form-group">
+          <label for="bulk-tier-min-0">Bulk Pricing (Price Tiers)</label>
+          <div>
+            {#each localProduct.bulk_prices ?? [] as tier, i (i)}
+              <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem;">
+                <input id={`bulk-tier-min-${i}`} type="number" min="1" step="1" placeholder="Min Qty" bind:value={tier.min_qty} style="width:80px;" required />
+                <input type="number" min="0" step="0.01" placeholder="Price" bind:value={tier.price} style="width:100px;" required />
+                <button type="button" class="secondary-btn" on:click={() => (localProduct.bulk_prices = (localProduct.bulk_prices ?? []).filter((_: number, j: number) => j !== i))}>Remove</button>
+              </div>
+            {/each}
+            <button type="button" class="secondary-btn" on:click={() => {
+              if (!localProduct.bulk_prices) localProduct.bulk_prices = [];
+              localProduct.bulk_prices = [...localProduct.bulk_prices, { min_qty: 1, price: 0 }];
+            }}>Add Tier</button>
+          </div>
+        </div>
       </div>
       <div class="form-actions">
         <button type="submit" class="primary-btn" disabled={loading}>{isAdd ? 'Add' : 'Save'}</button>
@@ -120,7 +136,7 @@
       </button>
     </form>
     {#if showImageModal}
-      <div class="modal-backdrop" style="z-index:2100;" on:click={closeImageModal}></div>
+      <div class="modal-backdrop" style="z-index:2100;" role="button" tabindex="0" on:click={closeImageModal} on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') closeImageModal(); }}></div>
       <div class="modal" style="z-index:2101;min-width:300px;max-width:90vw;top:50%;left:50%;transform:translate(-50%,-50%);position:fixed;background:#fff;padding:1.5rem;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,0.15);">
         <h4>Change Product Image</h4>
         <input type="file" accept="image/*" on:change={handleImageChange} />

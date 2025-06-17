@@ -420,8 +420,8 @@
           </div>
 
           <div class="form-group">
-            <label>Signature</label>
-            <div class="signature-container">
+            <label for="signature-pad">Signature</label>
+            <div class="signature-container" id="signature-pad">
               <SignaturePad
                 bind:this={signaturePad}
                 width={200}
@@ -630,7 +630,7 @@
   </div>
 
   {#if showCameraModal}
-    <div class="modal-backdrop" on:click={stopCamera}></div>
+    <div class="modal-backdrop" role="button" tabindex="0" aria-label="Close camera modal" on:click={stopCamera} on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') stopCamera(); }}></div>
     <div class="modal camera-modal" role="dialog" aria-modal="true">
       <button class="close-btn" on:click={stopCamera} aria-label="Close camera">×</button>
       <div class="camera-container">

@@ -102,7 +102,7 @@
   .admin-nav {
     background: #1a1a1a;
     color: white;
-    padding: 1rem;
+  
     position: fixed;
     top: 0;
     left: 0;
@@ -181,7 +181,7 @@
 
     .nav-brand {
       justify-content: space-between;
-      margin-bottom: 1rem;
+      
     }
 
     .nav-links {

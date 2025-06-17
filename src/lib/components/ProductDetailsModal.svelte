@@ -182,6 +182,16 @@
           <div class="product__price-row">
             <span class="product__price">R{product.price}</span>
           </div>
+          {#if product.bulk_prices && product.bulk_prices.length > 0}
+            <div class="bulk-pricing">
+              <h4>Bulk Pricing</h4>
+              <ul>
+                {#each [...product.bulk_prices].sort((a, b) => a.min_qty - b.min_qty) as tier}
+                  <li>From {tier.min_qty}+: R{tier.price}</li>
+                {/each}
+              </ul>
+            </div>
+          {/if}
           
           <p class="product-description">{product.description || 'No description available.'}</p>
           
@@ -331,7 +341,7 @@
     background: white;
     border-radius: 12px;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    padding: 2rem;
+   
   }
 
   .close-button {

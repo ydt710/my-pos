@@ -456,7 +456,7 @@
 
 <!-- Cart Sidebar Component -->
 {#if cartVisible}
-  <div class="cart-overlay" on:click={() => cartVisible = false} tabindex="-1" style="position: fixed; inset: 0; z-index: 1999; background: transparent;"></div>
+  <div class="cart-overlay" role="button" tabindex="0" aria-label="Close cart sidebar" on:click={() => cartVisible = false} on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { cartVisible = false; } }} style="position: fixed; inset: 0; z-index: 1999; background: transparent;"></div>
 {/if}
 <CartSidebar visible={cartVisible} toggleVisibility={toggleCart} isPosUser={isPosUser} />
 

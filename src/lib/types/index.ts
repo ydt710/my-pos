@@ -17,6 +17,7 @@ export interface Product {
   average_rating?: number;
   review_count?: number;
   quantity?: number; // Optional: for cart and cartStore logic
+  bulk_prices?: { min_qty: number; price: number }[];
 }
 
 export interface CartItem extends Product {

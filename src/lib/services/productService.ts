@@ -1,60 +1,79 @@
 import { supabase } from '$lib/supabase';
-import { cacheProduct, getCachedProduct } from './cacheService';
+import { cacheProduct, getCachedProduct, cleanupProductCache } from './cacheService';
 import type { Product } from '$lib/types/index';
 import { writable } from 'svelte/store';
+import type { PostgrestSingleResponse, PostgrestResponse } from '@supabase/supabase-js';
 
 // Centralized products store
 export const productsStore = writable<Product[]>([]);
 
+// Retry utility for async functions
+async function retry<T>(fn: () => Promise<T>, retries = 2, delay = 500): Promise<T> {
+  let lastErr;
+  for (let i = 0; i <= retries; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      if (i < retries) await new Promise(res => setTimeout(res, delay));
+    }
+  }
+  throw lastErr;
+}
+
 export async function getProduct(id: string): Promise<Product | null> {
-  // Try to get from cache first
+  cleanupProductCache();
   const cachedProduct = getCachedProduct(id);
   if (cachedProduct) {
     return cachedProduct;
   }
-
-  // If not in cache, fetch from database
-  const { data, error } = await supabase
-    .from('products')
-    .select('*')
-    .eq('id', id)
-    .single();
-
-  if (error) {
-    console.error('Error fetching product:', error);
+  // If not in cache, fetch from database with retry
+  try {
+    const { data, error }: PostgrestSingleResponse<Product> = await retry(async () => {
+      return await supabase
+        .from('products')
+        .select('*')
+        .eq('id', id)
+        .single();
+    });
+    if (error) {
+      console.error('Error fetching product:', error);
+      return null;
+    }
+    if (data) {
+      cacheProduct(id, data);
+    }
+    return data;
+  } catch (err) {
+    console.error('Error fetching product (retry):', err);
     return null;
   }
-
-  // Cache the result
-  if (data) {
-    cacheProduct(id, data);
-  }
-
-  return data;
 }
 
 export async function getProducts(category?: string): Promise<Product[]> {
+  cleanupProductCache();
   let query = supabase
     .from('products')
     .select('*');
-
   if (category) {
     query = query.eq('category', category);
   }
-
-  const { data, error } = await query;
-
-  if (error) {
-    console.error('Error fetching products:', error);
+  try {
+    const { data, error }: PostgrestResponse<Product> = await retry(async () => {
+      return await query;
+    });
+    if (error) {
+      console.error('Error fetching products:', error);
+      return [];
+    }
+    (data ?? []).forEach((product: Product) => {
+      cacheProduct(String(product.id), product);
+    });
+    return data || [];
+  } catch (err) {
+    console.error('Error fetching products (retry):', err);
     return [];
   }
-
-  // Cache each product
-  data?.forEach(product => {
-    cacheProduct(String(product.id), product);
-  });
-
-  return data || [];
 }
 
 export async function updateProductQuantity(id: string, quantity: number): Promise<boolean> {

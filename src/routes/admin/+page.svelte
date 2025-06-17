@@ -1524,7 +1524,7 @@
     </section>
 
     {#if editing && showCustomPrices}
-      <div class="modal-backdrop" style="z-index:3000;" on:click={() => showCustomPrices = false}></div>
+      <div class="modal-backdrop" role="button" tabindex="0" aria-label="Close custom prices modal" style="z-index:3000;" on:click={() => showCustomPrices = false} on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') showCustomPrices = false; }}></div>
       <div
         class="modal custom-prices-modal"
         style="
@@ -1554,7 +1554,11 @@
           {#if customPriceUserResults.length > 0}
             <ul style="background:#fff;border:1px solid #eee;max-height:120px;overflow-y:auto;margin:0;padding:0;list-style:none;">
               {#each customPriceUserResults as user}
-                <li style="padding:0.5rem;cursor:pointer;" on:click={() => selectCustomPriceUser(user)}>{user.display_name || user.email} <span style="color:#888;font-size:0.9em;">({user.email})</span></li>
+                <li style="padding:0.5rem;">
+                  <button type="button" style="all:unset;cursor:pointer;width:100%;display:block;" on:click={() => selectCustomPriceUser(user)} on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') selectCustomPriceUser(user); }}>
+                    {user.display_name || user.email} <span style="color:#888;font-size:0.9em;">({user.email})</span>
+                  </button>
+                </li>
               {/each}
             </ul>
           {/if}
@@ -1593,7 +1597,7 @@
     {/if}
 
     {#if showDescriptionModal}
-        <div class="modal-backdrop" style="z-index:2100;" on:click={() => showDescriptionModal = false}></div>
+        <div class="modal-backdrop" role="button" tabindex="0" aria-label="Close description modal" style="z-index:2100;" on:click={() => showDescriptionModal = false} on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') showDescriptionModal = false; }}></div>
         <div class="modal" style="z-index:2101;min-width:350px;max-width:95vw;top:50%;left:50%;transform:translate(-50%,-50%);position:fixed;background:#fff;padding:2rem;border-radius:12px;box-shadow:0 2px 16px rgba(0,0,0,0.2);" role="dialog" aria-modal="true">
             <button class="close-btn" on:click={() => showDescriptionModal = false} aria-label="Close description modal" style="position:absolute;top:1rem;right:1rem;font-size:1.5rem;background:none;border:none;cursor:pointer;">×</button>
             <h3>Edit Description</h3>
@@ -1620,15 +1624,7 @@
         overflow-x: hidden; /* Prevent horizontal scroll */
     }
 
-    .admin-nav {
-        position: sticky;
-        top: 0;
-        background: white;
-        z-index: 100;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-       
-        padding: 1rem 2rem;
-    }
+
 
     .nav-content {
         max-width: 1400px;

@@ -2,6 +2,7 @@
   import type { CartItem as CartItemType } from '$lib/types/index';
   import { cartStore } from '$lib/stores/cartStore';
   import { getEffectivePrice } from '$lib/stores/cartStore';
+  import { FLOAT_USER_ID } from '$lib/constants';
 
   export let item: CartItemType;
   export let loading = false;
@@ -10,18 +11,30 @@
   async function updateQuantity(newQuantity: number) {
     await cartStore.updateQuantity(item.id, newQuantity);
   }
+  function decreaseQuantity() {
+    updateQuantity(item.quantity - 1);
+  }
+  function increaseQuantity() {
+    updateQuantity(item.quantity + 1);
+  }
+  function handleQuantityInput(e: Event) {
+    updateQuantity(Number((e.currentTarget as HTMLInputElement).value));
+  }
+  function removeItem() {
+    cartStore.removeItem(item.id);
+  }
 </script>
 
-<div class="cart-item">
+<div class="cart-item" role="listitem">
   <img src={item.image_url} alt={item.name} />
   <div class="cart-item-info">
     <div class="cart-item-name">{item.name}</div>
-    <div class="cart-item-price">R{getEffectivePrice(item, userId)} × {item.quantity}</div>
-    <div class="cart-item-quantity">
+    <div class="cart-item-price">R{getEffectivePrice(item, userId ?? undefined)} × {item.quantity}</div>
+    <div class="cart-item-quantity" role="group" aria-label="Quantity controls">
       <button 
         class="quantity-btn" 
         aria-label="Decrease quantity" 
-        on:click={() => updateQuantity(item.quantity - 1)}
+        on:click={decreaseQuantity}
         disabled={item.quantity <= 1 || loading}
       >-</button>
       <input
@@ -31,18 +44,18 @@
         bind:value={item.quantity}
         aria-label="Quantity"
         disabled={loading}
-        on:change={(e) => updateQuantity(Number(e.currentTarget.value))}
+        on:change={handleQuantityInput}
       />
       <button 
         class="quantity-btn" 
         aria-label="Increase quantity" 
-        on:click={() => updateQuantity(item.quantity + 1)}
+        on:click={increaseQuantity}
         disabled={loading}
       >+</button>
     </div>
   </div>
   <button 
-    on:click={() => cartStore.removeItem(item.id)} 
+    on:click={removeItem} 
     class="remove-btn"
     aria-label={`Remove ${item.name} from cart`}
     disabled={loading}

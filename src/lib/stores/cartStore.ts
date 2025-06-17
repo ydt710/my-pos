@@ -1,131 +1,154 @@
-import { writable } from 'svelte/store';
+import { writable, derived } from 'svelte/store';
 import type { CartItem, Product, User } from '$lib/types/index';
 import { supabase } from '$lib/supabase';
-import { writable as writableStore } from 'svelte/store';
+import { writable as writableStore, get as getStore } from 'svelte/store';
 import { getStock } from '$lib/services/stockService';
 import { get } from 'svelte/store';
 
-// Create a notification store for cart messages
-export const cartNotification = writable<{ type: 'error' | 'warning' | 'success', message: string } | null>(null);
+// --- Notification Queue ---
+interface Notification {
+  type: 'error' | 'warning' | 'success';
+  message: string;
+  duration?: number;
+}
+const notificationQueue: Notification[] = [];
+export const cartNotification = writable<Notification | null>(null);
+let notificationTimeout: NodeJS.Timeout | null = null;
+function showNextNotification() {
+  if (notificationQueue.length === 0) {
+    cartNotification.set(null);
+    return;
+  }
+  const next = notificationQueue.shift()!;
+  cartNotification.set(next);
+  if (notificationTimeout) clearTimeout(notificationTimeout);
+  notificationTimeout = setTimeout(() => {
+    showNextNotification();
+  }, next.duration ?? 3000);
+}
+function queueNotification(n: Notification) {
+  notificationQueue.push(n);
+  if (getStore(cartNotification) === null) {
+    showNextNotification();
+  }
+}
 
-// Create the cart store
+// --- Cart Persistence ---
+const CART_KEY = 'cartItems';
+function saveCartToStorage(items: CartItem[]) {
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem(CART_KEY, JSON.stringify(items));
+  }
+}
+function loadCartFromStorage(): CartItem[] {
+  if (typeof localStorage !== 'undefined') {
+    const stored = localStorage.getItem(CART_KEY);
+    if (stored) {
+      try {
+        return JSON.parse(stored);
+      } catch {}
+    }
+  }
+  return [];
+}
+
+// --- Cart Store ---
 function createCartStore() {
-  const { subscribe, set, update } = writable<CartItem[]>([]);
+  const { subscribe, set, update } = writable<CartItem[]>(loadCartFromStorage());
+
+  subscribe(items => saveCartToStorage(items));
 
   return {
     subscribe,
     addItem: async (product: Product) => {
-      // Check current shop stock level
-      const currentStock = await getStock(product.id, 'shop');
-      if (currentStock <= 0) {
-        cartNotification.set({ type: 'error', message: 'This item is out of stock.' });
+      // AbortController for race condition safety
+      const controller = new AbortController();
+      try {
+        const currentStock = await getStock(product.id, 'shop', { signal: controller.signal });
+        if (currentStock <= 0) {
+          queueNotification({ type: 'error', message: 'This item is out of stock.' });
+          return false;
+        }
+        // Use custom price if available for selected POS user, else use bulk price
+        let selectedUserId = null;
+        if (typeof window !== 'undefined') {
+          const stored = localStorage.getItem('selectedPosUser');
+          if (stored) {
+            try {
+              const user = JSON.parse(stored);
+              selectedUserId = user?.id;
+            } catch {}
+          }
+        }
+        let requestedQuantity = product.quantity || 1;
+        let price = getEffectivePrice(product, selectedUserId, requestedQuantity);
+        let success = true;
+        update(items => {
+          const existing = items.find(item => String(item.id) === String(product.id));
+          if (existing) {
+            const newQuantity = existing.quantity + requestedQuantity;
+            if (newQuantity > currentStock) {
+              queueNotification({ type: 'warning', message: `Only ${currentStock} items available in stock.` });
+              success = false;
+              return items;
+            }
+            price = getEffectivePrice(product, selectedUserId, newQuantity);
+            return items.map(item =>
+              String(item.id) === String(product.id)
+                ? { ...item, quantity: Math.min(currentStock, newQuantity), price }
+                : item
+            );
+          } else {
+            if (requestedQuantity > currentStock) {
+              queueNotification({ type: 'warning', message: `Only ${currentStock} items available in stock.` });
+              return [...items, { ...product, quantity: currentStock, price }];
+            }
+            return [...items, { ...product, quantity: requestedQuantity, price }];
+          }
+        });
+        if (success) {
+          queueNotification({ type: 'success', message: 'Item added to cart.' });
+        }
+        return success;
+      } catch (err) {
+        queueNotification({ type: 'error', message: 'Error checking stock. Please try again.' });
         return false;
       }
-
-      // Use custom price if available for selected POS user
-      let selectedUserId = null;
-      if (typeof window !== 'undefined') {
-        const stored = localStorage.getItem('selectedPosUser');
-        if (stored) {
-          try {
-            const user = JSON.parse(stored);
-            selectedUserId = user?.id;
-          } catch {}
-        }
-      }
-      let price = product.price;
-      if (selectedUserId) {
-        const prices = get(customPrices);
-        if (prices[product.id]) price = prices[product.id];
-      }
-
-      let success = true;
-      update(items => {
-        const existing = items.find(item => String(item.id) === String(product.id));
-        const requestedQuantity = product.quantity || 1; // Fallback to 1 if not specified
-
-        if (existing) {
-          // Check if adding more would exceed stock
-          const newQuantity = existing.quantity + requestedQuantity;
-          if (newQuantity > currentStock) {
-            cartNotification.set({ 
-              type: 'warning', 
-              message: `Only ${currentStock} items available in stock.`
-            });
-            success = false;
-            return items;
-          }
-          
-          // Update existing item quantity
-          return items.map(item =>
-            String(item.id) === String(product.id)
-              ? { ...item, quantity: Math.min(currentStock, newQuantity), price }
-              : item
-          );
-        } else {
-          // Check if initial quantity would exceed stock
-          if (requestedQuantity > currentStock) {
-            cartNotification.set({ 
-              type: 'warning', 
-              message: `Only ${currentStock} items available in stock.`
-            });
-            // Add item with maximum available quantity
-            return [...items, { ...product, quantity: currentStock, price }];
-          }
-          
-          // Add new item with requested quantity
-          return [...items, { ...product, quantity: requestedQuantity, price }];
-        }
-      });
-
-      if (success) {
-        cartNotification.set({ 
-          type: 'success', 
-          message: 'Item added to cart.' 
-        });
-        // Clear success message after 3 seconds
-        setTimeout(() => cartNotification.set(null), 3000);
-      }
-
-      return success;
     },
     updateQuantity: async (productId: string | number, newQuantity: number) => {
       if (newQuantity < 1) {
-        cartNotification.set({ type: 'error', message: 'Quantity must be at least 1.' });
+        queueNotification({ type: 'error', message: 'Quantity must be at least 1.' });
         return false;
       }
-
-      // Check current shop stock level
-      const currentStock = await getStock(String(productId), 'shop');
-      if (currentStock <= 0) {
-        cartNotification.set({ type: 'error', message: 'This item is out of stock.' });
-        return false;
-      }
-
-      if (newQuantity > currentStock) {
-        cartNotification.set({ 
-          type: 'warning', 
-          message: `Only ${currentStock} items available in stock.` 
-        });
-        // Update to maximum available
+      try {
+        const currentStock = await getStock(String(productId), 'shop');
+        if (currentStock <= 0) {
+          queueNotification({ type: 'error', message: 'This item is out of stock.' });
+          return false;
+        }
+        if (newQuantity > currentStock) {
+          queueNotification({ type: 'warning', message: `Only ${currentStock} items available in stock.` });
+          update(items => {
+            return items.map(item =>
+              String(item.id) === String(productId)
+                ? { ...item, quantity: currentStock }
+                : item
+            );
+          });
+          return false;
+        }
         update(items => {
           return items.map(item =>
             String(item.id) === String(productId)
-              ? { ...item, quantity: currentStock }
+              ? { ...item, quantity: newQuantity }
               : item
           );
         });
+        return true;
+      } catch (err) {
+        queueNotification({ type: 'error', message: 'Error updating quantity. Please try again.' });
         return false;
       }
-
-      update(items => {
-        return items.map(item =>
-          String(item.id) === String(productId)
-            ? { ...item, quantity: newQuantity }
-            : item
-        );
-      });
-      return true;
     },
     removeItem: (productId: string | number) => {
       update(items => items.filter(item => String(item.id) !== String(productId)));
@@ -133,17 +156,14 @@ function createCartStore() {
     clearCart: () => {
       set([]);
       cartNotification.set(null);
-    },
-    getTotal: (items: CartItem[]) => {
-      return items.reduce((total, item) => total + item.price * item.quantity, 0);
-    },
-    getItemCount: (items: CartItem[]) => {
-      return items.reduce((count, item) => count + item.quantity, 0);
+      saveCartToStorage([]);
     }
   };
 }
 
 export const cartStore = createCartStore();
+export const cartTotal = derived(cartStore, $cartStore => $cartStore.reduce((total, item) => total + item.price * item.quantity, 0));
+export const cartItemCount = derived(cartStore, $cartStore => $cartStore.reduce((count, item) => count + item.quantity, 0));
 
 export type PosUser = User | null;
 
@@ -217,7 +237,21 @@ export async function fetchCustomPricesForUser(userId: string) {
 }
 
 // Helper to get the effective price for a product and user
-export function getEffectivePrice(product: Product, userId?: string): number {
+export function getEffectivePrice(product: Product, userId?: string, quantity: number = 1): number {
   const prices = get(customPrices);
-  return (userId && prices[product.id]) ? prices[product.id] : product.price;
+  if (userId && prices[product.id]) return prices[product.id];
+  if (product.bulk_prices && Array.isArray(product.bulk_prices) && product.bulk_prices.length > 0) {
+    // Sort tiers descending by min_qty, find the best match
+    const sorted = [...product.bulk_prices].sort((a, b) => b.min_qty - a.min_qty);
+    const tier = sorted.find(t => quantity >= t.min_qty);
+    if (tier) return tier.price;
+  }
+  return product.price;
+}
+
+export function getTotal(items: CartItem[]) {
+  return items.reduce((total, item) => total + item.price * item.quantity, 0);
+}
+export function getItemCount(items: CartItem[]) {
+  return items.reduce((count, item) => count + item.quantity, 0);
 } 

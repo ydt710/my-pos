@@ -3,12 +3,14 @@
 	import { onMount, onDestroy } from 'svelte';
 	import Snackbar from '$lib/components/Snackbar.svelte';
 	import { snackbarStore, showSnackbar } from '$lib/stores/snackbarStore';
-	import { updateIsPosOrAdmin } from '$lib/stores/cartStore';
+	import { updateIsPosOrAdmin, cartNotification } from '$lib/stores/cartStore';
 	import '../styles/global.css';
 	import { fade, scale } from 'svelte/transition';
 
 	let showAgeModal = false;
 	let channel: any = null;
+	let liveMessage = '';
+	$: if ($cartNotification) liveMessage = $cartNotification.message;
 
 	onMount(async () => {
 		const { data: { user } } = await supabase.auth.getUser();
@@ -68,7 +70,11 @@
 	</div>
 {/if}
 
-<slot />
+<div aria-live="polite" class="sr-only" style="position:absolute;left:-9999px;">{liveMessage}</div>
+<main>
+	<slot />
+</main>
+
 <Snackbar {...$snackbarStore} />
 
 <style>

@@ -1,4 +1,4 @@
-import { writable, derived } from 'svelte/store';
+import { writable, derived, get } from 'svelte/store';
 
 // Cache duration in milliseconds (5 minutes)
 const CACHE_DURATION = 5 * 60 * 1000;
@@ -30,21 +30,18 @@ function cleanExpiredCache(cache: Record<string, CacheEntry<any>>): Record<strin
 
 // Product cache functions
 export function cacheProduct(id: string, data: any) {
-  productCache.update(cache => ({
-    ...cache,
-    [id]: { data, timestamp: Date.now() }
-  }));
+  productCache.update(cache => {
+    return { ...cache, [id]: { data, timestamp: Date.now() } };
+  });
 }
 
 export function getCachedProduct(id: string) {
-  let result: any = null;
-  productCache.subscribe(cache => {
-    const entry = cache[id];
-    if (entry && isCacheValid(entry.timestamp)) {
-      result = entry.data;
-    }
-  })();
-  return result;
+  const cache = get(productCache);
+  const entry = cache[id];
+  if (entry && isCacheValid(entry.timestamp)) {
+    return entry.data;
+  }
+  return null;
 }
 
 // Profile cache functions
@@ -114,4 +111,18 @@ export const cachedCreditLedger = derived(creditLedgerCache, $cache =>
 // Add a function to clear the product cache immediately
 export function clearProductCache() {
   productCache.set({});
+}
+
+// Periodic cleanup for expired cache entries
+export function cleanupProductCache() {
+  productCache.update(cache => {
+    const now = Date.now();
+    const cleaned: Record<string, CacheEntry<any>> = {};
+    for (const [id, entry] of Object.entries(cache)) {
+      if (isCacheValid(entry.timestamp)) {
+        cleaned[id] = entry;
+      }
+    }
+    return cleaned;
+  });
 } 
