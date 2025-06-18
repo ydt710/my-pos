@@ -48,11 +48,16 @@
           *,
           order_items (
             *,
-            product:products (
+            products:product_id (
               name,
-              price,
               image_url
             )
+          ),
+          profiles:user_id (
+            email,
+            display_name,
+            phone_number,
+            address
           )
         `)
         .eq('user_id', profile.id)
@@ -61,7 +66,10 @@
 
       if (ordersError) throw ordersError;
 
-      orders = ordersData || [];
+      orders = (ordersData || []).map(order => ({
+        ...order,
+        user: order.profiles || undefined
+      }));
     } catch (err) {
       console.error('Error fetching orders:', err);
       error = 'Failed to load orders. Please try again.';

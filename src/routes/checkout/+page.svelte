@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { cartStore, selectedPosUser } from '$lib/stores/cartStore';
-  import { createOrder, logPaymentToLedger, getUserBalance, updateOrderStatus } from '$lib/services/orderService';
+  import { cartStore, selectedPosUser, getTotal, getItemCount } from '$lib/stores/cartStore';
+  import { createOrder, getUserBalance, updateOrderStatus, payOrder } from '$lib/services/orderService';
   import { goto } from '$app/navigation';
   import type { CartItem } from '$lib/types/index';
   import type { PosUser } from '$lib/stores/cartStore';
@@ -82,14 +82,24 @@
     goto('/');
   }
   
-  async function updateQuantity(item: CartItem, newQuantity: number) {
+  // Debounce utility
+  function debounce<T extends (...args: any[]) => void>(fn: T, delay: number): T {
+    let timeout: ReturnType<typeof setTimeout>;
+    return ((...args: any[]) => {
+      clearTimeout(timeout);
+      timeout = setTimeout(() => fn(...args), delay);
+    }) as T;
+  }
+
+  // Debounced updateQuantity
+  const debouncedUpdateQuantity = debounce(async (item: CartItem, newQuantity: number) => {
     const shopStock = await getStock(item.id, 'shop');
     if (newQuantity > shopStock) {
       cartStore.updateQuantity(item.id, shopStock);
     } else {
       cartStore.updateQuantity(item.id, newQuantity);
     }
-  }
+  }, 300);
 
   function validateGuestInfo(): string | null {
     if (isGuest) {
@@ -139,153 +149,52 @@
     loading = true;
     success = '';
 
-    const total = cartStore.getTotal($cartStore);
-
-    // If POS mode and no customer selected, treat as guest
-    const useGuest = isGuest || (!isGuest && (!posUser || !posUser.id));
-    let debt = 0;
-    let paymentAmount = 0;
+    const total = getTotal($cartStore);
     let paymentUserId = null;
-    let overpayment = 0;
-    let currentUserDebt = 0;
-    let userProfileId = undefined;
     if (!isGuest && posUser && posUser.id) {
-      // Fetch current user balance from ledger
-      let userBalance = await getUserBalance(posUser.id);
-      let userCredit = userBalance > 0 ? userBalance : 0;
-      let userDebt = userBalance < 0 ? Math.abs(userBalance) : 0;
-      let totalDue = Math.max(total + userDebt - userCredit, 0);
-      creditUsed = Math.min(userCredit, total + userDebt);
-      // If credit covers the whole order, set cashGiven to 0
-      if (creditUsed >= total + userDebt) {
-        cashGiven = 0;
-      }
-      const cash = Number(cashGiven) || 0;
-      paymentAmount = Math.min(cash, totalDue); // Only pay up to the total due
-      overpayment = Math.max(0, cash - totalDue);
-      debt = totalDue - Math.min(cash, totalDue);
       paymentUserId = posUser.id;
-      currentUserDebt = -userDebt; // For backend compatibility
-    }
-
-    // For regular logged-in users (not POS), fetch their profile id
-    if (!isGuest && (!isPosUser || !posUser || !posUser.id)) {
+    } else if (!isGuest) {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
-        const { data: profile, error: profileError } = await supabase
+        const { data: profile } = await supabase
           .from('profiles')
           .select('id')
           .eq('auth_user_id', user.id)
           .maybeSingle();
         if (profile && profile.id) {
-          userProfileId = profile.id;
+          paymentUserId = profile.id;
         }
       }
     }
-
-    // Enforce: Cannot track debt for guest orders (no selected customer) only in POS mode
-    if (isPosUser && useGuest && Number(cashGiven) < total) {
-      error = 'Cannot track debt for guest orders. Please select or create a customer account.';
+    if (isGuest) {
+      error = 'Guest checkout is not supported in the new system. Please log in or select a customer.';
       loading = false;
       return;
     }
-
-    // Before calling createOrder
-    let finalUserId = undefined;
-    if (isPosUser && posUser && posUser.id) {
-      finalUserId = posUser.id;
-    } else if (!isGuest && userProfileId) {
-      finalUserId = userProfileId;
-    }
-    console.log('Checkout debug:', {
-      isGuest,
-      isPosUser,
-      posUserId: posUser?.id,
-      userProfileId,
-      finalUserId,
-      guestInfo
-    });
-    if (!isGuest && !finalUserId) {
+    if (!paymentUserId) {
       error = 'Could not determine user for this order. Please select a customer or log in again.';
       loading = false;
       return;
     }
-
     try {
       const cash = Number(cashGiven) || 0;
-      // For guests, change is cash - total; for users, change/credit is only if cash > totalDue
-      let change = 0;
-      if (!isGuest && posUser && posUser.id) {
-        const totalDue = total + Math.abs(currentUserDebt);
-        change = extraCashOption === 'change' ? Math.max(0, cash - totalDue) : 0;
-      } else {
-        change = Math.max(0, cash - total);
-      }
-      const result = await createOrder(
-        total,
-        $cartStore,
-        isGuest ? guestInfo : undefined,
-        finalUserId,
-        paymentMethod,
-        debt,
-        cash,
-        change,
-        isPosUser && posUser && posUser.id ? true : false,
-        extraCashOption,
-        currentUserDebt,
-        creditUsed
-      );
-
+      const items = $cartStore.map(item => ({
+        product_id: item.id,
+        quantity: item.quantity,
+        price: item.price
+      }));
+      const result = await payOrder(paymentUserId, total, cash, paymentMethod, items);
       if (result.success) {
-        // Log guest payments to float user if no customer is selected
-        if (isGuest && Number(cashGiven) > 0) {
-          // Only log to float user for true guest orders
-          const cashInAmount = Math.min(Number(cashGiven), total);
-          console.log('Logging guest payment to float user:', FLOAT_USER_ID, cashInAmount);
-          await logPaymentToLedger(FLOAT_USER_ID, cashInAmount, result.orderId, 'Guest payment (float)', paymentMethod);
-        }
-        // Update order status to completed if POS user
-        if (isPosUser && result.orderId) {
-          const { success: statusSuccess, error: statusError } = await updateOrderStatus(result.orderId, 'completed');
-          if (!statusSuccess) {
-            console.error('Failed to update order status to completed:', statusError);
-            // Optionally, show error to user
-            error = 'Order placed, but failed to mark as completed.';
-          }
-        }
-        // Update balance from ledger
-        if (!isGuest && posUser && posUser.id) {
-          posUserBalance = await getUserBalance(posUser.id);
-        }
         success = '🎉 Order placed successfully! Thank you for your purchase.';
-        if (overpayment > 0 && extraCashOption === 'credit') {
-          success += ` (R${overpayment.toFixed(2)} credited to account)`;
-        }
-        if (isGuest) {
-          success += ' We\'ll send your order details to ' + guestInfo.email;
-        }
         cartStore.clearCart();
         cashGiven = '';
-        // Clear selected POS user after order
         selectedPosUser.set(null);
         setTimeout(() => {
           success = '';
           goto('/');
-        }, 5000);
+        }, 2000);
       } else {
         error = result.error || 'Payment failed. Please try again.';
-        if (error.includes('quantity') || error.includes('stock')) {
-          await Promise.all($cartStore.map(async (item) => {
-            const { data } = await supabase
-              .from('products')
-              .select('quantity')
-              .eq('id', item.id)
-              .single();
-            if (data && data.quantity < item.quantity) {
-              cartStore.updateQuantity(item.id, data.quantity);
-            }
-          }));
-        }
       }
     } catch (err) {
       console.error('Payment error:', err);
@@ -295,61 +204,51 @@
     }
   }
 
-  // Watch for POS user change and update balance from ledger
-  $: {
-    const posUser = get(selectedPosUser);
-    if (posUser && posUser.id) {
-      getUserBalance(posUser.id).then(balance => {
-        posUserBalance = balance;
-      });
-    } else {
-      posUserBalance = null;
-    }
-  }
+  // Remove expensive $: blocks for user balance and credit
+  let startingCredit = 0;
+  let remainingCredit = 0;
+  let lastSelectedCustomerId: string | null = null;
 
-  // Optionally, subscribe to selectedPosUser for reactivity
-  const unsubscribe = selectedPosUser.subscribe((val) => { selectedCustomer = val; });
+  const unsubscribe = selectedPosUser.subscribe(async (val) => {
+    selectedCustomer = val;
+    if (val && val.id && val.id !== lastSelectedCustomerId) {
+      lastSelectedCustomerId = val.id;
+      posUserBalance = await getUserBalance(val.id);
+      startingCredit = posUserBalance > 0 ? posUserBalance : 0;
+      const userDebt = posUserBalance < 0 ? Math.abs(posUserBalance) : 0;
+      creditUsed = Math.min(startingCredit, getTotal($cartStore) + userDebt);
+      remainingCredit = Math.max(0, startingCredit - creditUsed);
+      // If credit covers the whole order, set cashGiven to 0
+      if (creditUsed >= getTotal($cartStore) + userDebt) {
+        cashGiven = 0;
+      }
+    } else if (!val || !val.id) {
+      posUserBalance = null;
+      startingCredit = 0;
+      remainingCredit = 0;
+      creditUsed = 0;
+    }
+  });
   onDestroy(unsubscribe);
 
   // Set cashGiven to total by default when payment section is shown
   $: if (!isGuest && (!selectedCustomer || !selectedCustomer.id)) {
     // POS guest mode
     if ($cartStore.length > 0) {
-      const total = cartStore.getTotal($cartStore);
+      const total = getTotal($cartStore);
       if (cashGiven === '' || cashGiven === 0) {
         cashGiven = total;
       }
     }
   }
 
-  $: orderTotal = cartStore.getTotal($cartStore);
+  $: orderTotal = getTotal($cartStore);
   $: floatChange = !isGuest && cashGiven !== '' ? Number(cashGiven) - orderTotal : 0;
 
   // Derived values for summary
   $: cashPaid = Number(cashGiven) || 0;
   $: netPaid = cashPaid + creditUsed;
   $: outstandingDebt = Math.max(0, orderTotal - netPaid);
-
-  // Track starting and remaining credit for POS user
-  let startingCredit = 0;
-  let remainingCredit = 0;
-
-  $: if (!isGuest && selectedCustomer && selectedCustomer.id && $cartStore.length > 0) {
-    getUserBalance(selectedCustomer.id).then(userBalance => {
-      startingCredit = userBalance > 0 ? userBalance : 0;
-      const userDebt = userBalance < 0 ? Math.abs(userBalance) : 0;
-      creditUsed = Math.min(startingCredit, orderTotal + userDebt);
-      remainingCredit = Math.max(0, startingCredit - creditUsed);
-      // If credit covers the whole order, set cashGiven to 0123456
-      if (creditUsed >= orderTotal + userDebt) {
-        cashGiven = 0;
-      }
-    });
-  } else {
-    creditUsed = 0;
-    startingCredit = 0;
-    remainingCredit = 0;
-  }
 </script>
 
 <StarryBackground />
@@ -374,7 +273,7 @@
     <div class="order-review">
       <h2>Order Review</h2>
       <div class="cart-items">
-        {#each $cartStore as item}
+        {#each $cartStore as item (item.id)}
           <div class="cart-item">
             <img src={item.image_url} alt={item.name} />
             <div class="item-details">
@@ -383,7 +282,7 @@
               <div class="quantity-controls">
                 <button 
                   class="quantity-btn" 
-                  on:click={() => updateQuantity(item, item.quantity - 1)}
+                  on:click={() => debouncedUpdateQuantity(item, item.quantity - 1)}
                   disabled={item.quantity <= 1}
                 >-</button>
                 <input
@@ -391,11 +290,11 @@
                   min="1"
                   class="quantity-input"
                   bind:value={item.quantity}
-                  on:change={async (e) => await updateQuantity(item, Number(e.currentTarget.value))}
+                  on:change={async (e) => debouncedUpdateQuantity(item, Number(e.currentTarget.value))}
                 />
                 <button 
                   class="quantity-btn" 
-                  on:click={() => updateQuantity(item, item.quantity + 1)}
+                  on:click={() => debouncedUpdateQuantity(item, item.quantity + 1)}
                   disabled={item.quantity >= 99}
                 >+</button>
               </div>
@@ -489,7 +388,7 @@
         </div>
         <div class="summary-row">
           <span>Items:</span>
-          <span>{cartStore.getItemCount($cartStore)}</span>
+          <span>{getItemCount($cartStore)}</span>
         </div>
         {#if isPosUser}
           {#if selectedCustomer && selectedCustomer.id}

@@ -1,10 +1,9 @@
-export interface CreditLedgerEntry {
+export interface Transaction {
   id: string;
   user_id: string;
-  type: 'order' | 'payment' | 'refund' | 'adjustment' | 'credit_used';
-  amount: number;
   order_id?: string;
-  created_at: string;
-  note?: string;
+  amount: number;
   method?: string;
+  type: 'payment' | 'refund' | 'debt' | 'credit';
+  created_at: string;
 } 

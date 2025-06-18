@@ -61,6 +61,30 @@
       });
     }
 
+    // Compress and resize image before embedding in PDF
+    async function compressImage(file: File, maxWidth = 800, quality = 0.7): Promise<string> {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          img.onload = () => {
+            const scale = Math.min(1, maxWidth / img.width);
+            const canvas = document.createElement('canvas');
+            canvas.width = img.width * scale;
+            canvas.height = img.height * scale;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return reject('No canvas context');
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            resolve(canvas.toDataURL('image/jpeg', quality));
+          };
+          img.onerror = reject;
+          img.src = e.target?.result as string;
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+
     async function handleIdImageCapture(event: Event) {
       const input = event.target as HTMLInputElement;
       if (!input.files?.length) return;
@@ -68,20 +92,18 @@
       const file = input.files[0];
       if (!file) return;
       
-      // Validate file type
       if (!file.type.startsWith('image/')) {
-        error = 'Please upload an image file';
+        showSnackbar('Please upload an image file');
         return;
       }
       
-      // Validate file size (max 5MB)
       if (file.size > 5 * 1024 * 1024) {
-        error = 'Image size should be less than 5MB';
+        showSnackbar('Image size should be less than 5MB');
         return;
       }
       
       idImageFile = file;
-      idImagePreview = await fileToDataUrl(file); // Use Data URL
+      idImagePreview = await compressImage(file, 800, 0.7);
     }
 
     async function startCamera() {
@@ -108,7 +130,7 @@
         }
       } catch (err) {
         console.error('Error accessing camera:', err);
-        error = 'Could not access camera. Please check your permissions.';
+        showSnackbar('Could not access camera. Please check your permissions.');
         showCameraModal = false;
       }
     }
@@ -141,7 +163,7 @@
         // Create a file from the blob
         const file = new File([blob], 'id-photo.jpg', { type: 'image/jpeg' });
         idImageFile = file;
-        idImagePreview = await fileToDataUrl(file); // Use Data URL
+        idImagePreview = await compressImage(file, 800, 0.7); // Use compressed Data URL
         
         // Stop camera and close modal
         stopCamera();
@@ -160,21 +182,33 @@
       }
     }
 
+    // Debounce utility for signature pad redraw
+    function debounce<T extends (...args: any[]) => void>(fn: T, delay: number): T {
+      let timeout: ReturnType<typeof setTimeout>;
+      return function(this: any, ...args: any[]) {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => fn.apply(this, args), delay);
+      } as T;
+    }
+
+    // Debounced signature change handler
+    const debouncedSignatureChange = debounce(handleSignatureChange, 50);
+
     async function signup() {
       if (isSignatureEmpty) {
-        error = 'Please provide your signature';
+        showSnackbar('Please provide your signature');
         return;
       }
 
       if (!idImageFile) {
-        error = 'Please provide your ID image';
+        showSnackbar('Please provide your ID image');
         return;
       }
 
       loading = true;
       error = '';
-      success = ''; // Clear previous success messages
-      signedContractDownloadUrl = null; // Clear previous download URL
+      success = '';
+      signedContractDownloadUrl = null;
 
       try {
         // Create user account first
@@ -258,9 +292,9 @@
 
       } catch (err) {
         console.error('Error during signup:', err);
-        error = err instanceof Error ? err.message : 'An error occurred during signup';
-        success = ''; // Clear success message on error
-        signedContractDownloadUrl = null; // Clear download URL on error
+        showSnackbar(err instanceof Error ? err.message : 'An error occurred during signup');
+        success = '';
+        signedContractDownloadUrl = null;
       } finally {
         loading = false;
         // Clear form fields here to ensure it always happens when loading is false
@@ -304,7 +338,7 @@
       const opt = {
         margin: 0.5,
         filename: 'contract.pdf',
-        image: { type: 'jpeg', quality: 0.98 },
+        image: { type: 'jpeg', quality: 0.7 }, // Lowered quality for smaller PDF
         html2canvas: { scale: 2 },
         jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' }
       };
@@ -328,12 +362,9 @@
       {#if logoUrl}
         <img src={logoUrl} alt="Logo" class="logo" />
       {/if}
-      <h1>Create Account</h1>
-      <p class="subtitle">Join us today</p>
-
-      {#if error}
-        <div class="error" transition:fade>{error}</div>
-      {:else if signedContractDownloadUrl}
+      <h1 style="text-align:center;color:wheat">Create Account</h1>
+      <h1 style="text-align:center;color:wheat">Join us today</h1>
+      {#if signedContractDownloadUrl}
         <div class="success" transition:fade>
           <p>Account created successfully!</p>
           <p>Your contract is ready.</p>
@@ -424,9 +455,9 @@
             <div class="signature-container" id="signature-pad">
               <SignaturePad
                 bind:this={signaturePad}
-                width={200}
-                height={100}
-                on:change={handleSignatureChange}
+                width={320}
+                height={160}
+                on:change={debouncedSignatureChange}
               />
               {#if isSignatureEmpty}
                 <div class="signature-hint">Please sign above</div>
@@ -599,12 +630,16 @@
                   Name: {firstName} {lastName}<br>
                   Signature:<br>
                   {#if signatureDataUrl}
-                    <img src={signatureDataUrl} alt="Signature" style="width:200px;"/>
+                    <div class="no-break">
+                      <img src={signatureDataUrl} alt="Signature" style="width:200px;"/>
+                    </div>
                   {/if}
                   <br>
                   ID/Driver's License:<br>
                   {#if idImagePreview}
-                    <img src={idImagePreview} alt="ID" style="width:400px; margin-top: 8px;"/>
+                    <div class="no-break">
+                      <img src={idImagePreview} alt="ID" style="width:400px; margin-top: 8px;"/>
+                    </div>
                   {/if}
                   <br>
                 </p>
@@ -653,8 +688,14 @@
   {/if}
 
   <style>
-    input {
-      text-align: center;
+    html, body {
+      overflow-x: hidden;
+      max-width: 100vw;
+    }
+
+    body {
+      width: 100vw;
+      box-sizing: border-box;
     }
 
     .auth-container {
@@ -662,18 +703,24 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      padding: 2rem;
+      
       position: relative;
       z-index: 1;
+      max-width: 100vw;
+      box-sizing: border-box;
+      overflow-x: hidden;
     }
 
     .auth-card {
       backdrop-filter: blur(10px);
-      padding: 1.5rem;
+     
       border-radius: 16px;
       box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
       max-width: 400px;
+      width: 100%;
       border: 1px solid rgba(255, 255, 255, 0.2);
+      box-sizing: border-box;
+      overflow-x: hidden;
     }
 
     .logo {
@@ -681,24 +728,21 @@
       height: auto;
       margin: 0 auto 2rem;
       display: block;
+      max-width: 100%;
     }
 
-    h1 {
-      font-size: 2rem;
-      color: wheat;
-      margin: 0 0 0.5rem;
-      text-align: center;
-    }
-
-    .subtitle {
-      color: #ffffff;
-      text-align: center;
-      margin-bottom: 2rem;
+    h1, .subtitle, .auth-footer, label, .form-group, .agreement-content {
+      max-width: 100%;
+      box-sizing: border-box;
+      word-break: break-word;
+      overflow-wrap: break-word;
     }
 
     .form-group {
       margin-bottom: 1.5rem;
       text-align: center;
+      max-width: 100%;
+      box-sizing: border-box;
     }
 
     label {
@@ -706,21 +750,26 @@
       margin-bottom: 0.5rem;
       color: #e0e0e0;
       font-weight: 500;
+      max-width: 100%;
+      box-sizing: border-box;
+    }
+
+    input, button, .submit-btn, .link-btn {
+      max-width: 100%;
+      box-sizing: border-box;
+      word-break: break-word;
+      overflow-wrap: break-word;
     }
 
     input {
-      width: 50%;
+      width: 100%;
       border: 1px solid rgba(0, 0, 0, 0.1);
       border-radius: 8px;
       font-size: 1rem;
       transition: all 0.2s;
       background: rgba(255, 255, 255, 0.9);
-    }
-
-    input:focus {
-      outline: none;
-      border-color: #2196f3;
-      box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.1);
+      text-align: center;
+      box-sizing: border-box;
     }
 
     .password-hint {
@@ -728,6 +777,10 @@
       margin-top: 0.5rem;
       color: #666;
       font-size: 0.875rem;
+      max-width: 100%;
+      box-sizing: border-box;
+      word-break: break-word;
+      overflow-wrap: break-word;
     }
 
     .submit-btn {
@@ -745,6 +798,10 @@
       align-items: center;
       justify-content: center;
       gap: 0.5rem;
+      box-sizing: border-box;
+      max-width: 100%;
+      word-break: break-word;
+      overflow-wrap: break-word;
     }
 
     .submit-btn:hover:not(:disabled) {
@@ -756,6 +813,13 @@
     .submit-btn:disabled {
       background: #e0e0e0;
       cursor: not-allowed;
+    }
+
+    .error, .success {
+      max-width: 100%;
+      box-sizing: border-box;
+      word-break: break-word;
+      overflow-wrap: break-word;
     }
 
     .error {
@@ -782,6 +846,8 @@
       text-align: center;
       margin-top: 1.5rem;
       color: #666;
+      max-width: 100%;
+      box-sizing: border-box;
     }
 
     .link-btn {
@@ -793,6 +859,10 @@
       cursor: pointer;
       padding: 0;
       font: inherit;
+      max-width: 100%;
+      box-sizing: border-box;
+      word-break: break-word;
+      overflow-wrap: break-word;
     }
 
     .link-btn:hover {
@@ -818,11 +888,11 @@
       .auth-container {
         padding: 1rem;
       }
-
       .auth-card {
-        padding: 1.5rem;
+       
+        max-width: 100vw;
+        width: 100vw;
       }
-
       h1 {
         font-size: 1.75rem;
       }
@@ -835,6 +905,9 @@
       text-align: center;
       background: #f8f9fa;
       transition: all 0.2s;
+      max-width: 100%;
+      box-sizing: border-box;
+      overflow-x: hidden;
     }
 
     .upload-area.active {
@@ -848,6 +921,8 @@
       align-items: center;
       gap: 0.5rem;
       cursor: pointer;
+      max-width: 100%;
+      box-sizing: border-box;
     }
 
     .upload-icon {
@@ -857,6 +932,10 @@
     .upload-hint {
       font-size: 0.875rem;
       color: #6c757d;
+      max-width: 100%;
+      box-sizing: border-box;
+      word-break: break-word;
+      overflow-wrap: break-word;
     }
 
     .file-input {
@@ -866,12 +945,16 @@
     .preview-container {
       position: relative;
       display: inline-block;
+      max-width: 100%;
+      box-sizing: border-box;
     }
 
     .preview-image {
-      max-width: 200px;
+      max-width: 100%;
       max-height: 200px;
       border-radius: 4px;
+      height: auto;
+      box-sizing: border-box;
     }
 
     .remove-btn {
@@ -894,14 +977,28 @@
     .signature-container {
       border: 1px solid #dee2e6;
       border-radius: 6px;
-      padding: 1rem;
+     
       background: white;
+      box-sizing: border-box;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      width: 320px;
+      max-width: 100vw;
+      aspect-ratio: 4/2;
+      will-change: transform;
+      contain: paint;
+      margin: 0 auto;
     }
 
     .upload-options {
       display: flex;
       gap: 1rem;
       justify-content: center;
+      flex-wrap: wrap;
+      max-width: 100%;
+      box-sizing: border-box;
     }
 
     .upload-label, .camera-btn {
@@ -916,6 +1013,8 @@
       cursor: pointer;
       transition: all 0.2s;
       min-width: 120px;
+      max-width: 100%;
+      box-sizing: border-box;
     }
 
     .upload-label:hover, .camera-btn:hover {
@@ -934,6 +1033,10 @@
       background: rgba(0, 0, 0, 0.7);
       padding: 1rem 2rem;
       border-radius: 8px;
+      max-width: 90vw;
+      box-sizing: border-box;
+      word-break: break-word;
+      overflow-wrap: break-word;
     }
 
     .camera-modal {
@@ -945,17 +1048,22 @@
       padding: 1rem;
       border-radius: 12px;
       z-index: 2001;
-      width: 90%;
-      max-width: 500px;
+      width: 95vw;
+      max-width: 420px;
+      box-sizing: border-box;
+      overflow-x: hidden;
     }
 
     .camera-container {
       position: relative;
       width: 100%;
-      padding-top: 75%; /* 4:3 aspect ratio */
+      aspect-ratio: 4/3;
       background: #000;
       border-radius: 8px;
       overflow: hidden;
+      will-change: transform;
+      contain: paint;
+      margin: 0 auto;
     }
 
     .camera-preview {
@@ -966,7 +1074,9 @@
       height: 100%;
       object-fit: cover;
       border-radius: 8px;
-      transform: scaleX(-1); /* Mirror the preview for selfie-like experience */
+      transform: scaleX(-1);
+      box-sizing: border-box;
+      contain: paint;
     }
 
     .capture-btn {
@@ -982,6 +1092,8 @@
       cursor: pointer;
       transition: all 0.2s;
       z-index: 2;
+      max-width: 100vw;
+      box-sizing: border-box;
     }
 
     .capture-btn:hover {
@@ -1005,6 +1117,10 @@
       color: #6c757d;
       font-size: 0.875rem;
       margin-top: 0.5rem;
+      max-width: 100%;
+      box-sizing: border-box;
+      word-break: break-word;
+      overflow-wrap: break-word;
     }
 
     .agreement-content {
@@ -1017,5 +1133,62 @@
       margin-top: 1.5rem;
       color: #222;
       font-size: 0.95em;
+      max-width: 100vw;
+      box-sizing: border-box;
+      word-break: break-word;
+      overflow-wrap: break-word;
+    }
+
+    /* Responsive images, signature, and ID preview in contract */
+    #contract-template img {
+      max-width: 100%;
+      height: auto;
+      display: block;
+      margin: 0 auto;
+      box-sizing: border-box;
+    }
+
+    /* Responsive signature pad and canvas */
+    .signature-container canvas,
+    .signature-container > canvas,
+    .signature-pad canvas {
+      width: 100% !important;
+      height: 100% !important;
+      max-width: 100%;
+      max-height: 100%;
+      display: block;
+      box-sizing: border-box;
+      background: #fff;
+      border-radius: 4px;
+      contain: paint;
+    }
+
+    /* Prevent horizontal scroll for all direct children */
+    .auth-card > *,
+    .auth-container > * {
+      box-sizing: border-box;
+      overflow-x: hidden;
+    }
+
+    /* Prevent horizontal scroll for html2pdf.js output */
+    #contract-template {
+      max-width: 100vw;
+      box-sizing: border-box;
+      overflow-x: auto;
+      word-break: break-word;
+      overflow-wrap: break-word;
+    }
+
+    @media (max-width: 400px) {
+      .signature-container {
+        width: 95vw;
+        min-width: 0;
+      }
+    }
+
+    .no-break, #contract-template img {
+      page-break-inside: avoid;
+      break-inside: avoid;
+      display: block;
     }
   </style>

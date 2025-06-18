@@ -230,9 +230,18 @@
 
   async function handleTransferToShop() {
     if (!selectedProduct || transferQty <= 0) return;
-    await transferToShop(selectedProduct, transferQty, note);
-    // await fetchData(); // Removed: Realtime will update
-    transferQty = 0; note = '';
+    try {
+      await transferToShop(selectedProduct, transferQty, note);
+      transferQty = 0; note = '';
+    } catch (err) {
+      if (err instanceof Error) {
+        error = err.message;
+      } else if (typeof err === 'string') {
+        error = err;
+      } else {
+        error = 'Failed to transfer stock';
+      }
+    }
   }
 
   async function handleAdjustStock() {

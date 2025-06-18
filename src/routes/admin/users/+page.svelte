@@ -5,7 +5,7 @@
   import { fade } from 'svelte/transition';
   import { getUserBalance, getAllUserBalances } from '$lib/services/orderService';
   import { onDestroy } from 'svelte';
-  import type { CreditLedgerEntry } from '$lib/types/ledger';
+  import type { Transaction } from '$lib/types/ledger';
 
   interface User {
     id: string;
@@ -13,7 +13,6 @@
     created_at: string;
     is_admin?: boolean;
     role?: string;
-    balance?: number;
     display_name?: string;
   }
 
@@ -22,7 +21,7 @@
   let error: string | null = null;
   let success: string | null = null;
   let ledgerModalUser: User | null = null;
-  let ledgerEntries: CreditLedgerEntry[] = [];
+  let ledgerEntries: Transaction[] = [];
   let loadingLedger = false;
   let ledgerError: string | null = null;
 
@@ -41,6 +40,10 @@
   let userLedgerError: string | null = null;
   let userStats: { totalOrders: number; totalSpent: number; debt: number } = { totalOrders: 0, totalSpent: 0, debt: 0 };
   let contractUrl: string | null = null;
+
+  let editingBalanceUserId: string | null = null;
+  let newBalanceValue: string = '';
+  let adjustmentNote: string = '';
 
   onMount(async () => {
     // Check if current user is admin
@@ -95,7 +98,6 @@
           created_at: p.created_at,
           is_admin: p.is_admin,
           role: p.role,
-          balance: p.balance ?? 0,
           display_name: p.display_name ?? ''
         }))
         .sort((a, b) => (a.balance ?? 0) - (b.balance ?? 0));
@@ -166,7 +168,7 @@
     loadingLedger = true;
     ledgerError = null;
     const { data, error } = await supabase
-      .from('credit_ledger')
+      .from('transactions')
       .select('*')
       .eq('user_id', user.id)
       .order('created_at', { ascending: true });
@@ -243,7 +245,7 @@
       }
       // Fetch ledger for this user
       const { data: ledger, error: ledgerError } = await supabase
-        .from('credit_ledger')
+        .from('transactions')
         .select('*')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
@@ -287,6 +289,35 @@
     } else {
       alert('Could not generate download link.');
     }
+  }
+
+  async function saveBalanceAdjustment(user: User) {
+    const currentBalance = userBalances[user.id] ?? 0;
+    const newBalance = parseFloat(newBalanceValue);
+    if (isNaN(newBalance)) {
+      error = 'Invalid balance value';
+      return;
+    }
+    const adjustment = newBalance - currentBalance;
+    if (adjustment === 0) {
+      editingBalanceUserId = null;
+      return;
+    }
+    const { error: rpcError } = await supabase.rpc('admin_adjust_user_balance', {
+      p_user_id: user.id,
+      p_amount: adjustment,
+      p_note: adjustmentNote || 'Admin manual adjustment'
+    });
+    if (rpcError) {
+      error = 'Failed to adjust balance: ' + rpcError.message;
+      return;
+    }
+    success = 'Balance updated!';
+    setTimeout(() => success = null, 3000);
+    editingBalanceUserId = null;
+    newBalanceValue = '';
+    adjustmentNote = '';
+    await fetchAllUserBalances();
   }
 </script>
 
@@ -336,16 +367,24 @@
                 </td>
                 <td>{user.role === 'pos' ? 'Yes' : 'No'}</td>
                 <td>
-                  {#if typeof balance !== 'number'}
-                    <span style="color: #666;">Loading...</span>
-                  {:else if balance < 0}
-                    <span style="color: #dc3545;">Debt: R{Math.abs(balance).toFixed(2)}</span>
-                  {:else if balance > 0}
-                    <span style="color: #28a745;">Credit: R{balance.toFixed(2)}</span>
+                  {#if editingBalanceUserId === user.id}
+                    <input type="number" bind:value={newBalanceValue} style="width: 6em;" />
+                    <input type="text" placeholder="Note (optional)" bind:value={adjustmentNote} style="width: 10em; margin-left: 0.5em;" />
+                    <button on:click|stopPropagation={() => saveBalanceAdjustment(user)} title="Save">💾</button>
+                    <button on:click|stopPropagation={() => { editingBalanceUserId = null; newBalanceValue = ''; adjustmentNote = ''; }} title="Cancel">✖️</button>
                   {:else}
-                    <span>R0.00</span>
+                    {#if typeof balance !== 'number'}
+                      <span style="color: #666;">Loading...</span>
+                    {:else if balance < 0}
+                      <span style="color: #dc3545;">Debt: R{Math.abs(balance).toFixed(2)}</span>
+                    {:else if balance > 0}
+                      <span style="color: #28a745;">Credit: R{balance.toFixed(2)}</span>
+                    {:else}
+                      <span>R0.00</span>
+                    {/if}
+                    <button class="ledger-btn" on:click|stopPropagation={() => openLedgerModal(user)} title="View Ledger">📄</button>
+                    <button on:click|stopPropagation={() => { editingBalanceUserId = user.id; newBalanceValue = (balance ?? 0).toString(); adjustmentNote = ''; }} title="Edit Balance">✏️</button>
                   {/if}
-                  <button class="ledger-btn" on:click|stopPropagation={() => openLedgerModal(user)} title="View Ledger">📄</button>
                 </td>
                 <td>
                   <button 
@@ -383,7 +422,6 @@
                   <th>Type</th>
                   <th>Amount</th>
                   <th>Order</th>
-                  <th>Note</th>
                 </tr>
               </thead>
               <tbody>
@@ -395,7 +433,6 @@
                       {entry.amount < 0 ? `-R${Math.abs(entry.amount).toFixed(2)}` : `R${entry.amount.toFixed(2)}`}
                     </td>
                     <td>{entry.order_id || '-'}</td>
-                    <td>{entry.note}</td>
                   </tr>
                 {/each}
               </tbody>
@@ -477,7 +514,6 @@
                 <th>Type</th>
                 <th>Amount</th>
                 <th>Order</th>
-                <th>Note</th>
               </tr>
             </thead>
             <tbody>
@@ -489,7 +525,6 @@
                     {entry.amount < 0 ? `-R${Math.abs(entry.amount).toFixed(2)}` : `R${entry.amount.toFixed(2)}`}
                   </td>
                   <td>{entry.order_id || '-'}</td>
-                  <td>{entry.note}</td>
                 </tr>
               {/each}
             </tbody>

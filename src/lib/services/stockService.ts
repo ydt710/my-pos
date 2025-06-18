@@ -98,7 +98,14 @@ export async function transferToShop(productId: string, quantity: number, note?:
     .eq('product_id', productId)
     .eq('location_id', facilityId)
     .single();
-  const newFacilityQty = (facilityStock?.quantity ?? 0) - quantity;
+  const currentFacilityQty = facilityStock?.quantity ?? 0;
+  if (currentFacilityQty <= 0) {
+    throw new Error('No stock available in facility for this product.');
+  }
+  if (quantity > currentFacilityQty) {
+    throw new Error('Not enough stock in facility to transfer the requested quantity.');
+  }
+  const newFacilityQty = currentFacilityQty - quantity;
   await supabase
     .from('stock_levels')
     .upsert({ product_id: productId, location_id: facilityId, quantity: newFacilityQty }, { onConflict: 'product_id,location_id' });
@@ -183,6 +190,21 @@ export async function acceptStockTransfer(transferId: string, actualQuantity: nu
   await supabase
     .from('stock_levels')
     .upsert({ product_id: transfer.product_id, location_id: shopId, quantity: newShopQty }, { onConflict: 'product_id,location_id' });
+
+  // Deduct from facility stock_levels
+  const facilityId = transfer.from_location_id;
+  if (facilityId) {
+    const { data: facilityStock } = await supabase
+      .from('stock_levels')
+      .select('quantity')
+      .eq('product_id', transfer.product_id)
+      .eq('location_id', facilityId)
+      .single();
+    const newFacilityQty = (facilityStock?.quantity ?? 0) - actualQuantity;
+    await supabase
+      .from('stock_levels')
+      .upsert({ product_id: transfer.product_id, location_id: facilityId, quantity: newFacilityQty }, { onConflict: 'product_id,location_id' });
+  }
 
   // Update movement status and quantity
   await supabase

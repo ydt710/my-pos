@@ -5,13 +5,15 @@
     import type { Product } from '$lib/types/index';
     import type { Order, OrderStatus, OrderFilters } from '$lib/types/orders';
     import { makeUserAdmin as userServiceMakeUserAdmin } from '$lib/services/userService';
-    import { getAllOrders, updateOrderStatus, getTopBuyingUsers, getUsersWithMostDebt, getAllUserBalances, logPaymentToLedger, reapplyOrderStock } from '$lib/services/orderService';
+    import { getAllOrders, updateOrderStatus, getTopBuyingUsers, getUsersWithMostDebt, getAllUserBalances, reapplyOrderStock } from '$lib/services/orderService';
     import { fade, slide } from 'svelte/transition';
     import OrderDetailsModal from '$lib/components/OrderDetailsModal.svelte';
     import { showSnackbar } from '$lib/stores/snackbarStore';
     import ConfirmModal from '$lib/components/ConfirmModal.svelte';
     import ProductEditModal from '$lib/components/ProductEditModal.svelte';
     import { getShopStockLevels } from '$lib/services/stockService';
+    import Chart from 'chart.js/auto';
+    import type { Chart as ChartType } from 'chart.js';
   
     // Add Profile type
     interface Profile {
@@ -146,6 +148,23 @@
     let showCancelConfirm = false;
     let orderIdToCancel: string | null = null;
   
+    // State for revenue modal and chart
+    let showRevenueModal = false;
+    let revenueChart;
+    let revenueChartInstance: ChartType | null = null;
+    let revenueFilter = 'year'; // 'today' | 'week' | 'month' | 'year'
+    let revenueChartData = [];
+    let revenueChartLabels = [];
+  
+    let allOrders: Order[] = [];
+  
+    let showDebtCreatedModal = false;
+    let debtCreatedChartInstance: ChartType | null = null;
+    let debtCreatedFilter: 'today' | 'week' | 'month' | 'year' = 'year';
+    let debtCreatedChartData: number[] = [];
+    let debtCreatedChartLabels: string[] = [];
+    let debtCreatedData: { created_at: string; debt: number }[] = [];
+  
     function openEditModal(product: Product) {
       editing = { ...product };
       showEditModal = true;
@@ -206,7 +225,8 @@
               fetchProducts(),
               fetchStats(),
               loadOrders(),
-              fetchTopBuyersAndDebtors()
+              fetchTopBuyersAndDebtors(),
+              fetchAndRenderDebtCreatedChart() // <-- Add this line
             ]).catch(console.error);
             // Add scroll event listener
             window.addEventListener('scroll', updateActiveSection);
@@ -447,10 +467,16 @@
             *,
             order_items (
               *,
-              product:products (
+              products:product_id (
                 name,
-                price
+                image_url
               )
+            ),
+            profiles:user_id (
+              email,
+              display_name,
+              phone_number,
+              address
             )
           `)
           .order('created_at', { ascending: false });
@@ -572,11 +598,12 @@
         // Helper to get ISO string for Supabase
         function iso(date: Date): string { return date.toISOString(); }
 
-        // Fetch all payment (cash in) ledger entries
+        // Fetch all payment (cash in) ledger entries (CASH ONLY)
         const { data: ledgerPayments, error: ledgerPaymentsError } = await supabase
-          .from('credit_ledger')
-          .select('amount, created_at, user_id')
-          .eq('type', 'payment');
+          .from('transactions')
+          .select('amount, created_at, user_id, method')
+          .eq('type', 'payment')
+          .eq('method', 'cash');
         if (ledgerPaymentsError) throw ledgerPaymentsError;
 
         cashIn = { today: 0, week: 0, month: 0, year: 0, all: 0 };
@@ -589,53 +616,41 @@
           cashIn.all += entry.amount;
         }
 
-        // Fetch all debt (order) ledger entries
-        const { data: ledgerDebts, error: ledgerDebtsError } = await supabase
-          .from('credit_ledger')
-          .select('amount, created_at, order_id, user_id, type');
-        if (ledgerDebtsError) throw ledgerDebtsError;
+        // Fetch all settlement (debt payoff) ledger entries (CASH ONLY)
+        const { data: ledgerSettlements, error: ledgerSettlementsError } = await supabase
+          .from('transactions')
+          .select('amount, created_at, user_id, method, order_id')
+          .eq('type', 'settlement')
+          .eq('method', 'cash');
+        if (ledgerSettlementsError) throw ledgerSettlementsError;
 
-        // Group ledger entries by order_id
-        const orderLedgerMap = new Map();
-        for (const entry of ledgerDebts) {
-          if (!entry.order_id) continue;
-          if (!orderLedgerMap.has(entry.order_id)) orderLedgerMap.set(entry.order_id, []);
-          orderLedgerMap.get(entry.order_id).push(entry);
-        }
+        // Fetch all orders to check which were created with debt
+        const { data: allOrdersForDebt } = await supabase
+          .from('orders')
+          .select('id, debt');
+        const debtOrderIds = new Set((allOrdersForDebt || []).filter(order => order.debt > 0).map(order => order.id));
 
-        // Helper to sum outstanding debt for a set of orders
-        function sumOutstandingDebt(orders: Order[], startDate: Date | undefined): number {
-          let sum = 0;
-          for (const order of orders) {
-            if ((order as any).deleted_at || order.status !== 'completed') continue;
-            if (!order.user_id) continue; // Only include registered users
-            if (startDate && new Date(order.created_at) < startDate) continue;
-            const ledgerEntries: any[] = orderLedgerMap.get(order.id) || [];
-            const orderTotal = order.total || 0;
-            const payments = ledgerEntries.filter((e: any) => e.type === 'payment' && e.amount > 0).reduce((s: number, e: any) => s + e.amount, 0);
-            sum += Math.max(orderTotal - payments, 0); // Only count positive outstanding debt
-          }
-          return sum;
-        }
-
-        debtCreated = {
-          today: sumOutstandingDebt(validOrders, startOfToday),
-          week: sumOutstandingDebt(validOrders, startOfWeek),
-          month: sumOutstandingDebt(validOrders, startOfMonth),
-          year: sumOutstandingDebt(validOrders, startOfYear),
-          all: sumOutstandingDebt(validOrders, undefined)
-        };
-        // Calculate total outstanding debt (sum of all negative user balances)
-        const allUserBalances = await getAllUserBalances();
-        debtIn = Object.values(allUserBalances)
-          .filter((balance) => (balance as number) < 0)
-          .reduce((sum, balance) => (sum as number) + Math.abs(balance as number), 0);
+        // Calculate Debt In (sum of all cash settlements for orders that were originally created with debt)
+        debtIn = (ledgerSettlements || [])
+          .filter(entry => debtOrderIds.has(entry.order_id))
+          .reduce((sum, entry) => sum + entry.amount, 0);
 
         // --- NEW: Cash Collected (from ledger, actual cash received today) ---
         const todayISO = startOfToday.toISOString();
         stats.cashCollected = ledgerPayments
           .filter(entry => new Date(entry.created_at) >= startOfToday)
           .reduce((sum, entry) => sum + entry.amount, 0);
+
+        allOrders = ordersData || [];
+
+        // --- NEW: Debt In (all payments that reduce debt, any method) ---
+        const { data: debtPayments, error: debtPaymentsError } = await supabase
+          .from('transactions')
+          .select('amount, created_at, user_id, method, order_id')
+          .gt('amount', 0); // Only positive amounts (payments in)
+        if (debtPaymentsError) throw debtPaymentsError;
+
+        debtIn = (debtPayments || []).reduce((sum, entry) => sum + entry.amount, 0);
 
       } catch (err) {
         console.error('Error fetching stats:', err);
@@ -676,16 +691,16 @@
         if (order && newStatus === 'completed' && order.payment_method === 'cash') {
           // Check if a payment already exists in the ledger for this order
           const { data: ledgerPayments } = await supabase
-            .from('credit_ledger')
+            .from('transactions')
             .select('id')
             .eq('order_id', orderId)
             .eq('type', 'payment');
           if (!ledgerPayments || ledgerPayments.length === 0) {
             if (order.user_id) {
-              await logPaymentToLedger(order.user_id, order.total, orderId, 'Cash payment on completion (admin)', 'cash');
+              // await logPaymentToLedger(order.user_id, order.total, orderId, 'Cash payment on completion (admin)', 'cash');
             } else {
               // Guest order: log to float user
-              await logPaymentToLedger(FLOAT_USER_ID, order.total, orderId, 'Guest cash payment on completion (admin)', 'cash');
+              // await logPaymentToLedger(FLOAT_USER_ID, order.total, orderId, 'Guest cash payment on completion (admin)', 'cash');
             }
           }
         }
@@ -800,8 +815,6 @@
         }
         // Delete all order_items for this order
         await supabase.from('order_items').delete().eq('order_id', orderId);
-        // Delete all credit_ledger entries for this order
-        await supabase.from('credit_ledger').delete().eq('order_id', orderId);
         // Delete the order itself
         await supabase.from('orders').delete().eq('id', orderId);
         // Remove from UI
@@ -910,6 +923,253 @@
     $: if (editing && showCustomPrices) {
       fetchCustomPricesForProduct(String(editing.id));
     }
+
+    // Helper to filter and group revenue data
+    function getRevenueDataByFilter(orders: Order[], filter: string): { labels: string[], data: number[] } {
+      const now = new Date();
+      let start: Date;
+      let format: (d: Date) => string;
+      if (filter === 'today') {
+        start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        format = (d: Date) => d.getHours() + ':00';
+      } else if (filter === 'week') {
+        start = new Date(now);
+        start.setDate(now.getDate() - now.getDay());
+        start.setHours(0,0,0,0);
+        format = (d: Date) => d.toLocaleDateString();
+      } else if (filter === 'month') {
+        start = new Date(now.getFullYear(), now.getMonth(), 1);
+        format = (d: Date) => d.toLocaleDateString();
+      } else {
+        start = new Date(now.getFullYear(), 0, 1);
+        format = (d: Date) => d.toLocaleDateString();
+      }
+      // Group by day/hour
+      const map = new Map<string, number>();
+      for (const order of (orders || [])) {
+        if (!order.created_at || !order.total) continue;
+        const date = new Date(order.created_at);
+        if (date < start) continue;
+        let label = format(date);
+        if (!map.has(label)) map.set(label, 0);
+        map.set(label, (map.get(label) || 0) + (order.total || 0));
+      }
+      // Sort labels chronologically
+      const labels = Array.from(map.keys()).sort((a, b) => {
+        const da = new Date(a), db = new Date(b);
+        return da.getTime() - db.getTime();
+      });
+      const data = labels.map(l => map.get(l) || 0);
+      return { labels, data };
+    }
+
+    function openRevenueModal() {
+      showRevenueModal = true;
+      setTimeout(() => renderRevenueChart(), 0);
+    }
+    function closeRevenueModal() {
+      showRevenueModal = false;
+      if (revenueChartInstance) {
+        revenueChartInstance.destroy();
+        revenueChartInstance = null;
+      }
+    }
+    function renderRevenueChart() {
+      // Get valid completed orders
+      const validOrders = (allOrders || []).filter((order: Order) => !order.deleted_at && order.status === 'completed');
+      const { labels, data } = getRevenueDataByFilter(validOrders, revenueFilter);
+      revenueChartLabels = labels;
+      revenueChartData = data;
+      const ctx = (document.getElementById('revenueChart') as HTMLCanvasElement)?.getContext('2d');
+      if (!ctx) return;
+      if (revenueChartInstance) revenueChartInstance.destroy();
+      revenueChartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: revenueChartLabels,
+          datasets: [{
+            label: 'Revenue',
+            data: revenueChartData,
+            borderColor: '#007bff',
+            backgroundColor: 'rgba(0,123,255,0.1)',
+            fill: true,
+            tension: 0.3
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: { display: false },
+            tooltip: { enabled: true }
+          },
+          scales: {
+            x: { title: { display: true, text: 'Date/Time' } },
+            y: { title: { display: true, text: 'Revenue (R)' } }
+          }
+        }
+      });
+    }
+    $: if (showRevenueModal) {
+      setTimeout(() => renderRevenueChart(), 0);
+    }
+    function setRevenueFilter(filter: string) {
+      revenueFilter = filter;
+      setTimeout(() => renderRevenueChart(), 0);
+    }
+
+    function openDebtCreatedModal() {
+      showDebtCreatedModal = true;
+      fetchAndRenderDebtCreatedChart();
+    }
+    function closeDebtCreatedModal() {
+      showDebtCreatedModal = false;
+      if (debtCreatedChartInstance) {
+        debtCreatedChartInstance.destroy();
+        debtCreatedChartInstance = null;
+      }
+    }
+    function setDebtCreatedFilter(filter: 'today' | 'week' | 'month' | 'year') {
+      debtCreatedFilter = filter;
+      fetchAndRenderDebtCreatedChart();
+    }
+    async function fetchAndRenderDebtCreatedChart() {
+      // Fetch all debt transactions (type = 'debt')
+      const { data: debtTxs, error: debtError } = await supabase
+        .from('transactions')
+        .select('created_at, amount')
+        .eq('type', 'debt');
+      // Fetch all debt payments (type = 'payment' or 'settlement' with positive amount)
+      const { data: paidTxs, error: paidError } = await supabase
+        .from('transactions')
+        .select('created_at, amount, type')
+        .in('type', ['payment', 'settlement'])
+        .gt('amount', 0);
+      if (debtError || paidError) {
+        debtCreatedData = [];
+        debtCreatedChartLabels = [];
+        debtCreatedChartData = [];
+        debtCreated = { today: 0, week: 0, month: 0, year: 0, all: 0 };
+        return;
+      }
+      // Group by period
+      const now = new Date();
+      let start: Date;
+      let format: (d: Date) => string;
+      if (debtCreatedFilter === 'today') {
+        start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        format = (d: Date) => d.getHours() + ':00';
+      } else if (debtCreatedFilter === 'week') {
+        start = new Date(now);
+        start.setDate(now.getDate() - now.getDay());
+        start.setHours(0,0,0,0);
+        format = (d: Date) => d.toLocaleDateString();
+      } else if (debtCreatedFilter === 'month') {
+        start = new Date(now.getFullYear(), now.getMonth(), 1);
+        format = (d: Date) => d.toLocaleDateString();
+      } else {
+        start = new Date(now.getFullYear(), 0, 1);
+        format = (d: Date) => d.toLocaleDateString();
+      }
+      // Group debt created
+      const debtMap = new Map<string, number>();
+      for (const tx of debtTxs || []) {
+        if (!tx.created_at || !tx.amount) continue;
+        const date = new Date(tx.created_at);
+        if (date < start) continue;
+        const label = format(date);
+        if (!debtMap.has(label)) debtMap.set(label, 0);
+        debtMap.set(label, (debtMap.get(label) || 0) + Math.abs(tx.amount));
+      }
+      // Group debt paid
+      const paidMap = new Map<string, number>();
+      for (const tx of paidTxs || []) {
+        if (!tx.created_at || !tx.amount) continue;
+        const date = new Date(tx.created_at);
+        if (date < start) continue;
+        const label = format(date);
+        if (!paidMap.has(label)) paidMap.set(label, 0);
+        paidMap.set(label, (paidMap.get(label) || 0) + tx.amount);
+      }
+      // Union of all labels
+      const allLabels = Array.from(new Set([...debtMap.keys(), ...paidMap.keys()])).sort((a, b) => {
+        const da = Date.parse(a);
+        const db = Date.parse(b);
+        if (!isNaN(da) && !isNaN(db)) return da - db;
+        return a.localeCompare(b);
+      });
+      debtCreatedChartLabels = allLabels;
+      const debtCreatedSeries = allLabels.map(l => debtMap.get(l) || 0);
+      const debtPaidSeries = allLabels.map(l => paidMap.get(l) || 0);
+      debtCreatedChartData = debtCreatedSeries; // for legacy
+
+      // For the card:
+      debtCreated = {
+        today: 0,
+        week: 0,
+        month: 0,
+        year: 0,
+        all: 0
+      };
+      for (const tx of debtTxs || []) {
+        if (!tx.created_at || !tx.amount) continue;
+        const date = new Date(tx.created_at);
+        const absAmount = Math.abs(tx.amount);
+        if (date >= new Date(now.getFullYear(), now.getMonth(), now.getDate())) debtCreated.today += absAmount;
+        if (date >= new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay())) debtCreated.week += absAmount;
+        if (date >= new Date(now.getFullYear(), now.getMonth(), 1)) debtCreated.month += absAmount;
+        if (date >= new Date(now.getFullYear(), 0, 1)) debtCreated.year += absAmount;
+        debtCreated.all += absAmount;
+      }
+      setTimeout(() => renderDebtCreatedChart(debtCreatedSeries, debtPaidSeries, allLabels), 0);
+    }
+
+    function renderDebtCreatedChart(
+      debtCreatedSeries: number[],
+      debtPaidSeries: number[],
+      labels: string[]
+    ) {
+      const ctx = (document.getElementById('debtCreatedChart') as HTMLCanvasElement)?.getContext('2d');
+      if (!ctx) return;
+      if (debtCreatedChartInstance) debtCreatedChartInstance.destroy();
+      debtCreatedChartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [
+            {
+              label: 'Debt Created',
+              data: debtCreatedSeries,
+              borderColor: '#dc3545',
+              backgroundColor: 'rgba(220,53,69,0.1)',
+              fill: true,
+              tension: 0.3
+            },
+            {
+              label: 'Debt Paid',
+              data: debtPaidSeries,
+              borderColor: '#28a745',
+              backgroundColor: 'rgba(40,167,69,0.1)',
+              fill: true,
+              tension: 0.3
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: { display: true },
+            tooltip: { enabled: true }
+          },
+          scales: {
+            x: { title: { display: true, text: 'Date/Time' } },
+            y: { title: { display: true, text: 'Amount (R)' } }
+          }
+        }
+      });
+    }
+    $: if (showDebtCreatedModal) {
+      // setTimeout(() => renderDebtCreatedChart(), 0); // Removed: now requires arguments
+    }
 </script>
 
   <div class="nav-content">
@@ -958,10 +1218,10 @@
                 <h3>Total Orders</h3>
                 <p class="stat-value">{stats.totalOrders}</p>
             </div>
-            <div class="stat-card">
+            <button type="button" class="stat-card" on:click={openRevenueModal} style="cursor:pointer;">
                 <h3>Total Revenue</h3>
                 <p class="stat-value">R{stats.totalRevenue.toFixed(2)}</p>
-            </div>
+            </button>
             <div class="stat-card">
                 <h3>Cash to Collect</h3>
                 <p class="stat-value">R{stats.cashToCollect.toFixed(2)}</p>
@@ -980,11 +1240,7 @@
                   <li>All Time: <strong>R{cashIn.all.toFixed(2)}</strong></li>
                 </ul>
             </div>
-            <div class="stat-card">
-                <h3>Debt In</h3>
-                <p class="stat-value">R{debtIn.toFixed(2)}</p>
-            </div>
-            <div class="stat-card">
+            <button type="button" class="stat-card" on:click={openDebtCreatedModal} style="cursor:pointer;">
                 <h3>Debt Created</h3>
                 <ul class="stat-list">
                   <li>Today: <strong>R{debtCreated.today.toFixed(2)}</strong></li>
@@ -993,7 +1249,7 @@
                   <li>This Year: <strong>R{debtCreated.year.toFixed(2)}</strong></li>
                   <li>All Time: <strong>R{debtCreated.all.toFixed(2)}</strong></li>
                 </ul>
-            </div>
+            </button>
             <!-- Top Buyers as a list -->
             <div class="stat-card">
                 <h3>Top Buyers</h3>
@@ -1612,6 +1868,36 @@
             </div>
       </div>
     {/if}
+
+    {#if showRevenueModal}
+      <div class="modal-backdrop" on:click={closeRevenueModal}></div>
+      <div class="modal revenue-modal">
+        <button class="close-btn" on:click={closeRevenueModal}>×</button>
+        <h2>Revenue Over Time</h2>
+        <div class="filter-btns">
+          <button on:click={() => setRevenueFilter('today')} class:active={revenueFilter==='today'}>Today</button>
+          <button on:click={() => setRevenueFilter('week')} class:active={revenueFilter==='week'}>This Week</button>
+          <button on:click={() => setRevenueFilter('month')} class:active={revenueFilter==='month'}>This Month</button>
+          <button on:click={() => setRevenueFilter('year')} class:active={revenueFilter==='year'}>This Year</button>
+        </div>
+        <canvas id="revenueChart" width="600" height="300"></canvas>
+      </div>
+    {/if}
+
+    {#if showDebtCreatedModal}
+      <div class="modal-backdrop" on:click={closeDebtCreatedModal}></div>
+      <div class="modal revenue-modal">
+        <button class="close-btn" on:click={closeDebtCreatedModal}>×</button>
+        <h2>Debt Created Over Time</h2>
+        <div class="filter-btns">
+          <button on:click={() => setDebtCreatedFilter('today')} class:active={debtCreatedFilter==='today'}>Today</button>
+          <button on:click={() => setDebtCreatedFilter('week')} class:active={debtCreatedFilter==='week'}>This Week</button>
+          <button on:click={() => setDebtCreatedFilter('month')} class:active={debtCreatedFilter==='month'}>This Month</button>
+          <button on:click={() => setDebtCreatedFilter('year')} class:active={debtCreatedFilter==='year'}>This Year</button>
+        </div>
+        <canvas id="debtCreatedChart" width="600" height="300"></canvas>
+      </div>
+    {/if}
   </div>
   
 <style>
@@ -1922,7 +2208,7 @@
             overflow-x: auto;
         }
         table {
-            min-width: 600px;
+            min-width: 700px;
             font-size: 0.95rem;
         }
         th, td {
@@ -2003,5 +2289,44 @@
   align-items: center;
   justify-content: center;
   z-index: 2000;
+    }
+    .modal.revenue-modal {
+      position: fixed;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      background: #fff;
+      padding: 2rem;
+      border-radius: 16px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+      z-index: 3001;
+      min-width: 340px;
+      max-width: 95vw;
+      min-height: 340px;
+    }
+    .close-btn {
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+      background: none;
+      border: none;
+      font-size: 2rem;
+      cursor: pointer;
+    }
+    .filter-btns {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+    .filter-btns button {
+      padding: 0.5rem 1rem;
+      border: none;
+      border-radius: 6px;
+      background: #eee;
+      cursor: pointer;
+      font-weight: 500;
+    }
+    .filter-btns button.active {
+      background: #007bff;
+      color: #fff;
     }
 </style>

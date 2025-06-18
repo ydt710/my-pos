@@ -63,7 +63,13 @@
     selectedUser = user;
     userResults = [];
     userSearch = user.display_name || user.email;
-    selectedPosUser.set(user);
+    // Map UserSearch to User for PosUser
+    selectedPosUser.set({
+      id: user.id,
+      email: user.email,
+      name: user.display_name || undefined,
+      balance: selectedUserBalance ?? 0
+    });
     // Fetch and display balance for selected user
     fetchUserBalance(user.id);
     // Fetch custom prices for this user
@@ -132,8 +138,7 @@
         {
           display_name: newAccount.display_name.trim(),
           phone_number: newAccount.phone_number.trim(),
-          email: newAccount.email.trim() || null,
-          balance: 0 // Ensure balance is initialized
+          email: newAccount.email.trim() || null
         }
       ])
       .select()
@@ -641,12 +646,12 @@
 
   @media (max-width: 800px) {
     .cart-container {
-      max-height: 100vh;
+      height: 100vh;
+      max-height: 90vh;
+      margin-top: 0;
       top: 0;
       right: 0;
-      
-      
-      z-index: 100;
+      z-index: 2001;
     }
   }
 

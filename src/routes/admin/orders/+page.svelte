@@ -34,15 +34,16 @@
           *,
           order_items (
             *,
-            product:products (
+            products:product_id (
               name,
-              price,
               image_url
             )
           ),
-          user:profiles (
+          profiles:user_id (
             email,
-            display_name
+            display_name,
+            phone_number,
+            address
           )
         `)
         .order('created_at', { ascending: false });
@@ -58,13 +59,16 @@
         query = query.lte('created_at', filters.dateTo);
       }
       if (filters.search) {
-        query = query.or(`id.eq.${filters.search},user.email.ilike.%${filters.search}%`);
+        query = query.or(`id.eq.${filters.search},profiles.email.ilike.%${filters.search}%`);
       }
 
       const { data, error: err } = await query;
       
       if (err) throw err;
-      orders = data;
+      orders = (data || []).map(order => ({
+        ...order,
+        user: order.profiles || undefined
+      }));
     } catch (err) {
       console.error('Error fetching orders:', err);
       error = 'Failed to load orders';

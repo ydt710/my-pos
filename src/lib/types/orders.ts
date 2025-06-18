@@ -43,6 +43,7 @@ export interface Order {
   payment_method?: string;
   cash_given?: number;
   change_given?: number;
+  deleted_at?: string | null;
 }
 
 export interface OrderFilters {

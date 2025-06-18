@@ -39,6 +39,7 @@
 	},
 	"dependencies": {
 		"@supabase/supabase-js": "^2.49.4",
+		"chart.js": "^4.5.0",
 		"frappe-charts": "^1.6.2",
 		"html2pdf.js": "^0.10.3",
 		"pdf-lib": "^1.17.1",

@@ -78,8 +78,6 @@ export interface User {
   name?: string;
   phone?: string;
   address?: string;
-  debt?: number;
-  credit?: number;
 }
 
 export * from './orders';

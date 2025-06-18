@@ -3,9 +3,9 @@
   import type { Order, OrderStatus } from '$lib/types/orders';
   import { updateOrderStatus, reapplyOrderStock } from '$lib/services/orderService';
   import { supabase } from '$lib/supabase';
-  import type { CreditLedgerEntry } from '$lib/types/ledger';
   import { getUserBalance } from '$lib/services/orderService';
   import { onMount } from 'svelte';
+  import type { Transaction } from '$lib/types/ledger';
 
   export let order: Order;
   export let onClose: () => void;
@@ -13,7 +13,7 @@
 
   let loading = false;
   let error: string | null = null;
-  let ledgerEntries: CreditLedgerEntry[] = [];
+  let ledgerEntries: Transaction[] = [];
   let loadingLedger = false;
   let ledgerError: string | null = null;
   let userBalance: number | null = null;
@@ -119,11 +119,15 @@
     fetchUserBalance(order.user_id);
   }
 
+  $: if (order && order.order_items) {
+    console.log('Order Items:', order.order_items);
+  }
+
   async function fetchLedgerEntries(orderId: string) {
     loadingLedger = true;
     ledgerError = null;
     const { data, error } = await supabase
-      .from('credit_ledger')
+      .from('transactions')
       .select('*')
       .eq('order_id', orderId)
       .order('created_at', { ascending: true });
@@ -141,9 +145,9 @@
   }
 
   // Helper to get cash given and change for this order
-  function getCashGivenAndChange(order: Order, ledgerEntries: CreditLedgerEntry[]): { cashGiven: number; changeGiven: number } {
+  function getCashGivenAndChange(order: Order, ledgerEntries: Transaction[]): { cashGiven: number; changeGiven: number } {
     // Find the payment ledger entry for this order (float user or real user)
-    const paymentEntry = ledgerEntries.find((e: CreditLedgerEntry) => e.type === 'payment' && e.order_id === order.id && e.amount > 0);
+    const paymentEntry = ledgerEntries.find((e: Transaction) => e.type === 'payment' && e.order_id === order.id && e.amount > 0);
     if (!paymentEntry) return { cashGiven: 0, changeGiven: 0 };
     // If cash given was more than order total, change = cashGiven - order.total
     const cashGiven = paymentEntry.amount;
@@ -154,7 +158,7 @@
   onMount(async () => {
     if (order && order.user_id && order.created_at) {
       const { data, error } = await supabase
-        .from('credit_ledger')
+        .from('transactions')
         .select('amount, created_at')
         .eq('user_id', order.user_id)
         .lte('created_at', order.created_at);
@@ -296,8 +300,15 @@
                             width="40"
                             height="40"
                           />
+                        {:else if item.product?.image_url}
+                          <img 
+                            src={item.product.image_url} 
+                            alt={item.product.name}
+                            width="40"
+                            height="40"
+                          />
                         {/if}
-                        <span>{item.products?.name || 'Unknown Product'}</span>
+                        <span>{item.products?.name || item.product?.name || 'Unknown Product'}</span>
                       </div>
                     </td>
                     <td>{formatCurrency(item.price)}</td>
@@ -327,52 +338,43 @@
                 <!-- Payment breakdown by method -->
                 {#each Array.from(new Set(ledgerEntries.filter(e => e.type === 'payment' && e.amount > 0 && e.method).map(e => e.method))) as method}
                   <tr>
-                    <td>Paid by {method ? method.charAt(0).toUpperCase() + method.slice(1) : 'Unknown'}</td>
+                    <td>Amount Paid ({method ? method.charAt(0).toUpperCase() + method.slice(1) : 'Unknown'})</td>
                     <td>{formatCurrency(ledgerEntries.filter(e => e.type === 'payment' && e.amount > 0 && e.method === method).reduce((sum, e) => sum + e.amount, 0))}</td>
                   </tr>
                 {/each}
-                <tr>
-                  <td>Cash Given</td>
-                  <td>{formatCurrency(order.cash_given || 0)}</td>
-                </tr>
-                <tr>
-                  <td>Change Given</td>
-                  <td>{formatCurrency(order.change_given || 0)}</td>
-                </tr>
-                <tr>
-                  <td>Credit Used</td>
-                  <td>{formatCurrency(Math.abs(ledgerEntries.filter(e => e.type === 'credit_used').reduce((sum, e) => sum + e.amount, 0)))}</td>
-                </tr>
-                {#if Math.abs(ledgerEntries.filter(e => e.type === 'credit_used').reduce((sum, e) => sum + e.amount, 0)) > 0}
+                {#if order.payment_method === 'cash' && (order.cash_given || 0) > 0}
                   <tr>
-                    <td style="color:#007bff">Credit Used Toward Order</td>
-                    <td style="color:#007bff">{formatCurrency(Math.abs(ledgerEntries.filter(e => e.type === 'credit_used').reduce((sum, e) => sum + e.amount, 0)))}</td>
+                    <td>Cash Given</td>
+                    <td>{formatCurrency(order.cash_given || 0)}</td>
                   </tr>
                 {/if}
-                {#if ledgerEntries.find(e => e.note && e.note.toLowerCase().includes('overpayment credited'))}
+                {#if (order.change_given || 0) > 0}
                   <tr>
-                    <td style="color:#28a745">Overpayment Credited to Account</td>
-                    <td style="color:#28a745">{formatCurrency(ledgerEntries.filter(e => e.note && e.note.toLowerCase().includes('overpayment credited')).reduce((sum, e) => sum + e.amount, 0))}</td>
+                    <td>Change Given</td>
+                    <td>{formatCurrency(order.change_given || 0)}</td>
                   </tr>
                 {/if}
-                <tr>
-                  <td><strong>Outstanding Debt</strong></td>
-                  <td><strong>{formatCurrency(Math.max(0, order.total - (ledgerEntries.filter(e => e.type === 'payment' && e.amount > 0).reduce((sum, e) => sum + e.amount, 0) + Math.abs(ledgerEntries.filter(e => e.type === 'credit_used').reduce((sum, e) => sum + e.amount, 0)))) )}</strong></td>
-                </tr>
-                {#if (ledgerEntries.filter(e => e.type === 'payment' && e.amount > 0).reduce((sum, e) => sum + e.amount, 0) + Math.abs(ledgerEntries.filter(e => e.type === 'credit_used').reduce((sum, e) => sum + e.amount, 0)) > order.total)}
+                {#if ledgerEntries.some(e => e.type === 'debt')}
+                  <tr>
+                    <td><strong>Outstanding Debt</strong></td>
+                    <td><strong>{formatCurrency(Math.abs(ledgerEntries.filter(e => e.type === 'debt').reduce((sum, e) => sum + e.amount, 0)))}</strong></td>
+                  </tr>
+                {/if}
+                {#if ledgerEntries.some(e => e.type === 'credit')}
                   <tr>
                     <td><strong>Credit/Overpayment</strong></td>
-                    <td><strong>{formatCurrency((ledgerEntries.filter(e => e.type === 'payment' && e.amount > 0).reduce((sum, e) => sum + e.amount, 0) + Math.abs(ledgerEntries.filter(e => e.type === 'credit_used').reduce((sum, e) => sum + e.amount, 0))) - order.total)}</strong></td>
+                    <td><strong>{formatCurrency(ledgerEntries.filter(e => e.type === 'credit').reduce((sum, e) => sum + e.amount, 0))}</strong></td>
+                  </tr>
+                {/if}
+                {#if ledgerEntries.some(e => e.type === 'refund')}
+                  <tr>
+                    <td>Refunds/Adjustments</td>
+                    <td>{formatCurrency(ledgerEntries.filter(e => e.type === 'refund').reduce((sum, e) => sum + e.amount, 0))}</td>
                   </tr>
                 {/if}
                 <tr>
-                  <td>Refunds/Adjustments</td>
-                  <td>{formatCurrency(ledgerEntries.filter(e => (e.type === 'refund' || e.type === 'adjustment')).reduce((sum, e) => sum + e.amount, 0))}</td>
-                </tr>
-                <!-- Net Paid: sum of all positive payment ledger entries + credit used -->
-                <tr>
                   <td>Net Paid</td>
-                  <td>{formatCurrency(ledgerEntries.filter(e => e.type === 'payment' && e.amount > 0).reduce((sum, e) => sum + e.amount, 0) + Math.abs(ledgerEntries.filter(e => e.type === 'credit_used').reduce((sum, e) => sum + e.amount, 0)))}</td>
+                  <td>{formatCurrency(ledgerEntries.filter(e => e.type === 'payment' && e.amount > 0).reduce((sum, e) => sum + e.amount, 0) + ledgerEntries.filter(e => e.type === 'refund').reduce((sum, e) => sum + e.amount, 0))}</td>
                 </tr>
                 {#if userDebtAtOrderTime !== null}
                   <tr>
@@ -402,7 +404,6 @@
                     <th>Date</th>
                     <th>Type</th>
                     <th>Amount</th>
-                    <th>Note</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -411,7 +412,6 @@
                       <td>{formatDate(entry.created_at)}</td>
                       <td>{entry.type}</td>
                       <td>{formatCurrency(entry.amount)}</td>
-                      <td>{entry.note}</td>
                     </tr>
                   {/each}
                 </tbody>
