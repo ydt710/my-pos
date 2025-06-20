@@ -38,6 +38,7 @@
   let newReview = { rating: 5, comment: '' };
   let submittingReview = false;
   let stockLevels: { [productId: string]: number } = {};
+  let posCheckComplete = false;
 
   let productFilters = {
     search: '',
@@ -106,17 +107,31 @@
     // Always search out of allProducts array
     products = allProducts
       .filter(p => {
-        const matchesSearch = productFilters.search
-          ? p.name.toLowerCase().includes(productFilters.search.toLowerCase())
-          : true;
-        // If searching, ignore category filter
-        const matchesCategory = productFilters.search
-          ? true
-          : (activeCategory ? p.category === activeCategory : true);
-        return matchesCategory && matchesSearch;
+        // If no search term, only apply category filter
+        if (!productFilters.search) {
+          return activeCategory ? p.category === activeCategory : true;
+        }
+
+        // Case-insensitive search term
+        const searchTerm = productFilters.search.toLowerCase().trim();
+        
+        // Search across multiple fields
+        const matchesName = p.name.toLowerCase().includes(searchTerm);
+        const matchesCategory = p.category.toLowerCase().includes(searchTerm);
+        const matchesDescription = p.description?.toLowerCase().includes(searchTerm) || false;
+        const matchesSearch = matchesName || matchesCategory || matchesDescription;
+
+        // If searching, only apply category filter if there is an active category
+        const matchesCategory2 = activeCategory ? p.category === activeCategory : true;
+        
+        return matchesSearch && matchesCategory2;
       })
       .sort((a, b) => a.name.localeCompare(b.name));
+
     totalProducts = products.length;
+    
+    // Reset to first page when filtering
+    currentPage = 1;
     paginateProducts();
   }
 
@@ -175,6 +190,7 @@
         isPosUser = true;
       }
     }
+    posCheckComplete = true;
 
     // Load all products once and subscribe to the store
     loading = true;
@@ -377,7 +393,7 @@
 <!-- Main Content Area -->
 <main class="products-container">
   
-  {#if loading && currentPage === 1}
+  {#if loading || !posCheckComplete}
     <div class="loading-container">
       <LoadingSpinner size="60px" />
       <p>Loading products...</p>
@@ -407,13 +423,8 @@
         <p class="select-category">Select a category above to browse our products</p>
       </div>
     </div>
-  {:else if filteredProducts.length === 0}
-    <div class="empty-container">
-      <p>No products available in this category at this time.</p>
-    </div>
   {:else}
         <div class="category-header">
-      
           {#if productFilters.search}
             <i class="fa-solid fa-magnifying-glass category-header-icon"></i>
           {:else if activeCategory && categoryIcons[activeCategory]}
@@ -428,12 +439,15 @@
               aria-label="Search products"
               autocomplete="off"
             />
-          
         </div>
     <div class="category-section">
-      
-      
       <div class="products-grid">
+        {#if filteredProducts.length === 0}
+          <div class="no-results-in-grid">
+            <p>No products found matching "{productFilters.search}"</p>
+            <p class="sub-text">Try a different search or clear your search above.</p>
+          </div>
+        {:else}
         {#each filteredProducts as product (product.id)}
           <div in:fly={{ y: 30, duration: 350 }}>
             <ProductCard 
@@ -448,6 +462,7 @@
         <!-- Infinite scroll trigger -->
         {#if currentPage * pageSize < products.length}
           <div bind:this={loadMoreTrigger} class="load-more-trigger"></div>
+          {/if}
         {/if}
       </div>
     </div>
@@ -783,5 +798,22 @@
     z-index: 1999;
     background: transparent;
     cursor: pointer;
+  }
+
+  .no-results-in-grid {
+    grid-column: 1/-1;
+    text-align: center;
+    padding: 2rem 0;
+    color: #fff;
+    background: rgba(0,0,0,0.15);
+    border-radius: 8px;
+    font-size: 1.2rem;
+    font-weight: 500;
+  }
+
+  .no-results-in-grid .sub-text {
+    margin-top: 0.5rem;
+    font-size: 0.95rem;
+    opacity: 0.8;
   }
 </style>

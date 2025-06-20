@@ -59,7 +59,7 @@
 
 <style>
   .admin-content {
-    padding: 5rem 2rem 2rem;
+  
     max-width: 1400px;
     margin: 0 auto;
   }

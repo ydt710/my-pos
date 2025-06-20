@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { cartStore, selectedPosUser, getTotal, getItemCount } from '$lib/stores/cartStore';
-  import { createOrder, getUserBalance, updateOrderStatus, payOrder } from '$lib/services/orderService';
+  import { createOrder, getUserAvailableCredit, updateOrderStatus, payOrder } from '$lib/services/orderService';
   import { goto } from '$app/navigation';
   import type { CartItem } from '$lib/types/index';
   import type { PosUser } from '$lib/stores/cartStore';
@@ -25,7 +25,7 @@
     address: ''
   };
   let cashGiven: number | '' = '';
-  let posUserBalance: number | null = null;
+  let userAvailableCredit: number | null = null;
   let selectedCustomer: PosUser = null;
   const FLOAT_USER_ID = 'ab54f66c-fa1c-40d2-ad2a-d9d5c1603e0f'; // Float user for guest POS payments
   const FLOAT_USER_EMAIL = 'float@pos.local';
@@ -64,10 +64,10 @@
       }
     }
 
-    // If POS user selected, fetch their balance from the ledger
+    // If POS user selected, use balance from selectedPosUser if present
     const posUser = get(selectedPosUser);
     if (posUser && posUser.id) {
-      posUserBalance = await getUserBalance(posUser.id);
+      userAvailableCredit = await getUserAvailableCredit(posUser.id);
     }
 
     // Clear float user if selected (e.g. from localStorage)
@@ -177,30 +177,51 @@
       return;
     }
     try {
-      const cash = Number(cashGiven) || 0;
+      // Ensure cashGiven is always a valid number
+      let cash = Number(cashGiven);
+      if (isNaN(cash) || cash < 0) cash = 0;
       const items = $cartStore.map(item => ({
         product_id: item.id,
         quantity: item.quantity,
         price: item.price
       }));
-      const result = await payOrder(paymentUserId, total, cash, paymentMethod, items);
+      console.log('[CHECKOUT PATCH] payOrder args:', {
+        paymentUserId,
+        total,
+        cashGiven,
+        cash,
+        paymentMethod,
+        items
+      });
+      const result = await payOrder(paymentUserId, total, cash, creditUsed, paymentMethod, items, extraCashOption);
+      console.log('[CHECKOUT PATCH] payOrder result:', result);
       if (result.success) {
         success = '🎉 Order placed successfully! Thank you for your purchase.';
+        // Refresh balance after order
+        if (paymentUserId) {
+          const refreshedBalance = await getUserAvailableCredit(paymentUserId);
+          console.log('[CHECKOUT PATCH] Refreshed user balance after order:', refreshedBalance);
+          userAvailableCredit = refreshedBalance;
+        }
         cartStore.clearCart();
+        console.log('[CHECKOUT PATCH] Cart cleared');
         cashGiven = '';
         selectedPosUser.set(null);
+        console.log('[CHECKOUT PATCH] selectedPosUser cleared');
         setTimeout(() => {
           success = '';
           goto('/');
         }, 2000);
       } else {
         error = result.error || 'Payment failed. Please try again.';
+        console.log('[CHECKOUT PATCH] Payment failed:', error);
       }
     } catch (err) {
       console.error('Payment error:', err);
       error = 'An unexpected error occurred. Please try again.';
     } finally {
       loading = false;
+      console.log('[CHECKOUT PATCH] processPayment finished.');
     }
   }
 
@@ -213,9 +234,9 @@
     selectedCustomer = val;
     if (val && val.id && val.id !== lastSelectedCustomerId) {
       lastSelectedCustomerId = val.id;
-      posUserBalance = await getUserBalance(val.id);
-      startingCredit = posUserBalance > 0 ? posUserBalance : 0;
-      const userDebt = posUserBalance < 0 ? Math.abs(posUserBalance) : 0;
+      userAvailableCredit = await getUserAvailableCredit(val.id);
+      startingCredit = userAvailableCredit > 0 ? userAvailableCredit : 0;
+      const userDebt = userAvailableCredit < 0 ? Math.abs(userAvailableCredit) : 0;
       creditUsed = Math.min(startingCredit, getTotal($cartStore) + userDebt);
       remainingCredit = Math.max(0, startingCredit - creditUsed);
       // If credit covers the whole order, set cashGiven to 0
@@ -223,7 +244,7 @@
         cashGiven = 0;
       }
     } else if (!val || !val.id) {
-      posUserBalance = null;
+      userAvailableCredit = null;
       startingCredit = 0;
       remainingCredit = 0;
       creditUsed = 0;
@@ -245,10 +266,76 @@
   $: orderTotal = getTotal($cartStore);
   $: floatChange = !isGuest && cashGiven !== '' ? Number(cashGiven) - orderTotal : 0;
 
+  // Calculate totalPaid, overpayment, and update summary logic
+  $: totalPaid = creditUsed + Number(cashGiven);
+  $: overpayment = Math.max(0, totalPaid - orderTotal);
+  $: netPaid = totalPaid;
+  $: actualCredit = (extraCashOption === 'credit' && overpayment > 0) ? overpayment : 0;
+  $: changeToGive = (extraCashOption === 'change' && overpayment > 0) ? overpayment : 0;
+  $: expectedNewBalance = (userAvailableCredit ?? 0) - creditUsed + actualCredit + cashPaid - changeToGive - orderTotal;
+
   // Derived values for summary
   $: cashPaid = Number(cashGiven) || 0;
-  $: netPaid = cashPaid + creditUsed;
   $: outstandingDebt = Math.max(0, orderTotal - netPaid);
+
+  // Robust summary logic for debt/credit/overpayment
+  let summary = {
+    debtPaid: 0,
+    creditToAccount: 0,
+    changeToGive: 0,
+    newBalance: 0,
+    startingBalance: 0,
+    orderPaid: 0,
+    order: 0
+  };
+
+  $: {
+    const startingBalance = userAvailableCredit ?? 0;
+    let cash = Number(cashGiven) || 0;
+    let order = orderTotal || 0;
+    let debtPaid = 0;
+    let creditToAccount = 0;
+    let changeToGive = 0;
+    let newBalance = startingBalance;
+    let orderPaid = 0;
+
+    // Pay off debt first
+    if (startingBalance < 0) {
+      debtPaid = Math.min(cash, Math.abs(startingBalance));
+      newBalance += debtPaid;
+      cash -= debtPaid;
+    }
+
+    // Any remaining cash is for the order
+    orderPaid = Math.min(cash, order);
+    cash -= orderPaid;
+    order -= orderPaid;
+
+    // Subtract any remaining unpaid order from balance as new debt
+    if (order > 0) {
+      newBalance -= order;
+    }
+
+    // Any remaining cash is credited or given as change
+    if (cash > 0) {
+      if (extraCashOption === 'credit') {
+        creditToAccount = cash;
+        newBalance += creditToAccount;
+      } else {
+        changeToGive = cash;
+      }
+    }
+
+    summary = {
+      debtPaid,
+      creditToAccount,
+      changeToGive,
+      newBalance,
+      startingBalance,
+      orderPaid,
+      order: orderTotal
+    };
+  }
 </script>
 
 <StarryBackground />
@@ -450,16 +537,16 @@
               <span>R{startingCredit.toFixed(2)}</span>
             </div>
           {/if}
+          {#if (userAvailableCredit ?? 0) < 0}
+            <div class="summary-row" style="color: #dc3545;">
+              <span>Starting Debt:</span>
+              <span>R{Math.abs(userAvailableCredit ?? 0).toFixed(2)}</span>
+            </div>
+          {/if}
           {#if creditUsed > 0}
             <div class="summary-row">
               <span>Credit Used:</span>
               <span>R{creditUsed.toFixed(2)}</span>
-            </div>
-          {/if}
-          {#if remainingCredit > 0}
-            <div class="summary-row">
-              <span>Remaining Credit:</span>
-              <span>R{remainingCredit.toFixed(2)}</span>
             </div>
           {/if}
           {#if cashPaid > 0}
@@ -472,22 +559,33 @@
             <span>Net Paid:</span>
             <span>R{netPaid.toFixed(2)}</span>
           </div>
-          {#if outstandingDebt > 0}
-            <div class="summary-row" style="color: #dc3545;">
-              <span>Outstanding Debt:</span>
-              <span>R{outstandingDebt.toFixed(2)}</span>
+          {#if summary.debtPaid > 0}
+            <div class="summary-row">
+              <span>R{summary.debtPaid.toFixed(2)} will be used to pay off debt.</span>
             </div>
           {/if}
-          {#if floatChange > 0 && creditUsed === 0}
-            <div class="summary-row" style="color: #28a745;">
+          {#if extraCashOption === 'credit' && summary.creditToAccount > 0}
+            <div class="summary-row">
+              <span>Credit to Account:</span>
+              <span>R{summary.creditToAccount.toFixed(2)}</span>
+            </div>
+          {/if}
+          {#if extraCashOption === 'change' && summary.changeToGive > 0}
+            <div class="summary-row">
               <span>Change to Give:</span>
-              <span>R{floatChange.toFixed(2)}</span>
+              <span>R{summary.changeToGive.toFixed(2)}</span>
             </div>
           {/if}
           <div class="summary-row">
-            <span>Balance:</span>
-            <span style="color: {(posUserBalance ?? 0) > 0 ? '#28a745' : (posUserBalance ?? 0) < 0 ? '#dc3545' : '#666'};">
-              R{posUserBalance ?? 0}
+            <span><strong>Expected New Balance:</strong></span>
+            <span style="color: {summary.newBalance < 0 ? '#dc3545' : summary.newBalance > 0 ? '#28a745' : '#333'};">
+              <strong>{summary.newBalance < 0 ? `Debt: R${Math.abs(summary.newBalance).toFixed(2)}` : summary.newBalance > 0 ? `Credit: R${summary.newBalance.toFixed(2)}` : 'R0.00'}</strong>
+            </span>
+          </div>
+          <div class="summary-row">
+            <span>User Balance:</span>
+            <span style="color: {summary.newBalance < 0 ? '#dc3545' : summary.newBalance > 0 ? '#28a745' : '#333'};">
+              {summary.newBalance < 0 ? `Debt: R${Math.abs(summary.newBalance).toFixed(2)}` : summary.newBalance > 0 ? `Credit: R${summary.newBalance.toFixed(2)}` : 'R0.00'}
             </span>
           </div>
         {/if}

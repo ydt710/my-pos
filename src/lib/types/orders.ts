@@ -43,7 +43,12 @@ export interface Order {
   payment_method?: string;
   cash_given?: number;
   change_given?: number;
+  debt_total?: number;
+  credit_total?: number;
   deleted_at?: string | null;
+  subtotal: number;
+  tax: number;
+  shipping_fee: number;
 }
 
 export interface OrderFilters {

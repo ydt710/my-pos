@@ -3,7 +3,7 @@
   import type { Order, OrderStatus } from '$lib/types/orders';
   import { updateOrderStatus, reapplyOrderStock } from '$lib/services/orderService';
   import { supabase } from '$lib/supabase';
-  import { getUserBalance } from '$lib/services/orderService';
+  import { getUserBalance, getUserAvailableCredit } from '$lib/services/orderService';
   import { onMount } from 'svelte';
   import type { Transaction } from '$lib/types/ledger';
 
@@ -15,645 +15,316 @@
   let error: string | null = null;
   let ledgerEntries: Transaction[] = [];
   let loadingLedger = false;
-  let ledgerError: string | null = null;
   let userBalance: number | null = null;
   let userDebtAtOrderTime: number | null = null;
   const FLOAT_USER_ID = 'ab54f66c-fa1c-40d2-ad2a-d9d5c1603e0f';
   // @ts-ignore
   let html2pdf: any = null;
   let showCancelConfirm = false;
-  let pendingCancelStatus: OrderStatus | null = null;
+
+  // Calculate subtotal from items if not present on order
+  $: subtotal = order.subtotal ?? (order.order_items || []).reduce((sum, item) => sum + item.price * item.quantity, 0);
+  $: tax = order.tax ?? 0; // Assuming tax is not easily calculated from items here
+  $: shipping_fee = order.shipping_fee ?? 0; // Assuming shipping is not in items
 
   function formatDate(dateString: string) {
     return new Date(dateString).toLocaleString();
   }
 
   function formatCurrency(amount: number) {
-    return `R${amount.toFixed(2)}`;
+    return `R${(amount ?? 0).toFixed(2)}`;
   }
 
   async function handleStatusChange(event: Event) {
     const select = event.target as HTMLSelectElement;
     const newStatus = select.value as OrderStatus;
-
     if (newStatus === 'cancelled') {
       showCancelConfirm = true;
-      pendingCancelStatus = newStatus;
       return;
     }
-
-    loading = true;
-    error = null;
-
-    const { success, error: updateError } = await updateOrderStatus(order.id, newStatus);
-
-    if (success) {
-      onStatusUpdate(order.id, newStatus);
-    } else {
-      error = updateError;
-    }
-
-    loading = false;
+    update(newStatus);
   }
-
+  
   async function confirmCancel() {
     showCancelConfirm = false;
     loading = true;
     error = null;
-    // Reapply stock first
     const { success: stockSuccess, error: stockError } = await reapplyOrderStock(order.id);
     if (!stockSuccess) {
       error = stockError || 'Failed to reapply stock.';
       loading = false;
       return;
     }
-    // Now update status
-    const { success, error: updateError } = await updateOrderStatus(order.id, 'cancelled');
+    await update('cancelled');
+    loading = false;
+  }
+
+  async function update(newStatus: OrderStatus) {
+    loading = true;
+    error = null;
+    const { success, error: updateError } = await updateOrderStatus(order.id, newStatus);
     if (success) {
-      onStatusUpdate(order.id, 'cancelled');
+      onStatusUpdate(order.id, newStatus);
     } else {
       error = updateError;
     }
     loading = false;
   }
 
-  function cancelCancel() {
-    showCancelConfirm = false;
-    pendingCancelStatus = null;
-  }
-
   function getCustomerInfo() {
-    if (order.guest_info) {
-      return {
-        name: order.guest_info.name,
-        email: order.guest_info.email,
-        phone: order.guest_info.phone,
-        address: order.guest_info.address,
-        type: 'Guest'
-      };
-    } else if (order.user) {
-      return {
-        name: order.user.display_name || order.user.email || 'N/A',
-        email: order.user.email,
-        phone: order.user.phone_number || 'N/A',
-        address: order.user.address || 'N/A',
-        type: 'Registered User'
-      };
-    }
-    return {
-      name: 'N/A',
-      email: 'N/A',
-      phone: 'N/A',
-      address: 'N/A',
-      type: 'Unknown'
-    };
+    if (order.guest_info) return { ...order.guest_info, type: 'Guest' };
+    if (order.user) return { name: order.user.display_name, email: order.user.email, phone: order.user.phone_number, address: order.user.address, type: 'Registered' };
+    return { name: 'N/A', email: 'N/A', phone: 'N/A', address: 'N/A', type: 'Unknown' };
   }
-
+  
   $: customer = getCustomerInfo();
-
-  $: if (order && order.id) {
-    fetchLedgerEntries(order.id);
-  }
-
+  
   $: if (order && order.user_id) {
-    fetchUserBalance(order.user_id);
-  }
-
-  $: if (order && order.order_items) {
-    console.log('Order Items:', order.order_items);
-  }
-
-  async function fetchLedgerEntries(orderId: string) {
-    loadingLedger = true;
-    ledgerError = null;
-    const { data, error } = await supabase
-      .from('transactions')
-      .select('*')
-      .eq('order_id', orderId)
-      .order('created_at', { ascending: true });
-    if (error) {
-      ledgerError = 'Failed to load ledger entries.';
-      ledgerEntries = [];
-    } else {
-      ledgerEntries = data || [];
-    }
-    loadingLedger = false;
-  }
-
-  async function fetchUserBalance(userId: string) {
-    userBalance = await getUserBalance(userId);
-  }
-
-  // Helper to get cash given and change for this order
-  function getCashGivenAndChange(order: Order, ledgerEntries: Transaction[]): { cashGiven: number; changeGiven: number } {
-    // Find the payment ledger entry for this order (float user or real user)
-    const paymentEntry = ledgerEntries.find((e: Transaction) => e.type === 'payment' && e.order_id === order.id && e.amount > 0);
-    if (!paymentEntry) return { cashGiven: 0, changeGiven: 0 };
-    // If cash given was more than order total, change = cashGiven - order.total
-    const cashGiven = paymentEntry.amount;
-    const changeGiven = Math.max(0, cashGiven - order.total);
-    return { cashGiven, changeGiven };
+    getUserBalance(order.user_id).then(b => userBalance = b);
   }
 
   onMount(async () => {
-    if (order && order.user_id && order.created_at) {
-      const { data, error } = await supabase
-        .from('transactions')
-        .select('amount, created_at')
-        .eq('user_id', order.user_id)
-        .lte('created_at', order.created_at);
-      if (data && Array.isArray(data)) {
-        userDebtAtOrderTime = data.reduce((sum, entry) => sum + Number(entry.amount), 0);
-      } else {
-        userDebtAtOrderTime = null;
-      }
-    }
     if (typeof window !== 'undefined') {
       html2pdf = (await import('html2pdf.js')).default;
+    }
+    if(order.id) {
+      loadingLedger = true;
+      const { data } = await supabase.from('transactions').select('*').eq('order_id', order.id);
+      ledgerEntries = data || [];
+      loadingLedger = false;
     }
   });
 
   async function exportToPDF() {
-    if (!html2pdf) {
-      alert('PDF export is only available in the browser.');
-      return;
-    }
-    const element = document.getElementById('order-details-modal-body');
-    if (!element) {
-      alert('Order details content not found.');
-      return;
-    }
+    const element = document.getElementById('modal-body-content');
+    if (!element) return;
     const opt = {
       margin: 0.5,
-      filename: `order-details-${order.order_number || order.id}.pdf`,
+      filename: `order_${order.order_number || order.id}.pdf`,
       image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: { scale: 2 },
-      jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' }
+      html2canvas: { scale: 2, useCORS: true },
+      jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
     };
     await html2pdf().from(element).set(opt).save();
   }
 </script>
 
-<div class="modal-backdrop"
-     role="dialog"
-     aria-modal="true"
-     aria-labelledby="modal-title"
-     tabindex="-1"
-     on:click={onClose}
-     on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && onClose()}
-     transition:fade>
-  <div class="modal-content" role="document">
+<div class="modal-backdrop" on:click={onClose} on:keydown={(e) => e.key === 'Escape' && onClose()} role="dialog" aria-labelledby="modal-title" tabindex="-1">
+  <div class="modal-content" on:click|stopPropagation role="document" transition:scale={{ duration: 250, start: 0.95 }}>
     <div class="modal-header">
-      <h2 id="modal-title" tabindex="-1">Order Details</h2>
-      <button class="close-btn" on:click={onClose} aria-label="Close">&times;</button>
-      <button class="pdf-btn" on:click={exportToPDF} aria-label="Export to PDF" title="Export to PDF" style="margin-left: 0.5rem;">
-        🖨️ PDF
-      </button>
+      <h2 id="modal-title">Order #{order.order_number || order.id}</h2>
+      <div>
+        <button class="icon-btn" on:click={exportToPDF} title="Export to PDF">🖨️</button>
+        <button class="close-btn" on:click={onClose} aria-label="Close">&times;</button>
+      </div>
     </div>
-    <div id="order-details-modal-body">
+    
+    <div class="modal-body" id="modal-body-content">
       {#if error}
-        <div class="error-message" transition:fade>{error}</div>
+        <div class="alert error">{error}</div>
       {/if}
-      <div class="order-info">
-        <div class="info-section">
-          <h3>Order Information</h3>
-          <div class="info-grid">
-            <div class="info-item">
-              <span class="label">Order ID:</span>
-              <span class="value">{order.order_number || order.id}</span>
-            </div>
-            <div class="info-item">
-              <span class="label">Date:</span>
-              <span class="value">{formatDate(order.created_at)}</span>
-            </div>
-            <div class="info-item">
-              <span class="label">Status:</span>
-              <select 
-                value={order.status} 
-                on:change={handleStatusChange}
-                disabled={loading || order.status === 'cancelled'}
-              >
-                <option value="pending">Pending</option>
-                <option value="processing">Processing</option>
-                <option value="completed">Completed</option>
-                <option value="cancelled">Cancelled</option>
-              </select>
-            </div>
-            <div class="info-item">
-              <span class="label">Total:</span>
-              <span class="value">{formatCurrency(order.total)}</span>
-            </div>
-          </div>
-        </div>
 
-        <div class="info-section">
-          <h3>Customer Information ({customer.type})</h3>
-          <div class="info-grid">
-            <div class="info-item">
-              <span class="label">Name:</span>
-              <span class="value">{customer.name}</span>
-            </div>
-            <div class="info-item">
-              <span class="label">Email:</span>
-              <span class="value">{customer.email}</span>
-            </div>
-            <div class="info-item">
-              <span class="label">Phone:</span>
-              <span class="value">{customer.phone}</span>
-            </div>
-            <div class="info-item">
-              <span class="label">Address:</span>
-              <span class="value">{customer.address}</span>
-            </div>
-            {#if order.user_id}
-              <div class="info-item">
-                <span class="label">Current Balance:</span>
-                <span class="value" style="color: {userBalance === null ? '#666' : userBalance < 0 ? '#dc3545' : userBalance > 0 ? '#28a745' : '#333'};">
-                  {userBalance === null ? 'Loading...' : userBalance < 0 ? `Debt: R${Math.abs(userBalance).toFixed(2)}` : userBalance > 0 ? `Credit: R${userBalance.toFixed(2)}` : 'R0.00'}
-                </span>
-              </div>
-            {/if}
-          </div>
-        </div>
+      <div class="grid-container">
+        <section class="info-card customer-info">
+          <h3>Customer Details</h3>
+          <p><strong>{customer.name}</strong> ({customer.type})</p>
+          <p>{customer.email}</p>
+          <p>{customer.phone}</p>
+          <p>{customer.address}</p>
+        </section>
 
-        <div class="info-section">
-          <h3>Order Items</h3>
-          <div class="items-table">
-            <table>
-              <thead>
-                <tr>
-                  <th>Product</th>
-                  <th>Price</th>
-                  <th>Quantity</th>
-                  <th>Subtotal</th>
-                </tr>
-              </thead>
-              <tbody>
-                {#each order.order_items || [] as item}
-                  <tr>
-                    <td>
-                      <div class="product-info">
-                        {#if item.products?.image_url}
-                          <img 
-                            src={item.products.image_url} 
-                            alt={item.products.name}
-                            width="40"
-                            height="40"
-                          />
-                        {:else if item.product?.image_url}
-                          <img 
-                            src={item.product.image_url} 
-                            alt={item.product.name}
-                            width="40"
-                            height="40"
-                          />
-                        {/if}
-                        <span>{item.products?.name || item.product?.name || 'Unknown Product'}</span>
-                      </div>
-                    </td>
-                    <td>{formatCurrency(item.price)}</td>
-                    <td>{item.quantity}</td>
-                    <td>{formatCurrency(item.price * item.quantity)}</td>
-                  </tr>
-                {/each}
-              </tbody>
-              <tfoot>
-                <tr>
-                  <td colspan="3" class="total-label">Total</td>
-                  <td class="total-value">{formatCurrency(order.total)}</td>
-                </tr>
-              </tfoot>
-            </table>
+        <section class="info-card order-summary">
+          <h3>Order Summary</h3>
+          <p><strong>Date:</strong> {formatDate(order.created_at)}</p>
+          <p><strong>Payment:</strong> {order.payment_method}</p>
+          <div class="status-control">
+            <strong>Status:</strong>
+            <select value={order.status} on:change={handleStatusChange} disabled={loading || order.status === 'cancelled'}>
+              <option value="pending">Pending</option>
+              <option value="processing">Processing</option>
+              <option value="completed">Completed</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
           </div>
-          <!-- Invoice-style breakdown -->
-          {#if ledgerEntries.length > 0}
-          <div class="invoice-breakdown">
-            <h4>Invoice Summary</h4>
-            <table class="invoice-table">
-              <tbody>
-                <tr>
-                  <td>Order Total</td>
-                  <td>{formatCurrency(order.total)}</td>
-                </tr>
-                <!-- Payment breakdown by method -->
-                {#each Array.from(new Set(ledgerEntries.filter(e => e.type === 'payment' && e.amount > 0 && e.method).map(e => e.method))) as method}
-                  <tr>
-                    <td>Amount Paid ({method ? method.charAt(0).toUpperCase() + method.slice(1) : 'Unknown'})</td>
-                    <td>{formatCurrency(ledgerEntries.filter(e => e.type === 'payment' && e.amount > 0 && e.method === method).reduce((sum, e) => sum + e.amount, 0))}</td>
-                  </tr>
-                {/each}
-                {#if order.payment_method === 'cash' && (order.cash_given || 0) > 0}
-                  <tr>
-                    <td>Cash Given</td>
-                    <td>{formatCurrency(order.cash_given || 0)}</td>
-                  </tr>
-                {/if}
-                {#if (order.change_given || 0) > 0}
-                  <tr>
-                    <td>Change Given</td>
-                    <td>{formatCurrency(order.change_given || 0)}</td>
-                  </tr>
-                {/if}
-                {#if ledgerEntries.some(e => e.type === 'debt')}
-                  <tr>
-                    <td><strong>Outstanding Debt</strong></td>
-                    <td><strong>{formatCurrency(Math.abs(ledgerEntries.filter(e => e.type === 'debt').reduce((sum, e) => sum + e.amount, 0)))}</strong></td>
-                  </tr>
-                {/if}
-                {#if ledgerEntries.some(e => e.type === 'credit')}
-                  <tr>
-                    <td><strong>Credit/Overpayment</strong></td>
-                    <td><strong>{formatCurrency(ledgerEntries.filter(e => e.type === 'credit').reduce((sum, e) => sum + e.amount, 0))}</strong></td>
-                  </tr>
-                {/if}
-                {#if ledgerEntries.some(e => e.type === 'refund')}
-                  <tr>
-                    <td>Refunds/Adjustments</td>
-                    <td>{formatCurrency(ledgerEntries.filter(e => e.type === 'refund').reduce((sum, e) => sum + e.amount, 0))}</td>
-                  </tr>
-                {/if}
-                <tr>
-                  <td>Net Paid</td>
-                  <td>{formatCurrency(ledgerEntries.filter(e => e.type === 'payment' && e.amount > 0).reduce((sum, e) => sum + e.amount, 0) + ledgerEntries.filter(e => e.type === 'refund').reduce((sum, e) => sum + e.amount, 0))}</td>
-                </tr>
-                {#if userDebtAtOrderTime !== null}
-                  <tr>
-                    <td style="color:#dc3545">User Debt at Order Time</td>
-                    <td style="color:#dc3545">{formatCurrency(userDebtAtOrderTime < 0 ? Math.abs(userDebtAtOrderTime) : 0)}</td>
-                  </tr>
-                {/if}
-              </tbody>
-            </table>
-          </div>
-          {/if}
-        </div>
+        </section>
+      </div>
 
-        <div class="info-section">
-          <h3>Ledger Entries</h3>
+      <section class="info-card items-list">
+        <h3>Items Ordered ({order.order_items?.length})</h3>
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>Product</th><th>Quantity</th><th>Price</th><th>Total</th></tr></thead>
+            <tbody>
+              {#each order.order_items || [] as item}
+                <tr>
+                  <td>{item.products?.name || 'Product not found'}</td>
+                  <td>{item.quantity}</td>
+                  <td>{formatCurrency(item.price)}</td>
+                  <td>{formatCurrency(item.price * item.quantity)}</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <div class="grid-container">
+        <section class="info-card financial-summary">
+          <h3>Financials</h3>
+          <div class="financial-grid">
+            <div>Subtotal:</div><div>{formatCurrency(subtotal)}</div>
+            <div>Tax:</div><div>{formatCurrency(tax)}</div>
+            <div>Shipping:</div><div>{formatCurrency(shipping_fee)}</div>
+            <div class="total">Total:</div><div class="total">{formatCurrency(order.total)}</div>
+          </div>
+        </section>
+
+        <section class="info-card ledger-info">
+          <h3>Ledger Info</h3>
           {#if loadingLedger}
-            <div>Loading ledger entries...</div>
-          {:else if ledgerError}
-            <div class="error-message">{ledgerError}</div>
-          {:else if ledgerEntries.length === 0}
-            <div>No ledger entries for this order.</div>
+            <p>Loading ledger...</p>
           {:else}
-            <div class="ledger-table">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Date</th>
-                    <th>Type</th>
-                    <th>Amount</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {#each ledgerEntries as entry}
-                    <tr>
-                      <td>{formatDate(entry.created_at)}</td>
-                      <td>{entry.type}</td>
-                      <td>{formatCurrency(entry.amount)}</td>
-                    </tr>
-                  {/each}
-                </tbody>
-              </table>
-            </div>
+            {#each ledgerEntries as entry}
+              <p>{entry.type}: {formatCurrency(entry.amount)}</p>
+            {/each}
+            {#if customer.type !== 'Guest' && userBalance !== null}
+              <p><strong>User Balance:</strong> {formatCurrency(userBalance)}</p>
+            {/if}
           {/if}
-        </div>
+        </section>
       </div>
     </div>
   </div>
 </div>
 
 {#if showCancelConfirm}
-  <div class="modal-backdrop" style="z-index: 3000;">
-    <div class="modal-content" style="max-width: 400px; margin: 10vh auto;" role="dialog" aria-modal="true" aria-labelledby="cancel-modal-title">
-      <div class="modal-header">
-        <h2 id="cancel-modal-title" tabindex="-1">Cancel Order?</h2>
-      </div>
-      <div class="modal-body">
-        <p>Are you sure you want to cancel this order? This action cannot be undone and will reapply all stock to inventory.</p>
-        <div style="display: flex; gap: 1rem; justify-content: flex-end; margin-top: 1.5rem;">
-          <button on:click={cancelCancel} disabled={loading}>No, keep order</button>
-          <button on:click={confirmCancel} class="danger" disabled={loading}>Yes, cancel order</button>
-        </div>
+  <div class="modal-backdrop confirm-modal-backdrop">
+    <div class="modal-content confirm-modal-content">
+      <h3>Confirm Cancellation</h3>
+      <p>This will permanently cancel the order and restock items. Are you sure?</p>
+      <div class="modal-actions">
+        <button class="btn" on:click={() => showCancelConfirm = false}>Back</button>
+        <button class="btn danger" on:click={confirmCancel}>Yes, Cancel</button>
       </div>
     </div>
   </div>
 {/if}
 
 <style>
+  :root {
+    --modal-max-width: 800px;
+    --modal-padding: 1.5rem;
+    --card-bg: #ffffff;
+    --card-border-radius: 8px;
+    --card-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  }
   .modal-backdrop {
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.4);
-    display: flex;
-    align-items: flex-start;
-    justify-content: center;
-    padding-top: 70px; /* navbar height */
-    z-index: 3000;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.6);
+    z-index: 1000;
+    display: flex; justify-content: center; align-items: center;
   }
   .modal-content {
-    position: fixed;
-   
-    margin-top: 1.5rem;
-    max-height: calc(100vh - 90px);
-    overflow-y: auto;
-    width: 100%;
-    max-width: 600px;
-    z-index: 3001;
-    background: white;
-    border-radius: 12px;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    padding: 2rem;
+    background: #f4f5f7;
+    border-radius: var(--card-border-radius);
+    box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+    max-width: var(--modal-max-width);
+    width: 90vw;
+    max-height: 90vh;
+    display: flex; flex-direction: column;
+    overflow: hidden;
   }
-  @media (max-width: 600px) {
-    .modal-content {
-
-      max-width: 98vw;
-      margin: 0.5rem 0 0 0;
-      margin-top: 1.5rem;
-      padding: 0.5rem;
-      max-height: calc(100vh - 80px);
-    }
-  }
-
   .modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 1.5rem;
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 1rem var(--modal-padding);
+    background: var(--card-bg);
+    border-bottom: 1px solid #e9ecef;
   }
-
-  .modal-header h2 {
-    margin: 0;
-    color: #333;
+  .modal-header h2 { margin: 0; font-size: 1.25rem; }
+  .icon-btn, .close-btn {
+    background: none; border: none; font-size: 1.5rem; cursor: pointer;
+    color: #6c757d; transition: color 0.2s;
   }
-
-  .close-btn {
-    background: none;
-    border: none;
-    font-size: 1.5rem;
-    cursor: pointer;
-    padding: 0.5rem;
-    color: #666;
-    transition: color 0.2s;
-  }
-
-  .close-btn:hover {
-    color: #333;
-  }
-
-  .info-section {
-    margin-bottom: 2rem;
-  }
-
-  .info-section h3 {
-    color: #333;
-    margin-bottom: 1rem;
-    padding-bottom: 0.5rem;
-    border-bottom: 1px solid #eee;
-  }
-
-  .info-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 1rem;
-  }
-
-  .info-item {
+  .icon-btn:hover, .close-btn:hover { color: #343a40; }
+  .close-btn { line-height: 1; padding: 0; }
+  
+  .modal-body {
+    padding: var(--modal-padding);
+    overflow-y: auto;
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: var(--modal-padding);
   }
-
-  .label {
-    font-size: 0.9rem;
-    color: #666;
+  .grid-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: var(--modal-padding);
   }
-
-  .value {
-    font-weight: 500;
-    color: #333;
+  .info-card {
+    background: var(--card-bg);
+    padding: var(--modal-padding);
+    border-radius: var(--card-border-radius);
+    box-shadow: var(--card-shadow);
   }
-
-  select {
-    padding: 0.5rem;
-    border: 1px solid #ddd;
+  .info-card h3 {
+    margin-top: 0;
+    margin-bottom: 1rem;
+    font-size: 1.1rem;
+    border-bottom: 1px solid #e9ecef;
+    padding-bottom: 0.5rem;
+  }
+  .info-card p { margin: 0.5rem 0; }
+  
+  .status-control { display: flex; align-items: center; gap: 0.5rem; }
+  .status-control select {
+    padding: 0.25rem 0.5rem;
     border-radius: 4px;
-    background: white;
-    cursor: pointer;
+    border: 1px solid #ced4da;
+  }
+  
+  .table-wrapper { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { padding: 0.75rem; text-align: left; border-bottom: 1px solid #e9ecef; }
+  th { background-color: #f8f9fa; }
+  td:last-child, th:last-child { text-align: right; }
+  tbody tr:last-child td { border-bottom: none; }
+
+  .financial-grid {
+    display: grid;
+    grid-template-columns: auto auto;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+  .financial-grid .total {
+    font-weight: bold;
+    margin-top: 0.5rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid #e9ecef;
   }
 
-  select:disabled {
-    background: #f5f5f5;
-    cursor: not-allowed;
-  }
-
-  .items-table {
-    overflow-x: auto;
-  }
-
-  table {
-    width: 100%;
-    border-collapse: collapse;
-  }
-
-  th, td {
-    padding: 1rem;
-    text-align: left;
-    border-bottom: 1px solid #eee;
-  }
-
-  th {
-    background: #f8f9fa;
-    font-weight: 600;
-    color: #333;
-  }
-
-  .product-info {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-  }
-
-  .product-info img {
-    border-radius: 4px;
-    object-fit: cover;
-  }
-
-  tfoot tr {
-    font-weight: 600;
-  }
-
-  .total-label {
-    text-align: right;
-  }
-
-  .total-value {
-    color: #28a745;
-  }
-
-  .error-message {
-    background: #f8d7da;
+  .alert.error {
+    background-color: #f8d7da;
     color: #721c24;
     padding: 1rem;
-    border-radius: 4px;
-    margin-bottom: 1rem;
+    border-radius: var(--card-border-radius);
   }
 
-  .invoice-breakdown {
-    margin-top: 1.5rem;
-    background: #f8f9fa;
-    border-radius: 8px;
-    padding: 1rem 1.5rem;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
-  }
-  .invoice-breakdown h4 {
-    margin: 0 0 1rem 0;
-    color: #333;
-    font-size: 1.1rem;
-  }
-  .invoice-table {
-    width: 100%;
-    border-collapse: collapse;
-  }
-  .invoice-table td {
-    padding: 0.5rem 0.75rem;
-    border-bottom: 1px solid #eee;
-  }
-  .invoice-table tr:last-child td {
-    border-bottom: none;
-  }
-  .invoice-table td:first-child {
-    color: #555;
-  }
-  .invoice-table td:last-child {
-    text-align: right;
-    font-weight: 500;
-  }
-
-  .modal-content .modal-header {
-    position: sticky;
-    top: 0;
+  .confirm-modal-backdrop { z-index: 1100; }
+  .confirm-modal-content {
     background: white;
-    z-index: 10;
-    padding: 1rem;
-    border-bottom: 1px solid #ccc;
+    max-width: 400px;
+    padding: var(--modal-padding);
+    text-align: center;
   }
-
-  .pdf-btn {
-    background: #f8f9fa;
-    border: 1px solid #007bff;
-    color: #007bff;
-    border-radius: 6px;
-    padding: 0.5rem 1rem;
-    font-size: 1rem;
-    cursor: pointer;
-    margin-left: 0.5rem;
-    transition: background 0.2s, color 0.2s;
+  .confirm-modal-content p {
+    margin: 1rem 0;
   }
-  .pdf-btn:hover {
-    background: #007bff;
-    color: #fff;
+  .modal-actions {
+    display: flex; justify-content: center; gap: 1rem; margin-top: 1.5rem;
   }
+  .btn {
+    padding: 0.6rem 1.2rem; border-radius: 6px; border: none;
+    cursor: pointer; font-weight: 500;
+  }
+  .btn.danger { background-color: #dc3545; color: white; }
 </style> 

@@ -78,6 +78,7 @@ export interface User {
   name?: string;
   phone?: string;
   address?: string;
+ //alance?: number; // Optional: for POS user balance
 }
 
 export * from './orders';

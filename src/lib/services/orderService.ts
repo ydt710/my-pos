@@ -60,7 +60,8 @@ export async function createOrder(
       p_payment_amount: cashGiven,
       p_method: paymentMethod,
       p_items: rpcItems,
-      p_extra_cash_option: extraCashOption
+      p_extra_cash_option: extraCashOption,
+      p_is_pos_order: isPosOrder
     });
     if (error) {
       console.error('pay_order error:', error);
@@ -152,8 +153,7 @@ export async function getAllOrders(filters?: OrderFilters): Promise<{ orders: Or
     let query = supabase
       .from('orders')
       .select(`*,order_items(*,products:product_id(name,image_url)),profiles:user_id(email,display_name,phone_number,address)`);
-    let userIds: string[] = [];
-    let profilesMap = new Map();
+    
     // Apply filters
     if (filters) {
       if (filters.status) {
@@ -172,14 +172,15 @@ export async function getAllOrders(filters?: OrderFilters): Promise<{ orders: Or
           .from('profiles')
           .select('id')
           .or(`email.ilike.${searchTerm},display_name.ilike.${searchTerm}`);
-        if (profiles && Array.isArray(profiles)) {
-          userIds = profiles.map((p: any) => p.id);
-        }
+        
+        const userIds = profiles && Array.isArray(profiles) ? profiles.map((p: any) => p.id) : [];
+        
         // Step 2: Build orFilters
         let orFilters = [
           `guest_info->>email.ilike.${searchTerm}`,
           `guest_info->>name.ilike.${searchTerm}`
         ];
+
         if (userIds.length > 0) {
           orFilters.push(`user_id.in.(${userIds.join(',')})`);
         }
@@ -243,6 +244,7 @@ export async function payOrder(
   userId: string,
   orderTotal: number,
   paymentAmount: number,
+  creditUsed: number,
   method: string,
   items: { product_id: string; quantity: number; price: number }[],
   extraCashOption: 'change' | 'credit' = 'change'
@@ -251,6 +253,7 @@ export async function payOrder(
     p_user_id: userId,
     p_order_total: orderTotal,
     p_payment_amount: paymentAmount,
+    p_credit_used: creditUsed,
     p_method: method,
     p_items: items,
     p_extra_cash_option: extraCashOption
@@ -382,4 +385,78 @@ export async function getUsersWithMostDebt(limit = 10) {
     }))
     .sort((a, b) => a.balance - b.balance)
     .slice(0, limit);
+}
+
+// Fetch all orders with their items, profiles, etc. and merge payment summary
+export async function getAllOrdersWithPaymentSummary() {
+  const { data: orders, error: ordersError } = await supabase
+    .from('orders')
+    .select(`
+      *,
+      order_items(*, products:product_id(name, image_url)),
+      profiles:user_id(email, display_name, phone_number, address)
+    `)
+    .order('created_at', { ascending: false });
+
+  if (ordersError) throw ordersError;
+
+  const { data: summaries, error: summariesError } = await supabase
+    .from('order_payment_summary')
+    .select('*');
+
+  if (summariesError) throw summariesError;
+
+  // Merge summaries into orders by order_id
+  const mergedOrders = orders.map(order => ({
+    ...order,
+    payment_summary: summaries.find(s => s.order_id === order.id) || null
+  }));
+
+  return mergedOrders;
+}
+
+// Fetch single order with its items, profile, etc. and merge payment summary
+export async function getOrderWithPaymentSummary(orderId: string) {
+  const { data: order, error: orderError } = await supabase
+    .from('orders')
+    .select(`
+      *,
+      order_items(*, products:product_id(name, image_url)),
+      profiles:user_id(email, display_name, phone_number, address)
+    `)
+    .eq('id', orderId)
+    .single();
+
+  if (orderError) throw orderError;
+
+  const { data: summary, error: summaryError } = await supabase
+    .from('order_payment_summary')
+    .select('*')
+    .eq('order_id', orderId)
+    .maybeSingle();
+
+  if (summaryError) throw summaryError;
+
+  // Attach summary to order
+  return {
+    ...order,
+    payment_summary: summary || null
+  };
+}
+
+/**
+ * Returns the user's available credit (positive = credit, negative = debt, zero = settled).
+ * Sums all transactions for the user.
+ */
+export async function getUserAvailableCredit(userId: string): Promise<number> {
+  const { data, error } = await supabase
+    .from('transactions')
+    .select('amount')
+    .eq('user_id', userId);
+  if (error || !data) {
+    console.error('Error fetching user available credit:', error);
+    return 0;
+  }
+  // Net sum: positive = credit, negative = debt
+  return data.reduce((sum, entry) => sum + Number(entry.amount), 0);
 } 

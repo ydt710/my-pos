@@ -1,368 +1,274 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { supabase } from '$lib/supabase';
-  import type { Order, OrderStatus } from '$lib/types/orders';
+  import type { Order, OrderStatus, OrderFilters } from '$lib/types/orders';
+  import { getAllOrders, updateOrderStatus, reapplyOrderStock } from '$lib/services/orderService';
   import { fade } from 'svelte/transition';
   import OrderDetailsModal from '$lib/components/OrderDetailsModal.svelte';
+  import { showSnackbar } from '$lib/stores/snackbarStore';
+  import ConfirmModal from '$lib/components/ConfirmModal.svelte';
 
   let orders: Order[] = [];
-  let loading = true;
-  let error: string | null = null;
+  let loadingOrders = true;
+  let orderError: string | null = null;
   let selectedOrder: Order | null = null;
-  let showModal = false;
 
-  let filters = {
-    status: '' as OrderStatus | '',
-    dateFrom: '',
-    dateTo: '',
-    search: ''
+  let filters: OrderFilters = {
+    status: undefined,
+    dateFrom: undefined,
+    dateTo: undefined,
+    search: '',
+    sortBy: 'created_at',
+    sortOrder: 'desc'
   };
 
-  const orderStatuses: OrderStatus[] = ['pending', 'processing', 'completed', 'cancelled'];
+  let showConfirmModal = false;
+  let orderIdToDelete: string | null = null;
+  
+  let showCancelConfirm = false;
+  let orderIdToCancel: string | null = null;
 
   onMount(() => {
-    fetchOrders();
+    loadOrders();
   });
 
-  async function fetchOrders() {
-    loading = true;
-    error = null;
-    try {
-      let query = supabase
-        .from('orders')
-        .select(`
-          *,
-          order_items (
-            *,
-            products:product_id (
-              name,
-              image_url
-            )
-          ),
-          profiles:user_id (
-            email,
-            display_name,
-            phone_number,
-            address
-          )
-        `)
-        .order('created_at', { ascending: false });
-
-      // Apply filters
-      if (filters.status) {
-        query = query.eq('status', filters.status);
-      }
-      if (filters.dateFrom) {
-        query = query.gte('created_at', filters.dateFrom);
-      }
-      if (filters.dateTo) {
-        query = query.lte('created_at', filters.dateTo);
-      }
-      if (filters.search) {
-        query = query.or(`id.eq.${filters.search},profiles.email.ilike.%${filters.search}%`);
-      }
-
-      const { data, error: err } = await query;
-      
-      if (err) throw err;
-      orders = (data || []).map(order => ({
-        ...order,
-        user: order.profiles || undefined
-      }));
-    } catch (err) {
-      console.error('Error fetching orders:', err);
-      error = 'Failed to load orders';
-    } finally {
-      loading = false;
+  async function loadOrders() {
+    loadingOrders = true;
+    orderError = null;
+    const { orders: fetchedOrders, error } = await getAllOrders(filters);
+    if (error) {
+      orderError = error;
+    } else {
+      orders = fetchedOrders;
     }
+    loadingOrders = false;
   }
 
-  async function updateOrderStatus(orderId: string, newStatus: OrderStatus) {
-    try {
-      const { error: err } = await supabase
-        .from('orders')
-        .update({ status: newStatus })
-        .eq('id', orderId);
-
-      if (err) throw err;
-      await fetchOrders();
-    } catch (err) {
-      console.error('Error updating order status:', err);
-      error = 'Failed to update order status';
+  async function handleStatusUpdate(orderId: string, newStatus: OrderStatus) {
+    if (newStatus === 'cancelled') {
+      showCancelConfirm = true;
+      orderIdToCancel = orderId;
+      return;
+    }
+    const { success, error } = await updateOrderStatus(orderId, newStatus);
+    if (success) {
+      await loadOrders();
+      if (selectedOrder?.id === orderId) {
+        selectedOrder.status = newStatus;
+      }
+    } else {
+      orderError = error;
     }
   }
+  
+  async function confirmCancelOrder() {
+    if (!orderIdToCancel) return;
+    const { success: stockSuccess, error: stockError } = await reapplyOrderStock(orderIdToCancel);
+    if (!stockSuccess) {
+      orderError = stockError || 'Failed to reapply stock.';
+      showCancelConfirm = false;
+      orderIdToCancel = null;
+      return;
+    }
+    const { success, error } = await updateOrderStatus(orderIdToCancel, 'cancelled');
+    if (success) {
+      await loadOrders();
+      if (selectedOrder?.id === orderIdToCancel) {
+        selectedOrder.status = 'cancelled';
+      }
+    } else {
+      orderError = error;
+    }
+    showCancelConfirm = false;
+    orderIdToCancel = null;
+  }
 
-  function viewOrderDetails(order: Order) {
-    selectedOrder = order;
-    showModal = true;
+  function cancelCancelOrder() {
+    showCancelConfirm = false;
+    orderIdToCancel = null;
   }
 
   function formatDate(dateString: string) {
-    return new Date(dateString).toLocaleDateString('en-ZA', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+    return new Date(dateString).toLocaleString();
   }
 
-  function getStatusColor(status: OrderStatus) {
-    const colors: Record<OrderStatus, string> = {
-      pending: '#ffc107',
-      processing: '#17a2b8',
-      completed: '#28a745',
-      cancelled: '#dc3545'
-    };
-    return colors[status];
-  }
-
-  $: {
-    // Reactively fetch orders when filters change
-    if (!loading) {
-      fetchOrders();
+  function getCustomerInfo(order: Order) {
+    if (order.guest_info) {
+      return { name: order.guest_info.name, email: order.guest_info.email };
+    } else if (order.user) {
+      const name = 'display_name' in order.user && order.user.display_name ? order.user.display_name : order.user.email?.split('@')[0] || 'N/A';
+      return { name, email: order.user.email || 'N/A' };
     }
+    return { name: 'N/A', email: 'N/A' };
+  }
+  
+  async function deleteOrder(orderId: string) {
+    loadingOrders = true;
+    orderError = null;
+    try {
+      await supabase.from('order_items').delete().eq('order_id', orderId);
+      await supabase.from('orders').delete().eq('id', orderId);
+      orders = orders.filter(o => o.id !== orderId);
+      showSnackbar('Order deleted successfully.');
+      loadOrders();
+    } catch (err) {
+      orderError = 'Failed to delete order.';
+      showSnackbar(orderError);
+    } finally {
+      loadingOrders = false;
+    }
+  }
+
+  $: if (filters) {
+    loadOrders();
   }
 </script>
 
 <div class="orders-page" in:fade>
   <header class="page-header">
-    <h1>Orders</h1>
-    <div class="filters">
-      <select 
-        bind:value={filters.status}
-        class="filter-select"
-      >
-        <option value="">All Statuses</option>
-        {#each orderStatuses as status}
-          <option value={status}>{status}</option>
-        {/each}
-      </select>
-
-      <input 
-        type="date" 
-        bind:value={filters.dateFrom}
-        class="filter-date"
-        placeholder="From Date"
-      />
-
-      <input 
-        type="date" 
-        bind:value={filters.dateTo}
-        class="filter-date"
-        placeholder="To Date"
-      />
-
-      <input 
-        type="text" 
-        bind:value={filters.search}
-        class="filter-search"
-        placeholder="Search order ID or email"
-      />
-    </div>
+    <h1>Order Management</h1>
   </header>
 
-  {#if error}
-    <div class="alert error" role="alert">{error}</div>
+  {#if orderError}
+    <div class="alert error" transition:fade>{orderError}</div>
   {/if}
-
-  {#if loading}
+  
+  <div class="filters-card">
+    <div class="filters">
+      <div class="filter-group"><label for="status">Status</label><select id="status" bind:value={filters.status}><option value={undefined}>All</option><option value="pending">Pending</option><option value="processing">Processing</option><option value="completed">Completed</option><option value="cancelled">Cancelled</option></select></div>
+      <div class="filter-group"><label for="dateFrom">From</label><input type="date" id="dateFrom" bind:value={filters.dateFrom} /></div>
+      <div class="filter-group"><label for="dateTo">To</label><input type="date" id="dateTo" bind:value={filters.dateTo} /></div>
+      <div class="filter-group"><label for="search">Search</label><input type="text" id="search" placeholder="Search..." bind:value={filters.search} /></div>
+    </div>
+  </div>
+  
+  {#if loadingOrders}
     <div class="loading">Loading orders...</div>
-  {:else if orders.length === 0}
-    <div class="no-orders">No orders found</div>
   {:else}
-    <div class="orders-table-container">
-      <table class="orders-table">
-        <thead>
-          <tr>
-            <th>Order ID</th>
-            <th>Date</th>
-            <th>Customer</th>
-            <th>Total</th>
-            <th>Status</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each orders as order (order.id)}
-            <tr>
-              <td>#{order.order_number}</td>
-              <td>{formatDate(order.created_at)}</td>
-              <td>
-                {order.user?.display_name || order.guest_info?.name || 'Unknown'}
-              </td>
-              <td>R{order.total}</td>
-              <td>
-                <div class="status-cell">
-                  <span 
-                    class="status-badge"
-                    style="background-color: {getStatusColor(order.status)}"
-                  >
-                    {order.status}
-                  </span>
-                  <select 
-                    value={order.status}
-                    on:change={(e) => {
-                      const target = e.target as HTMLSelectElement;
-                      updateOrderStatus(order.id, target.value as OrderStatus);
-                    }}
-                    class="status-select"
-                  >
-                    {#each orderStatuses as status}
-                      <option value={status}>{status}</option>
-                    {/each}
-                  </select>
-                </div>
-              </td>
-              <td>
-                <button 
-                  class="view-btn"
-                  on:click={() => viewOrderDetails(order)}
-                >
-                  View Details
-                </button>
-              </td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
+    <div class="table-card">
+      <div class="table-responsive desktop-only">
+        <table>
+          <thead><tr><th>Order #</th><th>Date</th><th>Customer</th><th>Email</th><th>Type</th><th>Payment</th><th>Total</th><th>Status</th><th>Actions</th></tr></thead>
+          <tbody>
+            {#each orders as order (order.id)}
+              <tr class:guest-order={order.guest_info}>
+                <td>{order.order_number || order.id}</td>
+                <td>{formatDate(order.created_at)}</td>
+                <td><strong>{getCustomerInfo(order).name}</strong></td>
+                <td>{getCustomerInfo(order).email}</td>
+                <td>{#if order.guest_info}<span class="badge guest">Guest</span>{:else}<span class="badge registered">Registered</span>{/if}</td>
+                <td>{order.payment_method || '-'}</td>
+                <td>R{order.total}</td>
+                <td><select value={order.status} class="status-select" on:change={(e) => handleStatusUpdate(order.id, e.currentTarget.value as OrderStatus)} disabled={order.status === 'cancelled'}><option value="pending">Pending</option><option value="processing">Processing</option><option value="completed">Completed</option><option value="cancelled">Cancelled</option></select></td>
+                <td><button class="view-details-btn" on:click={() => selectedOrder = order}>Details</button><button class="delete-btn" on:click={() => { showConfirmModal = true; orderIdToDelete = order.id; }}>Delete</button></td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+      <div class="mobile-cards mobile-only">
+        {#each orders as order (order.id)}
+          <div class="admin-card">
+            <!-- Mobile card view can be implemented here if needed -->
+          </div>
+        {/each}
+      </div>
     </div>
   {/if}
 </div>
 
-{#if showModal && selectedOrder}
-  <OrderDetailsModal 
-    order={selectedOrder}
-    onClose={() => {
-      showModal = false;
-      selectedOrder = null;
-    }}
-    onStatusUpdate={updateOrderStatus}
-  />
+{#if selectedOrder}
+    <OrderDetailsModal order={selectedOrder} onClose={() => selectedOrder = null} onStatusUpdate={handleStatusUpdate} />
 {/if}
 
+{#if showConfirmModal}
+    <ConfirmModal message="Delete this order?" onConfirm={() => { if (orderIdToDelete) deleteOrder(orderIdToDelete); showConfirmModal = false; orderIdToDelete = null; }} onCancel={() => { showConfirmModal = false; orderIdToDelete = null; }} />
+{/if}
+
+{#if showCancelConfirm}
+  <div class="modal-backdrop">
+    <div class="modal-content" style="max-width: 500px;">
+      <div class="modal-header">
+        <h2>Cancel Order?</h2>
+      </div>
+      <div class="modal-body">
+        <p>This will reapply stock to inventory. Are you sure?</p>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" on:click={cancelCancelOrder}>No</button>
+        <button class="btn danger" on:click={confirmCancelOrder}>Yes, cancel</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+
 <style>
-  .orders-page {
-    padding: 1rem;
-  }
-
-  .page-header {
-    margin-bottom: 2rem;
-  }
-
-  h1 {
-    margin: 0 0 1rem;
-    font-size: 2rem;
-    color: #333;
-  }
-
-  .filters {
+  /* Styles extracted and simplified from admin/+page.svelte */
+  .orders-page { padding: 1rem; max-width: 1400px; margin: 0 auto; }
+  .page-header { margin-bottom: 2rem; }
+  h1 { font-size: 2rem; }
+  .filters-card, .table-card { background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 1.5rem; }
+  .filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; }
+  .filter-group { display: flex; flex-direction: column; gap: 0.5rem; }
+  label { font-size: 0.9rem; color: #666; }
+  input, select { padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px; }
+  .table-responsive { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; min-width: 800px; }
+  th, td { padding: 1rem; text-align: left; border-bottom: 1px solid #e9ecef; }
+  th { background: #f8f9fa; }
+  .view-details-btn, .delete-btn { padding: 0.5rem 1rem; border: none; border-radius: 4px; cursor: pointer; }
+  .view-details-btn { background: #28a745; color: white; }
+  .delete-btn { background: #dc3545; color: white; margin-left: 0.5rem; }
+  .badge { padding: .25em .6em; font-size: 75%; font-weight: 700; line-height: 1; text-align: center; white-space: nowrap; vertical-align: baseline; border-radius: .25rem; }
+  .badge.guest { color: #fff; background-color: #6c757d; }
+  .badge.registered { color: #fff; background-color: #17a2b8; }
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 1000;
     display: flex;
-    gap: 1rem;
-    flex-wrap: wrap;
-  }
-
-  .filter-select,
-  .filter-date,
-  .filter-search {
-    padding: 0.5rem;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    font-size: 1rem;
-  }
-
-  .filter-search {
-    min-width: 200px;
-  }
-
-  .alert {
-    padding: 1rem;
-    border-radius: 4px;
-    margin-bottom: 1rem;
-  }
-
-  .alert.error {
-    background: #f8d7da;
-    color: #721c24;
-    border: 1px solid #f5c6cb;
-  }
-
-  .orders-table-container {
-    overflow-x: auto;
-    background: white;
-    border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-  }
-
-  .orders-table {
-    width: 100%;
-    border-collapse: collapse;
-    min-width: 800px;
-  }
-
-  th, td {
-    padding: 1rem;
-    text-align: left;
-    border-bottom: 1px solid #eee;
-  }
-
-  th {
-    background: #f8f9fa;
-    font-weight: 600;
-    color: #333;
-  }
-
-  .status-cell {
-    display: flex;
+    justify-content: center;
     align-items: center;
-    gap: 0.5rem;
   }
-
-  .status-badge {
-    padding: 0.25rem 0.5rem;
-    border-radius: 4px;
-    color: white;
-    font-size: 0.875rem;
-    text-transform: capitalize;
-  }
-
-  .status-select {
-    padding: 0.25rem;
-    border: 1px solid #ddd;
-    border-radius: 4px;
+  .modal-content {
     background: white;
+    padding: 0;
+    border-radius: 12px;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+    display: flex;
+    flex-direction: column;
   }
-
-  .view-btn {
-    background: #007bff;
-    color: white;
-    border: none;
+  .modal-header {
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid #e9ecef;
+  }
+  .modal-header h2 {
+    margin: 0;
+    font-size: 1.25rem;
+  }
+  .modal-body {
+    padding: 1.5rem;
+  }
+  .modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 1rem;
+    padding: 1rem 1.5rem;
+    border-top: 1px solid #e9ecef;
+    background-color: #f8f9fa;
+  }
+  .btn {
     padding: 0.5rem 1rem;
     border-radius: 4px;
+    border: 1px solid #ddd;
+    background-color: #f8f9fa;
     cursor: pointer;
-    transition: background-color 0.2s;
   }
-
-  .view-btn:hover {
-    background: #0056b3;
-  }
-
-  .loading,
-  .no-orders {
-    text-align: center;
-    padding: 2rem;
-    color: #666;
-  }
-
-  @media (max-width: 800px) {
-    .filters {
-      flex-direction: column;
-    }
-
-    .filter-select,
-    .filter-date,
-    .filter-search {
-      width: 100%;
-    }
+  .btn.danger {
+    background-color: #dc3545;
+    color: white;
+    border-color: #dc3545;
   }
 </style> 

@@ -10,6 +10,8 @@
     goto('/login');
   }
 
+  // This function is no longer needed as we are moving to a page-based navigation
+  /*
   function scrollToSection(sectionId: string) {
     if ($page.url.pathname === '/admin') {
       const element = document.getElementById(sectionId);
@@ -41,6 +43,7 @@
       }, 100);
     }
   }
+  */
 </script>
 
 <nav class="admin-nav">
@@ -53,47 +56,62 @@
     </div>
 
     <div class="nav-links" class:open={menuOpen}>
-      <button 
+      <a 
+        href="/"
         class="nav-link" 
         class:active={$page.url.pathname === '/'}
-        on:click={() => { menuOpen = false; goto('/'); }}
+        on:click={() => menuOpen = false}
       >
         Home
-      </button>
-      <button 
+      </a>
+      <a 
+        href="/admin"
         class="nav-link" 
         class:active={$page.url.pathname === '/admin'}
-        on:click={() => { menuOpen = false; goto('/admin'); }}
+        on:click={() => menuOpen = false}
       >
         Dashboard
-      </button>
-      <button 
+      </a>
+      <a 
+        href="/admin/products"
         class="nav-link" 
-        on:click={() => { menuOpen = false; scrollToSection('orders'); }}
+        class:active={$page.url.pathname === '/admin/products'}
+        on:click={() => menuOpen = false}
+      >
+        Products
+      </a>
+      <a 
+        href="/admin/orders"
+        class="nav-link" 
+        class:active={$page.url.pathname === '/admin/orders'}
+        on:click={() => menuOpen = false}
       >
         Orders
-      </button>
-      <button 
+      </a>
+      <a 
+        href="/admin/users"
         class="nav-link" 
         class:active={$page.url.pathname === '/admin/users'}
-        on:click={() => { menuOpen = false; goto('/admin/users'); }}
+        on:click={() => menuOpen = false}
       >
         Users
-      </button>
-      <button 
+      </a>
+      <a 
+        href="/admin/settings"
         class="nav-link" 
         class:active={$page.url.pathname === '/admin/settings'}
-        on:click={() => { menuOpen = false; goto('/admin/settings'); }}
+        on:click={() => menuOpen = false}
       >
         Settings
-      </button>
-      <button 
+      </a>
+      <a 
+        href="/admin/stock-management"
         class="nav-link" 
         class:active={$page.url.pathname === '/admin/stock-management'}
-        on:click={() => { menuOpen = false; goto('/admin/stock-management'); }}
+        on:click={() => menuOpen = false}
       >
-        Stock Management
-      </button>
+        Stock
+      </a>
     </div>
   </div>
 </nav>

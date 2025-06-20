@@ -1,11 +1,11 @@
 <script lang="ts">
-  import { tick, onMount } from 'svelte';
+  import { tick, onMount, onDestroy } from 'svelte';
   import { cartStore, cartNotification, selectedPosUser, fetchCustomPricesForUser, customPrices, getItemCount, getTotal } from '$lib/stores/cartStore';
   import { goto } from '$app/navigation';
   import CartItem from './CartItem.svelte';
   import { supabase } from '$lib/supabase';
   import { fade } from 'svelte/transition';
-  import { getUserBalance } from '$lib/services/orderService';
+  import { getUserBalance, getUserAvailableCredit } from '$lib/services/orderService';
   import { get } from 'svelte/store';
   import { debounce, getBalanceColor } from '$lib/utils';
   import { FLOAT_USER_ID, FLOAT_USER_EMAIL } from '$lib/constants';
@@ -23,61 +23,87 @@
   let userResults: UserSearch[] = [];
   let selectedUser: UserSearch | null = null;
   let userLoading = false;
-  let showAddAccountModal = false;
-  let newAccount = { display_name: '', phone_number: '', email: '' };
-  let addAccountError = '';
-  let addAccountLoading = false;
   let selectedUserBalance: number | null = null;
-  let searchDebounce: NodeJS.Timeout | null = null;
+  let selectedUserAvailableCredit: number | null = null;
   let lastFocusedElement: HTMLElement | null = null;
+  
+  // --- SEARCH OPTIMIZATION ---
+  let searchTimeout: ReturnType<typeof setTimeout> | null = null;
+  let searchCache: Record<string, UserSearch[]> = {};
+  let searchAbortController: AbortController | null = null;
+  // --- END SEARCH OPTIMIZATION ---
   
   // ARIA live region for dynamic feedback
   let liveMessage = '';
   $: if (userLoading) liveMessage = 'Searching users...';
-  $: if (addAccountError) liveMessage = addAccountError;
   $: if ($cartNotification) liveMessage = $cartNotification.message;
   
-  // Debounced user search
-  const debouncedSearchUsers = debounce(() => searchUsers(), 300);
-  
+  // Debounced user search (custom, not imported)
   function handleUserSearchInput() {
-    debouncedSearchUsers();
+    if (searchTimeout) clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => {
+      searchUsers();
+    }, 350);
   }
   
   async function searchUsers() {
-    if (userSearch.length < 2) {
+    const query = userSearch.trim();
+    if (query.length < 2) {
       userResults = [];
       return;
     }
+
+    // Check cache first
+    if (searchCache[query]) {
+      userResults = searchCache[query];
+      return;
+    }
+
+    // Cancel previous fetch if still running
+    if (searchAbortController) {
+      searchAbortController.abort();
+    }
+    searchAbortController = new AbortController();
+
     userLoading = true;
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('id, display_name, email')
-      .or(`display_name.ilike.%${userSearch}%,email.ilike.%${userSearch}%`)
-      .limit(10);
-    userResults = (data || []).filter(user => user.id !== FLOAT_USER_ID && user.email !== FLOAT_USER_EMAIL);
+    try {
+      const { data, error } = await supabase
+        .rpc('search_all_users', { search_term: query })
+        .abortSignal(searchAbortController.signal);
+
+      if (error) throw error;
+      
+      // Filter out float user, etc.
+      const filtered = (data || []).filter((user: UserSearch) => user.id !== FLOAT_USER_ID && user.email !== FLOAT_USER_EMAIL);
+      userResults = filtered;
+      searchCache[query] = filtered; // Cache the result
+    } catch (e: any) {
+      if (e.name !== 'AbortError') {
+        console.error(e);
+      }
+    } finally {
     userLoading = false;
+    }
   }
   
   function selectUser(user: UserSearch) {
     selectedUser = user;
     userResults = [];
     userSearch = user.display_name || user.email;
-    // Map UserSearch to User for PosUser
-    selectedPosUser.set({
-      id: user.id,
-      email: user.email,
-      name: user.display_name || undefined,
-      balance: selectedUserBalance ?? 0
-    });
     // Fetch and display balance for selected user
-    fetchUserBalance(user.id);
-    // Fetch custom prices for this user
-    fetchCustomPricesForUser(user.id);
-  }
-  
-  async function fetchUserBalance(userId: string) {
-    selectedUserBalance = await getUserBalance(userId);
+    getUserBalance(user.id).then(balance => {
+      selectedUserBalance = balance;
+      getUserAvailableCredit(user.id).then(credit => {
+        selectedUserAvailableCredit = credit;
+      });
+      console.log('[CartSidebar] selectedUserBalance for', user.id, '=', balance);
+      selectedPosUser.set({
+        id: user.id,
+        email: user.email,
+        name: user.display_name || undefined,
+      });
+      fetchCustomPricesForUser(user.id);
+    });
   }
   
   function goToCheckout() {
@@ -107,10 +133,8 @@
   }
   function handleModalKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape') {
-      showAddAccountModal = false;
-      tick().then(() => {
-        document.getElementById('user-search')?.focus();
-      });
+      toggleVisibility();
+      restoreFocus();
     }
     // Trap focus in modal (implement if needed)
   }
@@ -124,42 +148,32 @@
     restoreFocus();
   }
   
-  async function addAccount() {
-    addAccountError = '';
-    if (!newAccount.display_name.trim()) {
-      addAccountError = 'Display name is required.';
-      return;
-    }
-    addAccountLoading = true;
-    // Insert into profiles (email can be empty)
-    const { data, error } = await supabase
-      .from('profiles')
-      .insert([
-        {
-          display_name: newAccount.display_name.trim(),
-          phone_number: newAccount.phone_number.trim(),
-          email: newAccount.email.trim() || null
+  let posUserUnsubscribe: (() => void) | null = null;
+
+  onMount(() => {
+    posUserUnsubscribe = selectedPosUser.subscribe((val) => {
+      (async () => {
+        if (val && val.id) {
+          selectedUserBalance = await getUserBalance(val.id);
+          selectedUserAvailableCredit = await getUserAvailableCredit(val.id);
+          // Optionally update selectedUser for UI
+          selectedUser = { id: val.id, display_name: val.name ?? null, email: val.email };
+        } else {
+          selectedUserBalance = null;
+          selectedUserAvailableCredit = null;
+          selectedUser = null;
         }
-      ])
-      .select()
-      .single();
-    addAccountLoading = false;
-    if (error) {
-      addAccountError = error.message || 'Failed to add account.';
-      return;
-    }
-    // Auto-select the new user
-    selectUser(data);
-    showAddAccountModal = false;
-    newAccount = { display_name: '', phone_number: '', email: '' };
-    tick().then(() => {
-      document.getElementById('user-search')?.focus();
+      })();
     });
-  }
-  
+  });
+  onDestroy(() => {
+    if (posUserUnsubscribe) posUserUnsubscribe();
+  });
+
   $: posUser = $selectedPosUser;
 
   $: if (posUser && posUser.id) {
+    console.log('[CartSidebar] posUser changed:', posUser);
     fetchCustomPricesForUser(posUser.id);
   } else {
     customPrices.set({});
@@ -198,7 +212,6 @@
         on:input={handleUserSearchInput}
         autocomplete="off"
       />
-      <button class="add-account-btn" type="button" on:click={() => showAddAccountModal = true}>+ Add Account</button>
       {#if userLoading}
         <div class="user-loading">Searching...</div>
       {/if}
@@ -218,9 +231,15 @@
           Assigned to: <strong>{posUser.name || posUser.email}</strong>
           <br />
           <span>
-            Balance: <span style="color: {(selectedUserBalance ?? 0) > 0 ? '#28a745' : (selectedUserBalance ?? 0) < 0 ? '#dc3545' : '#666'};">
-              R{selectedUserBalance ?? 0}
-            </span>
+            {#if selectedUserAvailableCredit === null}
+              Balance: <span style="color: #666;">Loading...</span>
+            {:else if selectedUserAvailableCredit < 0}
+              Debt: <span style="color: #dc3545;">R{Math.abs(selectedUserAvailableCredit).toFixed(2)}</span>
+            {:else if selectedUserAvailableCredit > 0}
+              Credit: <span style="color: #28a745;">R{selectedUserAvailableCredit.toFixed(2)}</span>
+            {:else}
+              Balance: <span style="color: #666;">R0.00</span>
+            {/if}
           </span>
           <button class="clear-user-btn" on:click={() => { selectedPosUser.set(null); selectedUser = null; }} style="margin-top:0.5rem;">Guest Checkout</button>
         </div>
@@ -230,39 +249,6 @@
         </div>
       {/if}
     </div>
-    {#if showAddAccountModal}
-      <div class="modal-backdrop" transition:fade></div>
-      <div class="modal add-account-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" transition:fade>
-        <div class="modal-header">
-          <h2 id="modal-title" tabindex="-1">Add New Account</h2>
-          <button type="button" on:click={() => showAddAccountModal = false} class="cancel-btn" aria-label="Close">×</button>
-        </div>
-        <div class="modal-content" role="document">
-          <form on:submit|preventDefault={addAccount}>
-            <div class="form-group">
-              <label for="new-display-name">Display Name*</label>
-              <input id="new-display-name" type="text" bind:value={newAccount.display_name} required />
-            </div>
-            <div class="form-group">
-              <label for="new-phone-number">Phone Number (optional)</label>
-              <input id="new-phone-number" type="text" bind:value={newAccount.phone_number} />
-            </div>
-            <div class="form-group">
-              <label for="new-email">Email (optional)</label>
-              <input id="new-email" type="email" bind:value={newAccount.email} />
-            </div>
-            {#if addAccountError}
-              <div class="error-message">{addAccountError}</div>
-            {/if}
-            <div class="modal-actions">
-              <button type="submit" class="submit-btn" disabled={addAccountLoading}>
-                {addAccountLoading ? 'Adding...' : 'Add Account'}
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
-    {/if}
   {/if}
   
   {#if $cartNotification}
@@ -365,7 +351,6 @@
   .cart-items {
     flex-grow: 1;
     overflow-y: auto;
-    z-index: 2000;
   }
 
   .cart-footer {
@@ -428,6 +413,8 @@
   }
 
   .pos-user-search {
+    position: relative;
+    z-index: 2002;
     margin-bottom: 1rem;
     padding-bottom: 1rem;
     border-bottom: 1px solid rgb(255, 255, 255);
@@ -448,6 +435,7 @@
     margin-bottom: 0.25rem;
     background: rgba(255, 255, 255, 0.9);
     transition: all 0.2s;
+    width: 100%;
   }
 
   .pos-user-search input:focus {
@@ -467,7 +455,7 @@
     overflow-y: auto;
     position: absolute;
     width: 90%;
-    z-index: 10;
+    z-index: 2002;
     backdrop-filter: blur(10px);
   }
 

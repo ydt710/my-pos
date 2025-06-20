@@ -586,7 +586,7 @@
 
 .product__price {
   color: #ffffff;
-  font-size: 1.1rem;
+  font-size: 1.5rem;
   font-weight: 700;
 }
 
@@ -615,8 +615,8 @@
 }
 
 .product__cannabis-potency-value {
-  width: 16px;
-  height: 6px;
+  width: 26px;
+  height: 9px;
   border-radius: 2px;
   background: #eee;
 }
@@ -630,7 +630,7 @@
   margin: 0.25rem 0;
   padding: 0.15rem 0.3rem;
   border-radius: 4px;
-  font-size: 0.75rem;
+  font-size: 1;
   background: #e8f5e9;
   color: #2e7d32;
   text-align: center;

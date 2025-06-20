@@ -15,6 +15,7 @@
   import type { Product } from '$lib/types/index';
   import { get } from 'svelte/store';
   import { selectedPosUser } from '$lib/stores/cartStore';
+  import { PUBLIC_SHOP_LOCATION_ID } from '$env/static/public';
 
   // Define types for locations, stock levels, and movements
   type Location = { id: string | number; name: string };
@@ -51,6 +52,18 @@
   let note = '';
 
   let posPendingTransfers: StockMovement[] = [];
+  $: pendingProductions = stockMovements.filter(m => m.type === 'production' && m.status === 'pending');
+
+  // Reactive map for efficient lookup and reactivity in the template
+  $: stockMap = stockLevels.reduce((acc, level) => {
+    const productId = String(level.product_id);
+    const locationId = String(level.location_id);
+    if (!acc[productId]) {
+      acc[productId] = {};
+    }
+    acc[productId][locationId] = level.quantity;
+    return acc;
+  }, {} as { [productId: string]: { [locationId: string]: number } });
 
   let isAdmin = false;
   let userShopId: string | number | null = null;
@@ -103,16 +116,32 @@
       discrepancies = discrepancyData || [];
     }
 
+    // Fetch profiles for discrepancies
+    if (discrepancies.length > 0) {
+      const userIds = [...new Set(discrepancies.map(d => d.reported_by).filter(id => id))];
+      if (userIds.length > 0) {
+        const { data: profilesData, error: profilesError } = await supabase
+          .from('profiles')
+          .select('id, display_name, email')
+          .in('id', userIds);
+
+        if (profilesError) {
+          console.error('Error fetching profiles for discrepancies:', profilesError);
+        } else if (profilesData) {
+          profiles = profilesData.reduce((acc, profile) => {
+            acc[profile.id] = profile;
+            return acc;
+          }, {} as { [id: string]: { display_name?: string; email?: string } });
+        }
+      }
+    }
+
     // Determine user's shop ID based on selectedPosUser store or fallback
     const posUser = get(selectedPosUser);
     if (posUser && typeof posUser === 'object' && 'shop_id' in posUser && typeof posUser.shop_id === 'string') {
       userShopId = posUser.shop_id;
     } else {
-      // Fallback: get the first shop location with name 'shop' if locations are loaded
-      if (locations.length > 0) {
-      const shop = locations.find(l => l.name === 'shop');
-         userShopId = shop?.id || null;
-      }
+      userShopId = PUBLIC_SHOP_LOCATION_ID;
     }
 
     // Check admin status
@@ -256,14 +285,9 @@
     // await fetchData(); // Removed: Realtime will update
   }
 
-  function getStockLevel(productId: string | number, locationId: string | number): number {
-    const entry = stockLevels.find((s) => String(s.product_id) === String(productId) && String(s.location_id) === String(locationId));
-    return entry ? entry.quantity : 0;
-  }
-
   async function handleAcceptTransfer(transfer: StockMovement) {
     await acceptStockTransfer(transfer.id as string, transfer.quantity);
-    await fetchData(); // Refresh state so the UI updates immediately
+    // await fetchData(); // Refresh state so the UI updates immediately - This can cause a race condition. Realtime should handle it.
   }
 
   function openRejectModal(transfer: StockMovement) {
@@ -391,7 +415,7 @@
               <tr>
                 <td>{p.name}</td>
                 {#each locations as l}
-                  <td>{getStockLevel(p.id, l.id)}</td>
+                  <td>{stockMap[p.id]?.[l.id] ?? 0}</td>
                 {/each}
               </tr>
             {/each}
@@ -411,7 +435,7 @@
             </tr>
           </thead>
           <tbody>
-            {#each stockMovements.filter(m => m.type === 'production' && m.status === 'pending') as m}
+            {#each pendingProductions as m}
               <tr>
                 <td>{new Date(m.created_at).toLocaleString()}</td>
                 <td>{products.find(p => p.id === m.product_id)?.name || m.product_id}</td>
