@@ -36,7 +36,7 @@ BEGIN
 
     -- Step 4: Record the payment transaction
     -- This assumes the admin is confirming a cash payment for the full amount.
-    INSERT INTO public.transactions (user_id, order_id, amount, method, type, note, payment_amount, debt_paid)
+    INSERT INTO public.transactions (user_id, order_id, amount, method, type, note, payment_amount, debt_paid_amount)
     VALUES (
         v_order.user_id,
         p_order_id,

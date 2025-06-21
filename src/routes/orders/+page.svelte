@@ -277,33 +277,7 @@
     margin: 0.25rem 0 0;
   }
 
-  .order-status {
-    padding: 0.5rem 1rem;
-    border-radius: 20px;
-    font-size: 0.9rem;
-    font-weight: 500;
-  }
-
-  .order-status.pending {
-    background: #fff3cd;
-    color: #856404;
-  }
-
-  .order-status.processing {
-    background: #cce5ff;
-    color: #004085;
-  }
-
-  .order-status.delivered {
-    background: #d4edda;
-    color: #155724;
-  }
-
-  .order-status.cancelled {
-    background: #f8d7da;
-    color: #721c24;
-  }
-
+  
   .order-items {
     display: flex;
     flex-direction: column;
@@ -453,9 +427,7 @@
       gap: 0.5rem;
     }
 
-    .order-status {
-      align-self: flex-start;
-    }
+  
 
     .order-item {
       flex-direction: column;

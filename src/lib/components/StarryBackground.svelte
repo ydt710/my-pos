@@ -4,6 +4,7 @@
   let canvas: HTMLCanvasElement;
   let ctx: CanvasRenderingContext2D | null = null;
   let animationFrameId: number;
+  let isAnimating = false;
   let stars: (Star | null)[] = [];
   let shootingStars: ShootingStar[] = [];
   let lastTime = 0;
@@ -13,6 +14,13 @@
   let prevWidth = 0;
   let prevHeight = 0;
   let fadeIn = false;
+
+  if (import.meta.hot) {
+    import.meta.hot.dispose(() => {
+      stars = [];
+      shootingStars = [];
+    });
+  }
 
   interface Star {
     x: number;
@@ -176,21 +184,54 @@
     ctx.stroke();
   }
 
-  function drawStaticStarfield() {
-    if (!canvas || !ctx) return;
+  function animate(timestamp: number) {
+    if (!isAnimating || !canvas || !ctx) return;
+
+    // Throttle frame rate
+    const elapsed = timestamp - lastTime;
+    if (elapsed < frameInterval) {
+      animationFrameId = requestAnimationFrame(animate);
+      return;
+    }
+    lastTime = timestamp - (elapsed % frameInterval);
+    
+    // Clear canvas and draw background
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = '#000510';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Single loop for updating and drawing stars
     stars.forEach(star => {
-      if (star) drawStar(star);
+      if (!star) return;
+
+      // 1. Move stars gently downward on desktop only
+      if (!isMobile) {
+        star.y += star.speed * 0.007;
+        if (star.y > canvas.height) {
+          star.y = 0;
+          star.x = Math.random() * canvas.width;
+        }
+      }
+      
+      // 2. Twinkle only white stars
+      if (star.blinkSpeed > 0) {
+        star.blinkPhase += star.blinkSpeed;
+        star.opacity = 0.7 + 0.3 * Math.sin(star.blinkPhase);
+      }
+
+      // 3. Draw the star
+      drawStar(star);
     });
 
-    // Animate shooting stars
+    if (!isMobile && Math.random() < OPTIMIZED.shootingFlowerChance) {
+      createShootingStar();
+    }
+
+    // Animate and draw shooting stars
     shootingStars = shootingStars.filter(star => {
       star.x += star.speedX;
       star.y += star.speedY;
 
-      // Fade in and out
       if (star.x < -100 || star.x > canvas.width + 100 || star.y < -100 || star.y > canvas.height + 100) {
         return false; // remove if off-screen
       } else {
@@ -204,40 +245,18 @@
     animationFrameId = requestAnimationFrame(animate);
   }
 
-  function animate() {
-    if (!canvas || !ctx) {
-      animationFrameId = requestAnimationFrame(animate);
-      return;
+  function startAnimation() {
+    if (!isAnimating) {
+      isAnimating = true;
+      requestAnimationFrame(animate);
     }
-    if (document.hidden) {
-      animationFrameId = requestAnimationFrame(animate);
-      return;
-    }
-    // Move stars gently downward on desktop only
-    if (!isMobile) {
-      stars.forEach(star => {
-        if (!star) return;
-        star.y += star.speed * 0.007; // Slow downward movement
-        if (star.y > canvas.height) {
-          star.y = 0;
-          star.x = Math.random() * canvas.width;
-        }
-      });
-    }
-    // Twinkle only white stars
-    stars.forEach(star => {
-      if (!star) return;
-      if (star.blinkSpeed > 0) {
-        star.blinkPhase += star.blinkSpeed;
-        star.opacity = 0.7 + 0.3 * Math.sin(star.blinkPhase);
-      }
-    });
+  }
 
-    if (!isMobile && Math.random() < OPTIMIZED.shootingFlowerChance) {
-      createShootingStar();
+  function stopAnimation() {
+    isAnimating = false;
+    if (animationFrameId) {
+      cancelAnimationFrame(animationFrameId);
     }
-
-    drawStaticStarfield();
   }
 
   function updateStarPositions() {
@@ -249,40 +268,46 @@
     });
   }
 
+  let resizeTimeout: ReturnType<typeof setTimeout>;
   function handleResize() {
-    if (!canvas || !ctx) return;
+    if (!canvas) return;
 
-    applyOptimizations();
-    const dpr = window.devicePixelRatio || 1;
-    const newWidth = window.innerWidth * dpr;
-    const newHeight = window.innerHeight * dpr;
+    clearTimeout(resizeTimeout);
+    resizeTimeout = setTimeout(() => {
+      if (!canvas || !ctx) return;
+      applyOptimizations();
+      const dpr = window.devicePixelRatio || 1;
+      const newWidth = window.innerWidth * dpr;
+      const newHeight = window.innerHeight * dpr;
 
-    // Only re-initialize if the size changed drastically (by more than 20%)
-    const widthChange = Math.abs(newWidth - prevWidth) / (prevWidth || 1);
-    const heightChange = Math.abs(newHeight - prevHeight) / (prevHeight || 1);
-    if (widthChange > 0.2 || heightChange > 0.2 || stars.length === 0) {
-      canvas.width = newWidth;
-      canvas.height = newHeight;
-    
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.scale(dpr, dpr);
-      initStars();
-      prevWidth = newWidth;
-      prevHeight = newHeight;
-    } else if (Math.abs(newWidth - prevWidth) > 2 || Math.abs(newHeight - prevHeight) > 2) {
-      canvas.width = newWidth;
-      canvas.height = newHeight;
-      canvas.style.width = '100vw';
-      canvas.style.height = '100vh';
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.scale(dpr, dpr);
-      updateStarPositions();
-      prevWidth = newWidth;
-      prevHeight = newHeight;
-    }
+      // Only re-initialize if the size changed drastically (by more than 20%)
+      const widthChange = Math.abs(newWidth - prevWidth) / (prevWidth || 1);
+      const heightChange = Math.abs(newHeight - prevHeight) / (prevHeight || 1);
+      if (widthChange > 0.2 || heightChange > 0.2 || stars.length === 0) {
+        canvas.width = newWidth;
+        canvas.height = newHeight;
+      
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.scale(dpr, dpr);
+        initStars();
+        prevWidth = newWidth;
+        prevHeight = newHeight;
+      } else if (Math.abs(newWidth - prevWidth) > 2 || Math.abs(newHeight - prevHeight) > 2) {
+        canvas.width = newWidth;
+        canvas.height = newHeight;
+        canvas.style.width = '100vw';
+        canvas.style.height = '100vh';
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.scale(dpr, dpr);
+        updateStarPositions();
+        prevWidth = newWidth;
+        prevHeight = newHeight;
+      }
+    }, 250);
   }
 
   onMount(() => {
+    console.log('[StarryBackground] Mounted');
     if (!canvas) return;
     
     ctx = canvas.getContext('2d', { alpha: false });
@@ -290,23 +315,34 @@
     
     applyOptimizations();
     handleResize();
-    drawStaticStarfield();
     fadeIn = true;
-    animate();
+    startAnimation();
 
     window.addEventListener('resize', handleResize);
     // Pause animation when not visible
     const handleVisibility = () => {
-      if (!document.hidden) {
-        animate();
+      if (document.hidden) {
+        stopAnimation();
+      } else {
+        startAnimation();
       }
     };
     document.addEventListener('visibilitychange', handleVisibility);
 
     return () => {
+      console.log('[StarryBackground] Destroyed');
       window.removeEventListener('resize', handleResize);
       document.removeEventListener('visibilitychange', handleVisibility);
-      cancelAnimationFrame(animationFrameId);
+      stopAnimation();
+      clearTimeout(resizeTimeout);
+      
+      // Explicitly clean up large arrays and canvas context to prevent memory leaks
+      if (ctx) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx = null;
+      }
+      stars = [];
+      shootingStars = [];
     };
   });
 </script>

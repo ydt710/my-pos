@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { fade } from 'svelte/transition';
   import type { Product } from '$lib/types/index';
   import { cartStore, cartNotification, isPosOrAdmin, selectedPosUser, getEffectivePrice } from '$lib/stores/cartStore';
@@ -40,7 +40,7 @@
   let showSnackbar = false;
   let snackbarMessage = '';
   let snackbarType: 'success' | 'error' = 'success';
-  let snackbarTimeout: NodeJS.Timeout;
+  let snackbarTimeout: ReturnType<typeof setTimeout>;
   let imageLoaded = false;
   let addToCartInProgress = false;
 
@@ -242,6 +242,15 @@
   function handleQuantityInputClick(event: MouseEvent) {
     handleQuantityClick(event);
   }
+
+  onDestroy(() => {
+    // Explicitly clear all timers and references to prevent memory leaks.
+    // This is critical for components that are frequently created and destroyed.
+    clearTimeout(snackbarTimeout);
+
+    // Nullifying DOM element references can help the garbage collector.
+    cardElement = null;
+  });
 </script>
 
 <div class="card-product__border" class:trippy={product.is_special || product.is_new}>

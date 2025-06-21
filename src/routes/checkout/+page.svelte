@@ -175,21 +175,18 @@
       // Ensure cashGiven is always a valid number
       let cash = Number(cashGiven);
       if (isNaN(cash) || cash < 0) cash = 0;
-      const items = $cartStore.map(item => ({
-        product_id: item.id,
-        quantity: item.quantity,
-        price: item.price
-      }));
-      console.log('[CHECKOUT PATCH] payOrder args:', {
-        paymentUserId,
-        total,
-        cashGiven,
-        cash,
-        paymentMethod,
-        items
-      });
-      const result = await payOrder(paymentUserId, total, cash, creditUsed, paymentMethod, items, extraCashOption);
-      console.log('[CHECKOUT PATCH] payOrder result:', result);
+      
+      const result = await createOrder(
+        total, 
+        $cartStore, 
+        isGuest ? guestInfo : undefined, 
+        paymentUserId, 
+        paymentMethod, 
+        cash, 
+        isPosUser,
+        extraCashOption
+      );
+
       if (result.success) {
         success = '🎉 Order placed successfully! Thank you for your purchase.';
         // Refresh balance after order

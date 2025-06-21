@@ -94,7 +94,8 @@ function loadCartFromStorage(): CartItem[] {
 
 // --- Cart Store ---
 function createCartStore() {
-  const { subscribe, set, update } = writable<CartItem[]>(loadCartFromStorage());
+  const store = writable<CartItem[]>(loadCartFromStorage());
+  const { subscribe, set, update } = store;
   
   subscribe(items => saveCartToStorage(items));
 
@@ -156,37 +157,37 @@ function createCartStore() {
   // Update quantity of a cart item
   async function updateQuantity(productId: string | number, newQuantity: number) {
     if (newQuantity < 1) {
-      showSnackbar('Quantity must be at least 1.');
-      return false;
+      removeItem(String(productId));
+      return;
     }
+
     try {
       const currentStock = await getStock(String(productId), 'shop');
       if (currentStock <= 0) {
         showSnackbar('This item is out of stock.');
-        return false;
+        removeItem(String(productId));
+        return;
       }
+      
+      let finalQuantity = newQuantity;
       if (newQuantity > currentStock) {
         showSnackbar(`Only ${currentStock} items available in stock.`);
-        update(items => {
-          return items.map(item =>
-            String(item.id) === String(productId)
-              ? { ...item, quantity: currentStock }
-              : item
-          );
-        });
-        return false;
+        finalQuantity = currentStock;
       }
+      
+      const userId = get(selectedPosUser)?.id;
+
       update(items => {
-        return items.map(item =>
-          String(item.id) === String(productId)
-            ? { ...item, quantity: newQuantity }
-            : item
-        );
+        return items.map(item => {
+          if (String(item.id) === String(productId)) {
+            const newPrice = getEffectivePrice(item, userId, finalQuantity);
+            return { ...item, quantity: finalQuantity, price: newPrice };
+          }
+          return item;
+        });
       });
-      return true;
     } catch (err) {
       showSnackbar('Error updating quantity. Please try again.');
-      return false;
     }
   }
 
@@ -198,30 +199,7 @@ function createCartStore() {
   // Clear the cart
   function clearCart() {
     set([]);
-    saveCartToStorage([]);
   }
-
-  // Function to reprice all cart items when selected user or custom prices change
-  function repriceCartItems() {
-    let userId = null;
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('selectedPosUser');
-      if (stored) {
-        try {
-          const user = JSON.parse(stored);
-          userId = user?.id;
-        } catch {}
-      }
-    }
-    update((items: CartItem[]) => items.map((item: CartItem) => ({
-      ...item,
-      price: getEffectivePrice(item, userId, item.quantity)
-    })));
-  }
-
-  // Subscribe to changes in customPrices and selectedPosUser to reprice cart items
-  customPrices.subscribe(() => repriceCartItems());
-  selectedPosUser.subscribe(() => repriceCartItems());
 
   return {
     subscribe,
@@ -235,8 +213,28 @@ function createCartStore() {
 }
 
 export const cartStore = createCartStore();
-export const cartTotal = derived(cartStore, $cartStore => $cartStore.reduce((total, item) => total + item.price * item.quantity, 0));
-export const cartItemCount = derived(cartStore, $cartStore => $cartStore.reduce((count, item) => count + item.quantity, 0));
+
+// A derived store that automatically recalculates the cart with correct prices
+// whenever the cart, the selected user, or custom prices change.
+// This is the correct, idiomatic Svelte way to handle this and avoids memory leaks.
+export const pricedCart = derived(
+  [cartStore, selectedPosUser, customPrices],
+  ([$cartStore, $selectedPosUser, $customPrices]) => {
+    if (!$cartStore) return [];
+    return $cartStore.map(item => {
+      const newPrice = getEffectivePrice(item, $selectedPosUser?.id, item.quantity);
+      return { ...item, price: newPrice };
+    });
+  }
+);
+
+export const cartTotal = derived(pricedCart, $pricedCart => 
+  $pricedCart.reduce((total, item) => total + item.price * item.quantity, 0)
+);
+
+export const cartItemCount = derived(pricedCart, $pricedCart => 
+  $pricedCart.reduce((count, item) => count + item.quantity, 0)
+);
 
 // Create a store to check if current user is POS or admin
 export const isPosOrAdmin = writableStore<boolean>(false);

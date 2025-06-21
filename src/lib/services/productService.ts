@@ -1,11 +1,10 @@
 import { supabase } from '$lib/supabase';
 import { cacheProduct, getCachedProduct, cleanupProductCache } from './cacheService';
 import type { Product } from '$lib/types/index';
-import { writable } from 'svelte/store';
 import type { PostgrestSingleResponse, PostgrestResponse } from '@supabase/supabase-js';
 
-// Centralized products store
-export const productsStore = writable<Product[]>([]);
+// Centralized products store (REMOVED to prevent memory leaks)
+// export const productsStore = writable<Product[]>([]);
 
 // Retry utility for async functions
 async function retry<T>(fn: () => Promise<T>, retries = 2, delay = 500): Promise<T> {
@@ -213,20 +212,17 @@ export async function fetchProductsLazy(
   }
 }
 
-// Fetch all products and update the store
+// Fetch all products
 export async function loadAllProducts(): Promise<{ products: Product[]; error: string | null }> {
   try {
     const { data, error } = await supabase.from('products').select('*');
     if (error) {
       console.error('Error fetching products:', error);
-      productsStore.set([]);
       return { products: [], error: error.message };
     }
-    productsStore.set(data || []);
     return { products: data || [], error: null };
   } catch (err) {
     console.error('Unexpected error fetching products:', err);
-    productsStore.set([]);
     return { products: [], error: 'Failed to fetch products. Please try again later.' };
   }
 } 

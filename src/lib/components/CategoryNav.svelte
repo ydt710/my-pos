@@ -15,13 +15,15 @@
   $: cartCount = $cartStore.reduce((sum, item) => sum + item.quantity, 0);
   $: if (cartCount > previousCartCount) {
     isCartAnimating = true;
-    setTimeout(() => {
+    cartAnimationTimeout = setTimeout(() => {
       isCartAnimating = false;
     }, 500);
     previousCartCount = cartCount;
   }
 
   let spinningCategory: string | null = null;
+  let cartAnimationTimeout: ReturnType<typeof setTimeout>;
+  let categorySpinTimeout: ReturnType<typeof setTimeout>;
 
   const dispatch = createEventDispatcher();
 
@@ -85,7 +87,7 @@
     const newCategory = activeCategory === categoryId ? '' : categoryId;
     dispatch('selectcategory', { id: newCategory });
     spinningCategory = categoryId;
-    setTimeout(() => {
+    categorySpinTimeout = setTimeout(() => {
       spinningCategory = null;
     }, 700); // match animation duration
   }
@@ -131,7 +133,15 @@
   });
 
   onDestroy(() => {
-    if (transferChannel) transferChannel.unsubscribe();
+    // Clear any pending timeouts to prevent memory leaks
+    clearTimeout(cartAnimationTimeout);
+    clearTimeout(categorySpinTimeout);
+    
+    // Properly unsubscribe and remove the realtime channel
+    if (transferChannel) {
+      supabase.removeChannel(transferChannel);
+      transferChannel = null;
+    }
   });
 </script>
 

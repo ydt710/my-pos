@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, afterUpdate } from 'svelte';
   import { fly, fade } from 'svelte/transition';
   import { cartStore } from '$lib/stores/cartStore';
-  import { productsStore, loadAllProducts } from '$lib/services/productService';
+  import { loadAllProducts } from '$lib/services/productService';
   import { supabase } from '$lib/supabase';
   import type { Product } from '$lib/types/index';
   
@@ -73,15 +73,7 @@
   let loadMoreTrigger: HTMLDivElement | null = null;
   let observer: IntersectionObserver | null = null;
 
-  function setupObserver() {
-    if (observer) observer.disconnect();
-    observer = new window.IntersectionObserver((entries) => {
-      if (entries[0].isIntersecting) {
-        loadMoreProducts();
-      }
-    }, { threshold: 1.0 });
-    if (loadMoreTrigger) observer.observe(loadMoreTrigger);
-  }
+
 
   function loadMoreProducts() {
     // Only load more if there are more products to show
@@ -106,6 +98,11 @@
   }
 
   function filterProducts() {
+    // Disconnect and destroy the old observer before filtering
+    if (observer) {
+      observer.disconnect();
+      observer = null;
+    }
     // Always search out of allProducts array
     products = allProducts
       .filter(p => {
@@ -163,10 +160,15 @@
       const oldPageSize = pageSize;
       updatePageSize();
       if (oldPageSize !== pageSize) {
+        // If page size changes, we reset pagination and need to reset the observer
+        if (observer) {
+            observer.disconnect();
+            observer = null;
+        }
         currentPage = 1;
         paginateProducts();
       }
-    }, 500);
+    }, 200);
   }
 
   onMount(async () => {
@@ -194,23 +196,23 @@
     }
     posCheckComplete = true;
 
-    // Load all products once and subscribe to the store
+    // Load all products once and manage them locally
     loading = true;
-    const { error: loadError } = await loadAllProducts();
+    const { products: loadedProducts, error: loadError } = await loadAllProducts();
     loading = false;
     if (loadError) {
       error = loadError;
-    }
-    unsubscribe = productsStore.subscribe(async p => {
-      allProducts = p;
-      filterProducts();
-      // Fetch stock levels for all products
+    } else {
+      allProducts = loadedProducts;
+
+      // Fetch stock levels just once after products are loaded
       if (allProducts.length > 0) {
         stockLevels = await getShopStockLevels(allProducts.map(prod => prod.id));
-      } else {
-        stockLevels = {};
       }
-    });
+      
+      // Manually trigger the first filter and pagination
+      filterProducts();
+    }
 
     if (typeof window !== 'undefined') {
       updatePageSize();
@@ -219,7 +221,6 @@
   });
 
   onDestroy(() => {
-    if (unsubscribe) unsubscribe();
     if (typeof window !== 'undefined') {
       if (resizeTimeout) {
         clearTimeout(resizeTimeout);
@@ -228,8 +229,6 @@
     }
     if (observer) observer.disconnect();
   });
-
-  $: filteredProducts = paginatedProducts;
 
   $: categoryBackgroundStyle = '';
 
@@ -319,55 +318,17 @@
       await updateProductRating(String(reviewProduct.id));
       closeReviewModal();
       clearProductCache(); // Clear cache before reloading products
-      await loadAllProducts(); // Refresh products so product card updates
+      
+      // Refresh products so product card updates
+      const { products: reloadedProducts } = await loadAllProducts(); 
+      allProducts = reloadedProducts;
+      filterProducts();
+
     } catch (error) {
       alert('Failed to submit review. Please try again.');
     } finally {
       submittingReview = false;
     }
-  }
-
-  function applyProductFilters() {
-    filteredProducts = products.filter(product => {
-      // Search filter
-      if (productFilters.search && !product.name.toLowerCase().includes(productFilters.search.toLowerCase())) {
-        return false;
-      }
-      // Category filter
-      if (productFilters.category && product.category !== productFilters.category) {
-        return false;
-      }
-      // Price range filter
-      if (productFilters.minPrice && product.price < Number(productFilters.minPrice)) {
-        return false;
-      }
-      if (productFilters.maxPrice && product.price > Number(productFilters.maxPrice)) {
-        return false;
-      }
-      return true;
-    });
-    // Apply sorting
-    filteredProducts.sort((a, b) => {
-      let comparison = 0;
-      switch (productFilters.sortBy) {
-        case 'name':
-          comparison = a.name.localeCompare(b.name);
-          break;
-        case 'price':
-          comparison = a.price - b.price;
-          break;
-        case 'category':
-          comparison = a.category.localeCompare(b.category);
-          break;
-        default:
-          comparison = 0;
-      }
-      return productFilters.sortOrder === 'asc' ? comparison : -comparison;
-    });
-  }
-
-  $: if (typeof window !== 'undefined' && loadMoreTrigger) {
-    setupObserver();
   }
 </script>
 
@@ -445,13 +406,13 @@
         </div>
     <div class="category-section">
       <div class="products-grid">
-        {#if filteredProducts.length === 0}
+        {#if paginatedProducts.length === 0}
           <div class="no-results-in-grid">
             <p>No products found matching "{productFilters.search}"</p>
             <p class="sub-text">Try a different search or clear your search above.</p>
           </div>
         {:else}
-        {#each filteredProducts as product (product.id)}
+        {#each paginatedProducts as product (product.id)}
           <div in:fly={{ y: 30, duration: 350 }}>
             <ProductCard 
               {product}

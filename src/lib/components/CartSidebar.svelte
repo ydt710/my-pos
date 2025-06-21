@@ -1,6 +1,6 @@
 <script lang="ts">
   import { tick, onMount, onDestroy } from 'svelte';
-  import { cartStore, cartNotification, selectedPosUser, fetchCustomPricesForUser, customPrices, getItemCount, getTotal } from '$lib/stores/cartStore';
+  import { pricedCart, cartNotification, selectedPosUser, fetchCustomPricesForUser, customPrices, cartItemCount, cartTotal } from '$lib/stores/cartStore';
   import { goto } from '$app/navigation';
   import CartItem from './CartItem.svelte';
   import { supabase } from '$lib/supabase';
@@ -106,7 +106,7 @@
   }
   
   function goToCheckout() {
-    if ($cartStore.length === 0) return;
+    if ($pricedCart.length === 0) return;
     toggleVisibility();
     goto('/checkout');
   }
@@ -153,6 +153,7 @@
     posUserUnsubscribe = selectedPosUser.subscribe((val) => {
       (async () => {
         if (val && val.id) {
+          fetchCustomPricesForUser(val.id);
           selectedUserBalance = await getUserBalance(val.id);
           selectedUserAvailableCredit = await getUserAvailableCredit(val.id);
           // Optionally update selectedUser for UI
@@ -161,6 +162,7 @@
           selectedUserBalance = null;
           selectedUserAvailableCredit = null;
           selectedUser = null;
+          customPrices.set({}); // Clear prices if user is cleared
         }
       })();
     });
@@ -170,13 +172,6 @@
   });
 
   $: posUser = $selectedPosUser;
-
-  $: if (posUser && posUser.id) {
-    console.log('[CartSidebar] posUser changed:', posUser);
-    fetchCustomPricesForUser(posUser.id);
-  } else {
-    customPrices.set({});
-  }
 </script>
 
 <!-- ARIA live region for dynamic feedback -->
@@ -192,7 +187,7 @@
   on:keydown={handleSidebarKeydown}
 >
   <div class="cart-header">
-    <h2>Your Cart ({getItemCount($cartStore)} items)</h2>
+    <h2>Your Cart ({$cartItemCount} items)</h2>
     <button 
       class="close-btn" 
       aria-label="Close cart" 
@@ -263,26 +258,31 @@
     <div class="loading">Updating cart...</div>
   {/if}
   
-  {#if $cartStore.length > 0}
-    <div class="cart-items">
-      {#each $cartStore as item (item.id)}
-        <CartItem {item} {loading} userId={posUser ? posUser.id : null} />
+  <div class="cart-items">
+    {#if $pricedCart.length > 0}
+      {#each $pricedCart as item (item.id)}
+        <div in:fade>
+          <CartItem {item} {loading} userId={posUser ? posUser.id : null} />
+        </div>
       {/each}
-    </div>
-    
-    <div class="cart-footer">
-      <h3>Total: R{getTotal($cartStore)}</h3>
-      <button 
-        on:click={goToCheckout} 
-        class="checkout-btn" 
-        disabled={$cartStore.length === 0 || loading}
-      >
-        Proceed to Checkout
-      </button>
-    </div>
-  {:else}
-    <p class="empty-cart">Your cart is empty.</p>
-  {/if}
+    {:else}
+      <div class="empty-cart" in:fade>
+        <p>Your cart is empty.</p>
+        <button on:click={toggleVisibility}>Start Shopping</button>
+      </div>
+    {/if}
+  </div>
+  
+  <div class="cart-footer">
+    <h3>Total: R{$cartTotal.toFixed(2)}</h3>
+    <button 
+      on:click={goToCheckout} 
+      class="checkout-btn" 
+      disabled={$pricedCart.length === 0 || loading}
+    >
+      Proceed to Checkout
+    </button>
+  </div>
 </div>
 
 <style>
@@ -534,31 +534,7 @@
     border: 1px solid rgba(255, 255, 255, 0.2);
   }
 
-  .modal.add-account-modal .form-group {
-    margin-bottom: 1rem;
-  }
 
-  .modal.add-account-modal label {
-    display: block;
-    margin-bottom: 0.25rem;
-    color: #555;
-    font-weight: 500;
-  }
-
-  .modal.add-account-modal input {
-    width: 100%;
-    border: 1px solid rgba(0, 0, 0, 0.1);
-    border-radius: 8px;
-    font-size: 1rem;
-    background: rgba(255, 255, 255, 0.9);
-    transition: all 0.2s;
-  }
-
-  .modal.add-account-modal input:focus {
-    outline: none;
-    border-color: #2196f3;
-    box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.1);
-  }
 
   .modal-actions {
     display: flex;

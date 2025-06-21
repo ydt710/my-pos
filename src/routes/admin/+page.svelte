@@ -28,7 +28,7 @@
     let mostDebtUsers: { user_id: string; name?: string; email?: string; balance: number }[] = [];
     let topProducts: { name: string; quantity: number; }[] = [];
     
-    let allOrders: Order[] = [];
+    let allOrders: (Pick<Order, 'id' | 'created_at' | 'total' | 'status' | 'deleted_at'>)[] = [];
   
     let revenueChartInstance: ChartType | null = null;
     let revenueFilter = 'year';
@@ -54,62 +54,36 @@
       await fetchStats();
       await Promise.all([
         fetchTopBuyersAndDebtors(),
-        fetchAndRenderDebtCreatedChart()
+        fetchAndRenderDebtCreatedChart(),
+        fetchAndRenderRevenueChart()
       ]);
       
       await tick();
-      renderRevenueChart();
     });
   
     async function fetchStats() {
       try {
-        const { data: ordersData, error: ordersError } = await supabase
-          .from('orders')
-          .select(`*, order_items (quantity, products:product_id(name))`)
-          .order('created_at', { ascending: false });
+        const { data, error } = await supabase.rpc('get_dashboard_stats');
+        if (error) throw error;
 
-        if (ordersError) throw ordersError;
-        allOrders = ordersData || [];
+        stats.totalOrders = data.totalOrders;
+        stats.totalRevenue = data.totalRevenue;
+        stats.cashToCollect = data.cashToCollect;
+        topProducts = data.topProducts;
 
-        const validOrders = allOrders.filter(order => !order.deleted_at && order.status === 'completed');
-        stats.totalOrders = validOrders.length;
-        stats.totalRevenue = validOrders.reduce((total, order) => total + (order.total || 0), 0);
-
-        const productStats = new Map<string, number>();
-        validOrders.forEach(order => {
-          order.order_items?.forEach((item: any) => {
-            if (!item.products) return;
-            const name = item.products.name;
-            productStats.set(name, (productStats.get(name) || 0) + item.quantity);
-          });
-        });
-        topProducts = Array.from(productStats.entries())
-          .map(([name, quantity]) => ({ name, quantity }))
-          .sort((a, b) => b.quantity - a.quantity)
-          .slice(0, 5);
-
-        const pendingCashOrders = allOrders.filter(order => !order.deleted_at && order.status === 'pending' && order.payment_method === 'cash');
-        stats.cashToCollect = pendingCashOrders.reduce((sum, order) => sum + (order.total || 0), 0);
-
-        const { data: ledgerCashIn, error: cashInError } = await supabase.from('transactions').select('payment_amount, created_at').eq('method', 'cash');
+        const { data: cashStats, error: cashInError } = await supabase.rpc('get_cash_in_stats');
         if (cashInError) throw cashInError;
-
-        const now = new Date();
-        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        const startOfWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay());
-        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-        const startOfYear = new Date(now.getFullYear(), 0, 1);
-
-        cashIn = { today: 0, week: 0, month: 0, year: 0, all: 0 };
-        for (const entry of ledgerCashIn) {
-          const created = new Date(entry.created_at);
-          if (created >= startOfToday) cashIn.today += entry.payment_amount;
-          if (created >= startOfWeek) cashIn.week += entry.payment_amount;
-          if (created >= startOfMonth) cashIn.month += entry.payment_amount;
-          if (created >= startOfYear) cashIn.year += entry.payment_amount;
-          cashIn.all += entry.payment_amount;
+        if (cashStats) {
+          const cashInData = cashStats[0];
+          cashIn = { 
+            today: cashInData.today, 
+            week: cashInData.week, 
+            month: cashInData.month, 
+            year: cashInData.year, 
+            all: cashInData.all_time 
+          };
+          stats.cashCollected = cashInData.today;
         }
-        stats.cashCollected = cashIn.today;
       } catch (err) {
         console.error('Error fetching stats:', err);
       }
@@ -122,69 +96,29 @@
       mostDebtUsers = debtors.map(u => ({ ...u, balance: Number(u.balance) })).filter(u => u.balance < 0);
     }
 
-    function getRevenueDataByFilter(orders: Order[], filter: string) {
-        const now = new Date();
-        let startDate: Date;
-        
-        if (filter === 'today') {
-            startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-            const todayData = orders
-                .filter(o => new Date(o.created_at) >= startDate && o.status === 'completed' && !o.deleted_at)
-                .map(o => ({
-                    x: new Date(o.created_at).getTime(),
-                    y: o.total || 0
-                }))
-                .sort((a, b) => a.x - b.x);
-            return { data: todayData, labels: [] };
-        }
-
-        let groupedData: { [key: string]: number } = {};
-        let labels: string[] = [];
-        
-        switch (filter) {
-            case 'week':
-                startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay());
-                ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].forEach(day => groupedData[day] = 0);
-                break;
-            case 'month':
-                startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-                for (let i=1; i<=now.getDate(); i++) groupedData[i.toString()] = 0;
-                break;
-            case 'year':
-            default:
-                startDate = new Date(now.getFullYear(), 0, 1);
-                ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].forEach(m => groupedData[m]=0);
-        }
-
-        orders
-            .filter(o => new Date(o.created_at) >= startDate && o.status === 'completed' && !o.deleted_at)
-            .forEach(o => {
-                const date = new Date(o.created_at);
-                let key = '';
-                if (filter === 'week') key = date.toLocaleDateString('en-US', { weekday: 'short' });
-                else if (filter === 'month') key = date.getDate().toString();
-                else if (filter === 'year') key = date.toLocaleDateString('en-US', { month: 'short' });
-                if (key in groupedData) groupedData[key] += o.total || 0;
-            });
-        
-        labels = Object.keys(groupedData);
-        if(filter === 'month') labels.sort((a,b) => parseInt(a) - parseInt(b));
-        if(filter === 'year') labels = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-        
-        const data = labels.map(label => groupedData[label]);
-        return { labels, data };
-    }
-
-    function renderRevenueChart() {
+    async function fetchAndRenderRevenueChart() {
         if (revenueChartInstance) revenueChartInstance.destroy();
         
         const ctx = document.getElementById('revenueChart') as HTMLCanvasElement;
         if (!ctx) return;
 
-        const { labels, data } = getRevenueDataByFilter(allOrders, revenueFilter);
-
-        const chartType = revenueFilter === 'today' ? 'line' : 'bar';
+        const { data: chartRpcData, error } = await supabase.rpc('get_revenue_chart_data', { filter_option: revenueFilter });
+        if (error || !chartRpcData) {
+          console.error('Error fetching revenue data:', error);
+          return;
+        }
         
+        const chartType = revenueFilter === 'today' ? 'line' : 'bar';
+        let labels, data;
+
+        if (chartType === 'line') {
+            labels = chartRpcData.map((d: any) => new Date(d.period).getTime());
+            data = chartRpcData.map((d: any) => ({ x: new Date(d.period).getTime(), y: d.revenue }));
+        } else {
+            labels = chartRpcData.map((d: any) => d.period);
+            data = chartRpcData.map((d: any) => d.revenue);
+        }
+
         const gradient = ctx.getContext('2d')?.createLinearGradient(0, 0, 0, 400);
         gradient?.addColorStop(0, 'rgba(54, 162, 235, 0.5)');
         gradient?.addColorStop(1, 'rgba(54, 162, 235, 0)');
@@ -244,7 +178,10 @@
         revenueChartInstance = new Chart(ctx, { type: chartType, data: chartData, options: chartOptions });
     }
 
-    function setRevenueFilter(filter: string) { revenueFilter = filter; renderRevenueChart(); }
+    function setRevenueFilter(filter: string) { 
+      revenueFilter = filter; 
+      fetchAndRenderRevenueChart(); 
+    }
 
     async function fetchAndRenderDebtCreatedChart() {
         if (debtCreatedChartInstance) debtCreatedChartInstance.destroy();

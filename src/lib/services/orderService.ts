@@ -22,13 +22,9 @@ export async function createOrder(
   guestInfo?: GuestInfo,
   userIdOverride?: string,
   paymentMethod: string = 'cash',
-  debt: number = 0,
   cashGiven: number = 0,
-  changeGiven: number = 0,
   isPosOrder: boolean = false,
-  extraCashOption: 'change' | 'credit' = 'change',
-  currentUserDebt: number = 0,
-  creditUsed: number = 0
+  extraCashOption: 'change' | 'credit' = 'change'
 ): Promise<{ success: boolean; error: string | null; orderId?: string }> {
   try {
     if (!items || items.length === 0) {
@@ -38,39 +34,32 @@ export async function createOrder(
       return { success: false, error: 'Invalid order total' };
     }
 
-    // Determine if the current user is a POS user
-    let isPosOrder = false;
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session) {
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('auth_user_id', session.user.id)
-        .single();
-      if (profile && profile.role === 'pos') {
-        isPosOrder = true;
-      }
-    }
-
-    let userId = null;
+    let authUserId = null;
     if (userIdOverride) {
-      userId = userIdOverride;
+      // If an override is provided, assume it is an auth_user_id
+      authUserId = userIdOverride;
     } else if (!guestInfo) {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         return { success: false, error: 'User not authenticated and no guest info provided' };
       }
-      userId = user.id;
+      authUserId = user.id;
     }
+
+    if (!authUserId) {
+      return { success: false, error: 'Could not determine user to charge order to.' };
+    }
+
     // Prepare items for RPC
     const rpcItems = items.map(item => ({
       product_id: item.id,
       quantity: item.quantity,
       price: item.price
     }));
+
     // Call the atomic pay_order function
-    const { data, error } = await supabase.rpc('pay_order', {
-      p_user_id: userId,
+    const { data: orderId, error } = await supabase.rpc('pay_order', {
+      p_user_id: authUserId,
       p_order_total: total,
       p_payment_amount: cashGiven,
       p_method: paymentMethod,
@@ -78,11 +67,13 @@ export async function createOrder(
       p_extra_cash_option: extraCashOption,
       p_is_pos_order: isPosOrder
     });
+
     if (error) {
       console.error('pay_order error:', error);
       return { success: false, error: error.message };
     }
-    return { success: true, error: null, orderId: data };
+
+    return { success: true, error: null, orderId };
   } catch (err) {
     console.error('Unexpected error in checkout:', err);
     return {
@@ -341,122 +332,70 @@ export async function reapplyOrderStock(orderId: string): Promise<{ success: boo
   }
 }
 
-// Get top buying users by total completed order value
 export async function getTopBuyingUsers(limit = 10) {
-  const { data, error } = await supabase
-    .from('orders')
-    .select('user_id, total')
-    .eq('status', 'completed');
+  const { data, error } = await supabase.rpc('get_top_buyers', { p_limit: limit });
 
-  if (error || !data) return [];
-
-  // Aggregate totals per user
-  const totals: Record<string, number> = {};
-  for (const order of data) {
-    if (!order.user_id) continue;
-    totals[order.user_id] = (totals[order.user_id] || 0) + Number(order.total);
+  if (error) {
+    console.error('Error fetching top buyers:', error);
+    return [];
   }
-
-  // Convert to array and sort
-  const sorted: { user_id: string; total: number; email?: string; name?: string }[] = Object.entries(totals)
-    .map(([user_id, total]) => ({ user_id, total: Number(total) }))
-    .sort((a, b) => b.total - a.total)
-    .slice(0, limit);
-
-  // Fetch user emails and names
-  if (sorted.length > 0) {
-    const { data: profiles } = await supabase
-      .from('profiles')
-      .select('id, email, display_name')
-      .in('id', sorted.map(u => u.user_id));
-    for (const user of sorted) {
-      const profile = profiles?.find(p => p.id === user.user_id);
-      user.email = profile?.email || '';
-      user.name = profile?.display_name || '';
-    }
-  }
-
-  return sorted;
+  return data || [];
 }
 
-// Get users with most debt (lowest balances)
 export async function getUsersWithMostDebt(limit = 10) {
-  // Get all balances, then filter for negative
-  const balances = await getAllUserBalances();
-  const userIds = Object.keys(balances).filter(id => balances[id] < 0);
-  if (userIds.length === 0) return [];
-  // Fetch user info for those with debt
-  const { data: profiles, error } = await supabase
-    .from('profiles')
-    .select('id, email, display_name')
-    .in('id', userIds);
-  if (error || !profiles) return [];
-  return profiles
-    .map((profile: any) => ({
-      user_id: profile.id,
-      balance: balances[profile.id],
-      email: profile.email,
-      name: profile.display_name
-    }))
-    .sort((a, b) => a.balance - b.balance)
-    .slice(0, limit);
+  const { data, error } = await supabase.rpc('get_users_with_most_debt', { p_limit: limit });
+
+  if (error) {
+    console.error('Error fetching users with most debt:', error);
+    return [];
+  }
+  return data || [];
 }
 
 // Fetch all orders with their items, profiles, etc. and merge payment summary
 export async function getAllOrdersWithPaymentSummary() {
-  const { data: orders, error: ordersError } = await supabase
-    .from('orders')
-    .select(`
-      *,
-      order_items(*, products:product_id(name, image_url)),
-      profiles:user_id(email, display_name, phone_number, address)
-    `)
-    .order('created_at', { ascending: false });
+  const { data, error } = await supabase.rpc('get_all_orders_with_payment_summary');
 
-  if (ordersError) throw ordersError;
+  if (error) {
+    console.error('Error fetching orders with payment summary:', error);
+    return [];
+  }
 
-  const { data: summaries, error: summariesError } = await supabase
-    .from('order_payment_summary')
-    .select('*');
-
-  if (summariesError) throw summariesError;
-
-  // Merge summaries into orders by order_id
-  const mergedOrders = orders.map(order => ({
-    ...order,
-    payment_summary: summaries.find(s => s.order_id === order.id) || null
-  }));
-
-  return mergedOrders;
+  return data || [];
 }
 
 // Fetch single order with its items, profile, etc. and merge payment summary
 export async function getOrderWithPaymentSummary(orderId: string) {
-  const { data: order, error: orderError } = await supabase
-    .from('orders')
-    .select(`
-      *,
-      order_items(*, products:product_id(name, image_url)),
-      profiles:user_id(email, display_name, phone_number, address)
-    `)
-    .eq('id', orderId)
-    .single();
-
-  if (orderError) throw orderError;
-
-  const { data: summary, error: summaryError } = await supabase
-    .from('order_payment_summary')
-    .select('*')
-    .eq('order_id', orderId)
-    .maybeSingle();
-
-  if (summaryError) throw summaryError;
-
-  // Attach summary to order
-  return {
-    ...order,
-    payment_summary: summary || null
-  };
+  try {
+    // First, get the basic order details
+    const { data: order, error: orderError } = await supabase
+      .from('orders')
+      .select(`*, order_items(*, products(*)), profiles:user_id(*)`)
+      .eq('id', orderId)
+      .single();
+  
+    if (orderError) throw orderError;
+  
+    // Now, call the secure function to get the payment summary
+    const { data: summary, error: summaryError } = await supabase.rpc(
+      'get_order_payment_summary',
+      { p_order_id: orderId }
+    );
+  
+    if (summaryError) throw summaryError;
+  
+    // The RPC returns an array with one object, so we take the first element
+    const paymentSummary = Array.isArray(summary) ? summary[0] : summary;
+  
+    return { 
+      data: { ...order, payment_summary: paymentSummary }, 
+      error: null 
+    };
+  
+  } catch (err: any) {
+    console.error('Error fetching order with payment summary:', err);
+    return { data: null, error: err.message || 'An unexpected error occurred.' };
+  }
 }
 
 /**

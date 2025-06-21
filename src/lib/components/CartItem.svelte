@@ -1,7 +1,6 @@
 <script lang="ts">
   import type { CartItem as CartItemType } from '$lib/types/index';
   import { cartStore } from '$lib/stores/cartStore';
-  import { getEffectivePrice } from '$lib/stores/cartStore';
   
 
   export let item: CartItemType;
@@ -29,7 +28,7 @@
   <img src={item.image_url} alt={item.name} />
   <div class="cart-item-info">
     <div class="cart-item-name">{item.name}</div>
-    <div class="cart-item-price">R{getEffectivePrice(item, userId ?? undefined)} × {item.quantity}</div>
+    <div class="cart-item-price">R{item.price.toFixed(2)} × {item.quantity}</div>
     <div class="cart-item-quantity" role="group" aria-label="Quantity controls">
       <button 
         class="quantity-btn" 
