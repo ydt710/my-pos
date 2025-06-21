@@ -75,7 +75,7 @@
       
       // Filter out float user, etc.
       
-      searchCache[query] = filtered; // Cache the result
+      
     } catch (e: any) {
       if (e.name !== 'AbortError') {
         console.error(e);
