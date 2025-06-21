@@ -73,8 +73,8 @@
 
       if (error) throw error;
       
-      // Filter out float user, etc.
-      
+      userResults = data || [];
+      searchCache[query] = data || [];
       
     } catch (e: any) {
       if (e.name !== 'AbortError') {

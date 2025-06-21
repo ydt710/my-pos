@@ -37,6 +37,21 @@ export async function createOrder(
     if (total < 0) {
       return { success: false, error: 'Invalid order total' };
     }
+
+    // Determine if the current user is a POS user
+    let isPosOrder = false;
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('auth_user_id', session.user.id)
+        .single();
+      if (profile && profile.role === 'pos') {
+        isPosOrder = true;
+      }
+    }
+
     let userId = null;
     if (userIdOverride) {
       userId = userIdOverride;

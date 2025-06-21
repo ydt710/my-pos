@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { supabase } from '$lib/supabase';
   import type { Order, OrderStatus, OrderFilters } from '$lib/types/orders';
-  import { getAllOrders, updateOrderStatus, reapplyOrderStock } from '$lib/services/orderService';
+  import { getAllOrders, updateOrderStatus } from '$lib/services/orderService';
   import { fade } from 'svelte/transition';
   import OrderDetailsModal from '$lib/components/OrderDetailsModal.svelte';
   import { showSnackbar } from '$lib/stores/snackbarStore';
@@ -50,6 +50,24 @@
       orderIdToCancel = orderId;
       return;
     }
+    
+    if (newStatus === 'completed') {
+      try {
+        const { error } = await supabase.rpc('admin_mark_order_completed', { p_order_id: orderId });
+        if (error) throw error;
+        showSnackbar('Order marked as complete and payment recorded.');
+        await loadOrders();
+        if (selectedOrder?.id === orderId) {
+          selectedOrder.status = newStatus;
+        }
+      } catch (err: any) {
+        const errorMessage = err.message || 'Failed to complete order.';
+        orderError = errorMessage;
+        showSnackbar(errorMessage);
+      }
+      return;
+    }
+
     const { success, error } = await updateOrderStatus(orderId, newStatus);
     if (success) {
       await loadOrders();
@@ -62,25 +80,29 @@
   }
   
   async function confirmCancelOrder() {
-    if (!orderIdToCancel) return;
-    const { success: stockSuccess, error: stockError } = await reapplyOrderStock(orderIdToCancel);
-    if (!stockSuccess) {
-      orderError = stockError || 'Failed to reapply stock.';
-      showCancelConfirm = false;
-      orderIdToCancel = null;
-      return;
-    }
-    const { success, error } = await updateOrderStatus(orderIdToCancel, 'cancelled');
-    if (success) {
+    const orderId = orderIdToCancel;
+    if (!orderId) return;
+
+    try {
+      const { error } = await supabase.rpc('cancel_order_and_restock', { p_order_id: orderId });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      showSnackbar('Order cancelled and stock returned.');
       await loadOrders();
-      if (selectedOrder?.id === orderIdToCancel) {
+      if (selectedOrder?.id === orderId) {
         selectedOrder.status = 'cancelled';
       }
-    } else {
-      orderError = error;
+    } catch (err: any) {
+      const errorMessage = err.message || 'Failed to cancel order.';
+      orderError = errorMessage;
+      showSnackbar(errorMessage);
+    } finally {
+      showCancelConfirm = false;
+      orderIdToCancel = null;
     }
-    showCancelConfirm = false;
-    orderIdToCancel = null;
   }
 
   function cancelCancelOrder() {
