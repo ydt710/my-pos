@@ -9,7 +9,7 @@
   import { getStock } from '$lib/services/stockService';
   import { get } from 'svelte/store';
   import { debounce, getBalanceColor } from '$lib/utils';
-  import { FLOAT_USER_ID } from '$lib/constants';
+
   
   interface Review {
     id: string;
@@ -307,6 +307,7 @@
                 {/if}
               {/if}
             </div>
+            {#if product.category !== 'headshop'}
             <div class="product__strain-type">
               <div class="strain-type__labels">
                 <span class="strain-type__label">{(100 - (product.indica ?? 0))}% Sativa</span>
@@ -340,6 +341,7 @@
                 {/each}
               </div>
             </div>
+            {/if}
             
             <div class="stock-status" 
               class:out-of-stock={displayStock <= 0} 
@@ -462,11 +464,26 @@
   width: 100%;
   max-width: 280px;
   margin: 0 auto;
+  min-height: 300px;
+  position: relative;
+  overflow: hidden;
 }
+.card-product__border.trippy::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: conic-gradient(#ff00de, #00f0ff, #39ff14, #fcdd43, #ff00de);
+  animation: trippy-spin 4s linear infinite;
+}
+
+@keyframes trippy-spin {
+  to { transform: rotate(360deg); }
+}
+
 .card-product__border.trippy {
-  background: linear-gradient(270deg, #ff00de, #00f0ff, #39ff14, #fcdd43, #ff00de);
-  background-size: 1000% 1000%;
-  animation: trippy-gradient 6s ease-in-out infinite;
   box-shadow: 0 0 16px #00f0ff, 0 0 32px #ff00de;
 }
 .card-product__container {
@@ -715,17 +732,16 @@
   font-weight: 600;
   width: 100%;
   cursor: pointer;
-  transition: box-shadow 0.7s, background 0.7s, color 0.7s, transform 0.7s;
+  transition: background 0.3s, color 0.3s, transform 0.3s;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 0.35rem;
-  box-shadow: 0 0 12px #00f0ff, 0 0 24px #ff00de, 0 0 32px #39ff14;
   text-shadow: 0 0 8px #00f0ff, 0 0 16px #ff00de;
   letter-spacing: 0.5px;
 }
 
-@keyframes trippy-gradient {
+/* @keyframes trippy-gradient {
   0% {
     background-position: 0% 50%;
   }
@@ -735,19 +751,19 @@
   100% {
     background-position: 0% 50%;
   }
-}
+} */
 
 .add-to-cart-btn:hover:not(:disabled),
 .add-to-cart-btn:focus-visible {
-  box-shadow: 0 0 24px #00f0ff, 0 0 48px #ff00de, 0 0 64px #39ff14;
-  text-shadow: 0 0 16px #00f0ff, 0 0 32px #ff00de;
+  /* box-shadow: 0 0 24px #00f0ff, 0 0 48px #ff00de, 0 0 64px #39ff14; */
+  /* text-shadow: 0 0 16px #00f0ff, 0 0 32px #ff00de; */
   outline: 2px solid #fff;
   outline-offset: 2px;
   transform: scale(1.05);
 }
 
 .add-to-cart-btn:active:not(:disabled) {
-  box-shadow: 0 0 8px #00f0ff, 0 0 16px #ff00de;
+  /* box-shadow: 0 0 8px #00f0ff, 0 0 16px #ff00de; */
   transform: scale(0.98);
 }
 

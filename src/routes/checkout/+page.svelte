@@ -27,8 +27,7 @@
   let cashGiven: number | '' = '';
   let userAvailableCredit: number | null = null;
   let selectedCustomer: PosUser = null;
-  const FLOAT_USER_ID = 'ab54f66c-fa1c-40d2-ad2a-d9d5c1603e0f'; // Float user for guest POS payments
-  const FLOAT_USER_EMAIL = 'float@pos.local';
+
   let extraCashOption: 'change' | 'credit' = 'change'; // default
   let creditUsed = 0; // Ensure creditUsed is always defined and a number
   
@@ -70,11 +69,7 @@
       userAvailableCredit = await getUserAvailableCredit(posUser.id);
     }
 
-    // Clear float user if selected (e.g. from localStorage)
-    const currentSelected = get(selectedPosUser);
-    if (currentSelected && (currentSelected.id === FLOAT_USER_ID || currentSelected.email === FLOAT_USER_EMAIL)) {
-      selectedPosUser.set(null);
-    }
+
   });
   
   // Redirect if cart is empty

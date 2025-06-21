@@ -2,8 +2,9 @@
   import { onMount } from 'svelte';
   import { supabase } from '$lib/supabase';
   import { goto } from '$app/navigation';
-  import SideMenu from '$lib/components/SideMenu.svelte';
   import { showSnackbar } from '$lib/stores/snackbarStore';
+  import StarryBackground from '$lib/components/StarryBackground.svelte';
+  import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
 
   let user: any = null;
   let loading = true;
@@ -66,17 +67,19 @@
     success = '';
 
     try {
-      // Only update profiles table
+      // Use upsert to create a profile if it doesn't exist, or update it if it does.
       const { error: profileError } = await supabase
         .from('profiles')
-        .update({
+        .upsert({
+          auth_user_id: user.id,
           display_name: displayName,
           phone_number: phoneNumber,
           address: address,
           notifications: notifications,
           dark_mode: darkMode
-        })
-        .eq('auth_user_id', user.id);
+        }, {
+          onConflict: 'auth_user_id'
+        });
 
       if (profileError) throw profileError;
 
@@ -168,6 +171,7 @@
   }
 </script>
 
+<StarryBackground />
 <main class="settings-container">
   <h1>Settings</h1>
 
@@ -189,7 +193,7 @@
   {/if}
 
   {#if loading}
-    <div class="loading">Loading...</div>
+    <LoadingSpinner />
   {:else}
     <div class="settings-grid">
       <section class="settings-section">
@@ -284,8 +288,6 @@
   {/if}
 </main>
 
-<SideMenu visible={menuVisible} toggleVisibility={toggleMenu} />
-
 <style>
 input {
   text-align: center;
@@ -323,6 +325,14 @@ input {
     color: wheat;
     margin: 0 0 0.5rem;
     text-align: center;
+  }
+
+  h2 {
+    font-size: 1.5rem;
+    color: wheat;
+    text-align: center;
+    margin-top: 2rem;
+    margin-bottom: 1.5rem;
   }
 
   .subtitle {

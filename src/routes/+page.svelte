@@ -17,6 +17,8 @@
   import { getProductReviews, addReview, updateReview, updateProductRating } from '$lib/services/reviewService';
   import { getShopStockLevels } from '$lib/services/stockService';
   import { clearProductCache } from '$lib/services/cacheService';
+  import Footer from '$lib/components/Footer.svelte';
+  import { debounce } from '$lib/utils';
 
   let allProducts: Product[] = [];
   let products: Product[] = [];
@@ -423,6 +425,7 @@
         <p class="select-category">Select a category above to browse our products</p>
       </div>
     </div>
+    <Footer />
   {:else}
         <div class="category-header">
           {#if productFilters.search}
@@ -435,7 +438,7 @@
               class="search-bar"
               placeholder="Search products..."
               bind:value={productFilters.search}
-              on:input={() => { filterProducts(); }}
+              on:input={debounce(filterProducts, 300)}
               aria-label="Search products"
               autocomplete="off"
             />
@@ -507,8 +510,6 @@
     max-width: 1920px;
     margin-left: auto;
     margin-right: auto;
-    position: relative;
-    z-index: 1;
     padding-top: 20px;
   }
 
@@ -734,13 +735,6 @@
     padding: 0;
     background: transparent;
   }
-
-  :global(*) {
-    position: relative;
-    z-index: 1;
-  }
-
-
 
   .loading-more {
     display: flex;

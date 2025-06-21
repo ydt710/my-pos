@@ -7,6 +7,7 @@
   import { showSnackbar } from '$lib/stores/snackbarStore';
   import { fade } from 'svelte/transition';
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
+  import StarryBackground from '$lib/components/StarryBackground.svelte';
 
   let user: any = null;
   let orders: Order[] = [];
@@ -143,6 +144,8 @@
   }
 </script>
 
+<StarryBackground />
+
 <main class="orders-container">
   <h1>Your Orders</h1>
 
@@ -220,6 +223,14 @@
 {/if}
 
 <style>
+  :global(body) {
+    background: transparent;
+  }
+  :global(*) {
+    position: relative;
+    z-index: 1;
+  }
+
   .orders-container {
     max-width: 1200px;
     margin: 2rem auto;

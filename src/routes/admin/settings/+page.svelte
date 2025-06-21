@@ -4,6 +4,7 @@
   import { fade } from 'svelte/transition';
 
   interface Settings {
+    id: number;
     store_name: string;
     store_email: string;
     store_phone: string;
@@ -14,6 +15,7 @@
     min_order_amount: number;
     free_shipping_threshold: number;
     business_hours: {
+      [key: string]: string;
       monday: string;
       tuesday: string;
       wednesday: string;
@@ -27,6 +29,7 @@
   }
 
   let settings: Settings = {
+    id: 1,
     store_name: '',
     store_email: '',
     store_phone: '',
@@ -65,15 +68,23 @@
       const { data, error: err } = await supabase
         .from('settings')
         .select('*')
-        .single();
+        .limit(1)
+        .maybeSingle();
 
       if (err) throw err;
       if (data) {
+        if (typeof data.business_hours === 'string') {
+          try {
+            data.business_hours = JSON.parse(data.business_hours);
+          } catch (e) {
+            console.error('Error parsing business_hours:', e);
+          }
+        }
         settings = { ...settings, ...data };
       }
     } catch (err) {
       console.error('Error loading settings:', err);
-      error = 'Failed to load settings';
+      error = 'Failed to load settings. Make sure the settings table exists and has an id column.';
     } finally {
       loading = false;
     }
@@ -84,9 +95,14 @@
     error = null;
     success = null;
     try {
+      const dataToSave = {
+        ...settings,
+        business_hours: JSON.stringify(settings.business_hours)
+      };
+
       const { error: err } = await supabase
         .from('settings')
-        .upsert(settings);
+        .upsert(dataToSave);
 
       if (err) throw err;
       success = 'Settings saved successfully';

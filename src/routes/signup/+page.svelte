@@ -262,23 +262,21 @@
           contractFilePath = null;
         }
 
-        // Upsert profile with contract file path
+        // Update the profile created by the trigger
         const { error: profileError } = await supabase
           .from('profiles')
-          .upsert(
-            {
-              auth_user_id: authData.user.id,
-              email,
-              display_name: displayName,
-              phone_number: phoneNumber,
-              signature_url: signatureUrl,
-              id_image_url: idImageUrl,
-              first_name: firstName,
-              last_name: lastName,
-              signed_contract_url: contractFilePath
-            },
-            { onConflict: 'auth_user_id' }
-          );
+          .update({
+            // auth_user_id is the primary key and doesn't need to be updated
+            email,
+            display_name: displayName,
+            phone_number: phoneNumber,
+            signature_url: signatureUrl,
+            id_image_url: idImageUrl,
+            first_name: firstName,
+            last_name: lastName,
+            signed_contract_url: contractFilePath
+          })
+          .eq('auth_user_id', authData.user.id);
 
         if (profileError) throw profileError;
 

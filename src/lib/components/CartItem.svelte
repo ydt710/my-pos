@@ -2,7 +2,7 @@
   import type { CartItem as CartItemType } from '$lib/types/index';
   import { cartStore } from '$lib/stores/cartStore';
   import { getEffectivePrice } from '$lib/stores/cartStore';
-  import { FLOAT_USER_ID } from '$lib/constants';
+  
 
   export let item: CartItemType;
   export let loading = false;

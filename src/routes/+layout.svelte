@@ -86,11 +86,6 @@
 		min-height: 100vh;
 	}
 
-	:global(*) {
-		position: relative;
-		z-index: 1;
-	}
-
 	.age-modal-backdrop {
 		position: fixed;
 		inset: 0;

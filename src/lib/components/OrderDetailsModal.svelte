@@ -17,7 +17,7 @@
   let loadingLedger = false;
   let userBalance: number | null = null;
   let userDebtAtOrderTime: number | null = null;
-  const FLOAT_USER_ID = 'ab54f66c-fa1c-40d2-ad2a-d9d5c1603e0f';
+
   // @ts-ignore
   let html2pdf: any = null;
   let showCancelConfirm = false;

@@ -8,7 +8,7 @@
   import { getUserBalance, getUserAvailableCredit } from '$lib/services/orderService';
   import { get } from 'svelte/store';
   import { debounce, getBalanceColor } from '$lib/utils';
-  import { FLOAT_USER_ID, FLOAT_USER_EMAIL } from '$lib/constants';
+
   
   export let visible = false;
   export let toggleVisibility: () => void;
@@ -74,8 +74,7 @@
       if (error) throw error;
       
       // Filter out float user, etc.
-      const filtered = (data || []).filter((user: UserSearch) => user.id !== FLOAT_USER_ID && user.email !== FLOAT_USER_EMAIL);
-      userResults = filtered;
+      
       searchCache[query] = filtered; // Cache the result
     } catch (e: any) {
       if (e.name !== 'AbortError') {

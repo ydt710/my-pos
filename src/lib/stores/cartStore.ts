@@ -4,6 +4,7 @@ import { supabase } from '$lib/supabase';
 import { writable as writableStore, get as getStore } from 'svelte/store';
 import { getStock } from '$lib/services/stockService';
 import { get } from 'svelte/store';
+import { showSnackbar } from './snackbarStore';
 
 // Store for user-specific custom prices: { [productId]: customPrice }
 export const customPrices = writableStore<{ [productId: string]: number }>({});
@@ -103,7 +104,7 @@ function createCartStore() {
     try {
       const currentStock = await getStock(product.id, 'shop', { signal: controller.signal });
       if (currentStock <= 0) {
-        queueNotification({ type: 'error', message: 'This item is out of stock.' });
+        showSnackbar('This item is out of stock.');
         return false;
       }
       let selectedUserId = null;
@@ -124,7 +125,7 @@ function createCartStore() {
         if (existing) {
           const newQuantity = existing.quantity + requestedQuantity;
           if (newQuantity > currentStock) {
-            queueNotification({ type: 'warning', message: `Only ${currentStock} items available in stock.` });
+            showSnackbar(`Only ${currentStock} items available in stock.`);
             success = false;
             return items;
           }
@@ -136,18 +137,18 @@ function createCartStore() {
           );
         } else {
           if (requestedQuantity > currentStock) {
-            queueNotification({ type: 'warning', message: `Only ${currentStock} items available in stock.` });
+            showSnackbar(`Only ${currentStock} items available in stock.`);
             return [...items, { ...product, quantity: currentStock, price }];
           }
           return [...items, { ...product, quantity: requestedQuantity, price }];
         }
       });
       if (success) {
-        queueNotification({ type: 'success', message: 'Item added to cart.' });
+        showSnackbar('Item added to cart.');
       }
       return success;
     } catch (err) {
-      queueNotification({ type: 'error', message: 'Error checking stock. Please try again.' });
+      showSnackbar('Error checking stock. Please try again.');
       return false;
     }
   }
@@ -155,17 +156,17 @@ function createCartStore() {
   // Update quantity of a cart item
   async function updateQuantity(productId: string | number, newQuantity: number) {
     if (newQuantity < 1) {
-      queueNotification({ type: 'error', message: 'Quantity must be at least 1.' });
+      showSnackbar('Quantity must be at least 1.');
       return false;
     }
     try {
       const currentStock = await getStock(String(productId), 'shop');
       if (currentStock <= 0) {
-        queueNotification({ type: 'error', message: 'This item is out of stock.' });
+        showSnackbar('This item is out of stock.');
         return false;
       }
       if (newQuantity > currentStock) {
-        queueNotification({ type: 'warning', message: `Only ${currentStock} items available in stock.` });
+        showSnackbar(`Only ${currentStock} items available in stock.`);
         update(items => {
           return items.map(item =>
             String(item.id) === String(productId)
@@ -184,7 +185,7 @@ function createCartStore() {
       });
       return true;
     } catch (err) {
-      queueNotification({ type: 'error', message: 'Error updating quantity. Please try again.' });
+      showSnackbar('Error updating quantity. Please try again.');
       return false;
     }
   }
@@ -197,7 +198,6 @@ function createCartStore() {
   // Clear the cart
   function clearCart() {
     set([]);
-    cartNotification.set(null);
     saveCartToStorage([]);
   }
 

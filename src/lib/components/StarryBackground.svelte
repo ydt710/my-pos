@@ -5,6 +5,7 @@
   let ctx: CanvasRenderingContext2D | null = null;
   let animationFrameId: number;
   let stars: (Star | null)[] = [];
+  let shootingStars: ShootingStar[] = [];
   let lastTime = 0;
   const FPS = 30;
   const frameInterval = 1000 / FPS;
@@ -26,12 +27,22 @@
     blinkPhase: number;
   }
 
+  interface ShootingStar {
+    x: number;
+    y: number;
+    len: number;
+    width: number;
+    speedX: number;
+    speedY: number;
+    opacity: number;
+  }
+
   const categoryIcons = [
-    { icon: 'fa-cannabis', color: '#4CAF50' },
-    { icon: 'fa-vial', color: '#2196F3' },
-    { icon: 'fa-joint', color: '#FF9800' },
-    { icon: 'fa-cookie', color: '#9C27B0' },
-    { icon: 'fa-store', color: '#E91E63' }
+    { icon: '\u{f55f}', name: 'fa-cannabis', color: '#4CAF50' },
+    { icon: '\u{f492}', name: 'fa-vial', color: '#2196F3' },
+    { icon: '\u{f595}', name: 'fa-joint', color: '#FF9800' },
+    { icon: '\u{f563}', name: 'fa-cookie', color: '#9C27B0' },
+    { icon: '\u{f54e}', name: 'fa-store', color: '#E91E63' }
   ];
 
   function detectMobile() {
@@ -56,7 +67,7 @@
       OPTIMIZED.starDensity = 1000;
       OPTIMIZED.iconCount = 0;
       OPTIMIZED.FPS = 30;
-      OPTIMIZED.shootingFlowerChance = 0;
+      OPTIMIZED.shootingFlowerChance = 0.005;
     }
   }
 
@@ -86,6 +97,50 @@
     };
   }
 
+  function createShootingStar() {
+    if (!canvas) return;
+    const side = Math.floor(Math.random() * 4);
+    let x, y, speedX, speedY;
+    const speedMagnitude = Math.random() * 0.5 + 0.5;
+
+    switch(side) {
+      case 0: // from top
+        x = Math.random() * canvas.width;
+        y = -20;
+        speedX = (Math.random() - 0.5) * 1;
+        speedY = speedMagnitude;
+        break;
+      case 1: // from right
+        x = canvas.width + 20;
+        y = Math.random() * canvas.height;
+        speedX = -speedMagnitude;
+        speedY = (Math.random() - 0.5) * 1;
+        break;
+      case 2: // from bottom
+        x = Math.random() * canvas.width;
+        y = canvas.height + 20;
+        speedX = (Math.random() - 0.5) * 1;
+        speedY = -speedMagnitude;
+        break;
+      default: // from left
+        x = -20;
+        y = Math.random() * canvas.height;
+        speedX = speedMagnitude;
+        speedY = (Math.random() - 0.5) * 1;
+        break;
+    }
+
+    shootingStars.push({
+      x,
+      y,
+      len: Math.random() * 80 + 50,
+      width: Math.random() * 2 + 0.5,
+      speedX,
+      speedY,
+      opacity: 0,
+    });
+  }
+
   function initStars() {
     if (!canvas) return;
     const starCount = Math.floor((canvas.width * canvas.height) / OPTIMIZED.starDensity);
@@ -102,6 +157,25 @@
     ctx.globalAlpha = 1;
   }
 
+  function drawShootingStar(star: ShootingStar) {
+    if (!ctx || !star) return;
+
+    const angle = Math.atan2(star.speedY, star.speedX);
+    const tailX = star.x - star.len * Math.cos(angle);
+    const tailY = star.y - star.len * Math.sin(angle);
+    
+    const gradient = ctx.createLinearGradient(star.x, star.y, tailX, tailY);
+    gradient.addColorStop(0, `rgba(255, 255, 255, ${star.opacity})`);
+    gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    
+    ctx.beginPath();
+    ctx.moveTo(tailX, tailY);
+    ctx.lineTo(star.x, star.y);
+    ctx.lineWidth = star.width;
+    ctx.strokeStyle = gradient;
+    ctx.stroke();
+  }
+
   function drawStaticStarfield() {
     if (!canvas || !ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -110,6 +184,24 @@
     stars.forEach(star => {
       if (star) drawStar(star);
     });
+
+    // Animate shooting stars
+    shootingStars = shootingStars.filter(star => {
+      star.x += star.speedX;
+      star.y += star.speedY;
+
+      // Fade in and out
+      if (star.x < -100 || star.x > canvas.width + 100 || star.y < -100 || star.y > canvas.height + 100) {
+        return false; // remove if off-screen
+      } else {
+        star.opacity = Math.min(star.opacity + 0.05, 0.7);
+      }
+      
+      drawShootingStar(star);
+      return true;
+    });
+
+    animationFrameId = requestAnimationFrame(animate);
   }
 
   function animate() {
@@ -140,8 +232,12 @@
         star.opacity = 0.7 + 0.3 * Math.sin(star.blinkPhase);
       }
     });
+
+    if (!isMobile && Math.random() < OPTIMIZED.shootingFlowerChance) {
+      createShootingStar();
+    }
+
     drawStaticStarfield();
-    animationFrameId = requestAnimationFrame(animate);
   }
 
   function updateStarPositions() {
