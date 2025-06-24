@@ -34,10 +34,19 @@ export async function createOrder(
       return { success: false, error: 'Invalid order total' };
     }
 
-    let authUserId = null;
+    let authUserId: string | null = null;
     if (userIdOverride) {
-      // If an override is provided, assume it is an auth_user_id
-      authUserId = userIdOverride;
+      // userIdOverride is expected to be a profile.id, so we need to get the auth_user_id
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('auth_user_id')
+        .eq('id', userIdOverride)
+        .single();
+      
+      if (profileError || !profile) {
+        return { success: false, error: 'User profile not found for override.' };
+      }
+      authUserId = profile.auth_user_id;
     } else if (!guestInfo) {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
@@ -46,7 +55,7 @@ export async function createOrder(
       authUserId = user.id;
     }
 
-    if (!authUserId) {
+    if (!authUserId && !guestInfo) {
       return { success: false, error: 'Could not determine user to charge order to.' };
     }
 
@@ -57,8 +66,8 @@ export async function createOrder(
       price: item.price
     }));
 
-    // Call the atomic pay_order function
-    const { data: orderId, error } = await supabase.rpc('pay_order', {
+    // Call the atomic pay_order function with corrected parameters
+    const { data: result, error } = await supabase.rpc('pay_order', {
       p_user_id: authUserId,
       p_order_total: total,
       p_payment_amount: cashGiven,
@@ -69,9 +78,17 @@ export async function createOrder(
     });
 
     if (error) {
-      console.error('pay_order error:', error);
+      console.error('pay_order raw error:', error);
       return { success: false, error: error.message };
     }
+    
+    if (!result) {
+      console.error('pay_order returned null/undefined result');
+      return { success: false, error: 'Order creation failed - no result returned' };
+    }
+    
+    // The function now returns the order_id directly as a UUID
+    const orderId = result;
 
     return { success: true, error: null, orderId };
   } catch (err) {
@@ -97,6 +114,7 @@ export async function getOrder(orderId: string): Promise<{ order?: Order, error:
           )
         ),
         profiles:user_id (
+          auth_user_id,
           email,
           display_name,
           phone_number,
@@ -135,7 +153,7 @@ export async function getOrdersByEmail(email: string): Promise<{ orders: Order[]
     if (userId) orFilters.push(`user_id.eq.${userId}`);
     const { data, error } = await supabase
       .from('orders')
-      .select(`*,order_items(*,products:product_id(name,image_url)),profiles:user_id(email,display_name,phone_number,address)`)
+      .select(`*,order_items(*,products:product_id(name,image_url)),profiles:user_id(auth_user_id,email,display_name,phone_number,address)`)
       .or(orFilters.join(','))
       .order('created_at', { ascending: false });
     if (error) {
@@ -158,7 +176,7 @@ export async function getAllOrders(filters?: OrderFilters): Promise<{ orders: Or
   try {
     let query = supabase
       .from('orders')
-      .select(`*,order_items(*,products:product_id(name,image_url)),profiles:user_id(email,display_name,phone_number,address)`);
+      .select(`*,order_items(*,products:product_id(name,image_url)),profiles:user_id(auth_user_id,email,display_name,phone_number,address)`);
     
     // Apply filters
     if (filters) {
@@ -246,55 +264,35 @@ export async function updateOrderStatus(
   }
 }
 
-export async function payOrder(
-  userId: string,
-  orderTotal: number,
-  paymentAmount: number,
-  creditUsed: number,
-  method: string,
-  items: { product_id: string; quantity: number; price: number }[],
-  extraCashOption: 'change' | 'credit' = 'change'
-): Promise<{ success: boolean; error: string | null; orderId?: string }> {
-  const { data, error } = await supabase.rpc('pay_order', {
-    p_user_id: userId,
-    p_order_total: orderTotal,
-    p_payment_amount: paymentAmount,
-    p_credit_used: creditUsed,
-    p_method: method,
-    p_items: items,
-    p_extra_cash_option: extraCashOption
-  });
-  if (error) {
-    return { success: false, error: error.message };
-  }
-  return { success: true, error: null, orderId: data };
-}
-
 export async function getUserBalance(userId: string): Promise<number> {
-  // Sum all transactions for this user
-  const { data, error } = await supabase
-    .from('transactions')
-    .select('amount')
-    .eq('user_id', userId);
-  if (error || !data) {
-    console.error('Error fetching user balance:', error);
+  try {
+    // Use maybeSingle() instead of single() to handle missing users gracefully
+    const { data, error } = await supabase
+      .from('user_balances')
+      .select('balance')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Error fetching user balance:', error);
+      // Fallback to direct calculation if view fails
+      const { data: transactions, error: txError } = await supabase
+        .from('transactions')
+        .select('balance_amount')
+        .eq('user_id', userId);
+      
+      if (txError) throw txError;
+      if (!transactions) return 0;
+      
+      return transactions.reduce((sum, t) => sum + (t.balance_amount || 0), 0);
+    }
+    
+    // data will be null if no user found, so default to 0
+    return data?.balance || 0;
+  } catch (error) {
+    console.error('Error in getUserBalance:', error);
     return 0;
   }
-  return data.reduce((sum, entry) => sum + Number(entry.amount), 0);
-}
-
-export async function getAllUserBalances(): Promise<Record<string, number>> {
-  // Fetch all transactions and sum by user_id
-  const { data, error } = await supabase
-    .from('transactions')
-    .select('user_id, amount');
-  if (error || !data) return {};
-  const balances: Record<string, number> = {};
-  for (const entry of data) {
-    if (!entry.user_id) continue;
-    balances[entry.user_id] = (balances[entry.user_id] || 0) + Number(entry.amount);
-  }
-  return balances;
 }
 
 export async function reapplyOrderStock(orderId: string): Promise<{ success: boolean; error: string | null }> {
@@ -333,26 +331,28 @@ export async function reapplyOrderStock(orderId: string): Promise<{ success: boo
 }
 
 export async function getTopBuyingUsers(limit = 10) {
-  const { data, error } = await supabase.rpc('get_top_buyers', { p_limit: limit });
-
-  if (error) {
-    console.error('Error fetching top buyers:', error);
+  try {
+    const { data, error } = await supabase.rpc('get_top_buyers', { p_limit: limit });
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error('Error fetching top buying users:', error);
     return [];
   }
-  return data || [];
 }
 
 export async function getUsersWithMostDebt(limit = 10) {
-  const { data, error } = await supabase.rpc('get_users_with_most_debt', { p_limit: limit });
-
-  if (error) {
+  try {
+    // Call the fixed function with correct parameters
+    const { data, error } = await supabase.rpc('get_users_by_balance', { p_limit: limit, p_debt_only: true });
+    if (error) throw error;
+    return data;
+  } catch (error) {
     console.error('Error fetching users with most debt:', error);
     return [];
   }
-  return data || [];
 }
 
-// Fetch all orders with their items, profiles, etc. and merge payment summary
 export async function getAllOrdersWithPaymentSummary() {
   const { data, error } = await supabase.rpc('get_all_orders_with_payment_summary');
 
@@ -364,7 +364,6 @@ export async function getAllOrdersWithPaymentSummary() {
   return data || [];
 }
 
-// Fetch single order with its items, profile, etc. and merge payment summary
 export async function getOrderWithPaymentSummary(orderId: string) {
   try {
     // First, get the basic order details
@@ -396,21 +395,4 @@ export async function getOrderWithPaymentSummary(orderId: string) {
     console.error('Error fetching order with payment summary:', err);
     return { data: null, error: err.message || 'An unexpected error occurred.' };
   }
-}
-
-/**
- * Returns the user's available credit (positive = credit, negative = debt, zero = settled).
- * Sums all transactions for the user.
- */
-export async function getUserAvailableCredit(userId: string): Promise<number> {
-  const { data, error } = await supabase
-    .from('transactions')
-    .select('amount')
-    .eq('user_id', userId);
-  if (error || !data) {
-    console.error('Error fetching user available credit:', error);
-    return 0;
-  }
-  // Net sum: positive = credit, negative = debt
-  return data.reduce((sum, entry) => sum + Number(entry.amount), 0);
 } 

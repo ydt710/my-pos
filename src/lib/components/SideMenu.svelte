@@ -87,21 +87,20 @@
 </script>
 
 <div 
-  class="side-menu {visible ? 'show' : ''}" 
+  class="side-menu glass {visible ? 'show' : ''}" 
   bind:this={menuSidebar}
   tabindex="-1"
   role="dialog"
   aria-modal="true"
   aria-label="Side menu"
   on:keydown={handleKeydown}
-  
 >
   <div class="menu-header">
     <button 
-      class="close-btn" 
+      class="modal-close" 
       aria-label="Close menu" 
       on:click={toggleVisibility}
-    >×</button>
+    >&times;</button>
   </div>
   
   <nav>
@@ -109,14 +108,27 @@
       {#if item.requiresAuth && !user}
         <!-- skip protected items for non-logged-in users -->
       {:else if item.label === 'Products'}
-        <button type="button" class="menu-item products-toggle" tabindex={visible ? 0 : -1} on:click={() => productsExpanded = !productsExpanded} aria-expanded={productsExpanded}>
+        <button 
+          type="button" 
+          class="menu-item products-toggle" 
+          tabindex={visible ? 0 : -1} 
+          on:click={() => productsExpanded = !productsExpanded} 
+          aria-expanded={productsExpanded}
+        >
           {item.label}
           <span class="expand-arrow" aria-hidden="true">{productsExpanded ? '▲' : '▼'}</span>
         </button>
         {#if productsExpanded}
           {#each categories as category}
-            <a href="/" class="menu-item category-subitem" tabindex={visible ? 0 : -1}
-              on:click|preventDefault={() => { dispatch('selectcategory', { id: category.id }); toggleVisibility(); }}>
+            <a 
+              href="/" 
+              class="menu-item category-subitem" 
+              tabindex={visible ? 0 : -1}
+              on:click|preventDefault={() => { 
+                dispatch('selectcategory', { id: category.id }); 
+                toggleVisibility(); 
+              }}
+            >
               <i class="fa-solid {category.icon}"></i> {category.name}
             </a>
           {/each}
@@ -139,7 +151,9 @@
   </nav>
 
   {#if user}
-    <button on:click={logout}>Logout</button>
+    <button class="btn btn-danger logout-button" on:click={logout}>
+      Logout
+    </button>
   {/if}
 </div>
 
@@ -148,33 +162,16 @@
     position: fixed;
     top: 0;
     right: 0;
-    width: 250px;
+    width: 280px;
     height: 100%;
-    
-    background-position: center;
-    background-size: cover;
-    color: white;
     padding: 2rem;
-    box-shadow: -2px 0 10px rgba(0,0,0,0.1);
     z-index: 2000;
     transform: translateX(100%);
     transition: transform 0.3s ease-in-out;
     display: flex;
     flex-direction: column;
-    backdrop-filter: invert;
-    
-  }
-
-  .side-menu::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    backdrop-filter: blur(23px);
-    z-index: -1;
-    
+    border-radius: 12px 0 0 12px;
+    border-right: none;
   }
 
   .side-menu.show {
@@ -189,57 +186,39 @@
     display: flex;
     justify-content: flex-end;
     margin-bottom: 2rem;
-    position: relative;
-    z-index: 1;
-    
-  }
-  
-  .close-btn {
-    background: none;
-    border: none;
-    font-size: 1.5rem;
-    cursor: pointer;
-    color: white;
-    padding: 0;
-    width: 30px;
-    height: 30px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 50%;
-    position: relative;
-    z-index: 1;
-  }
-  
-  .close-btn:hover {
-    background: rgba(255, 255, 255, 0.1);
   }
   
   nav {
     display: flex;
     flex-direction: column;
-    position: relative;
-    z-index: 1;
+    flex: 1;
   }
 
   .menu-item {
-    color: white;
+    color: var(--text-secondary);
     text-decoration: none;
     padding: 1rem 0;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.2);
-    transition: 0.2s;
+    border-bottom: 1px solid var(--border-primary);
+    transition: var(--transition-fast);
     font-size: 1.1rem;
-    position: relative;
-    z-index: 1;
+    background: none;
+    border: none;
+    border-bottom: 1px solid var(--border-primary);
+    cursor: pointer;
+    text-align: left;
+    width: 100%;
+    font-family: inherit;
   }
 
   .menu-item:hover {
-    background: rgba(255, 255, 255, 0.1);
-    padding-left: 10px;
+    color: var(--neon-cyan);
+    background: var(--bg-glass-light);
+    padding-left: 1rem;
+    box-shadow: var(--shadow-neon-cyan);
   }
   
   .menu-item:focus {
-    outline: 2px solid rgba(255, 255, 255, 0.5);
+    outline: 2px solid var(--neon-cyan);
     outline-offset: 2px;
   }
 
@@ -248,189 +227,54 @@
     align-items: center;
     justify-content: space-between;
     width: 100%;
-    background: none;
-    border: none;
-    color: inherit;
-    font: inherit;
-    cursor: pointer;
-    padding: 1rem 0;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.2);
-    transition: 0.2s;
+    color: var(--text-secondary);
     font-size: 1.1rem;
-    position: relative;
-    z-index: 1;
+    transition: var(--transition-fast);
   }
+
+  .products-toggle:hover {
+    color: var(--neon-cyan);
+    background: var(--bg-glass-light);
+  }
+
   .expand-arrow {
     margin-left: 0.5em;
     font-size: 0.9em;
+    transition: var(--transition-fast);
   }
+
   .category-subitem {
     padding-left: 2.5rem;
     font-size: 1rem;
-    background: none;
-    border: none;
-    color: white;
-    text-align: left;
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    border-bottom: 1px solid rgba(255,255,255,0.08);
-    transition: background 0.2s;
-    text-decoration: none;
+    border-bottom: 1px solid rgba(178, 254, 250, 0.08);
   }
+
   .category-subitem:last-child {
     border-bottom: none;
   }
+
   .category-subitem:hover {
-    background: rgba(0,123,255,0.15);
-    color: #007bff;
+    background: rgba(0, 240, 255, 0.15);
+    color: var(--neon-cyan);
   }
 
-  .menu-backdrop {
-    position: fixed;
-    top: 0;
-    left: 0;
+  .category-subitem i {
+    color: var(--neon-cyan);
+  }
+
+  .logout-button {
+    margin-top: auto;
+    padding: 1rem;
     width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.5);
-    z-index: 1999;
   }
 
-  .menu-content {
-    position: fixed;
-    top: 0;
-    right: 0;
-    width: 250px;
-    height: 100%;
-    background: #333;
-    background-position: center;
-    background-size: cover;
-    color: white;
-    padding: 2rem;
-    box-shadow: -2px 0 10px rgba(0,0,0,0.1);
-    z-index: 2000;
-    transform: translateX(100%);
-    transition: transform 0.3s ease-in-out;
-    display: flex;
-    flex-direction: column;
-  }
-
-  .menu-content::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(51, 51, 51, 0.85);
-    z-index: -1;
-  }
-
-  .menu-content.show {
-    transform: translateX(0);
-  }
-  
-  .menu-content:focus {
-    outline: none;
-  }
-  
-  .menu-header {
-    display: flex;
-    justify-content: flex-end;
-    margin-bottom: 2rem;
-    position: relative;
-    z-index: 1;
-  }
-  
-  .close-btn {
-    background: none;
-    border: none;
-    font-size: 1.5rem;
-    cursor: pointer;
-    color: white;
-    padding: 0;
-    width: 30px;
-    height: 30px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 50%;
-    position: relative;
-    z-index: 1;
-  }
-  
-  .close-btn:hover {
-    background: rgba(255, 255, 255, 0.1);
-  }
-  
-  nav {
-    display: flex;
-    flex-direction: column;
-    position: relative;
-    z-index: 1;
-  }
-
-  .menu-item {
-    color: white;
-    text-decoration: none;
-    padding: 1rem 0;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.2);
-    transition: 0.2s;
-    font-size: 1.1rem;
-    position: relative;
-    z-index: 1;
-  }
-
-  .menu-item:hover {
-    background: rgba(255, 255, 255, 0.1);
-    padding-left: 10px;
-  }
-  
-  .menu-item:focus {
-    outline: 2px solid rgba(255, 255, 255, 0.5);
-    outline-offset: 2px;
-  }
-
-  .products-toggle {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    width: 100%;
-    background: none;
-    border: none;
-    color: inherit;
-    font: inherit;
-    cursor: pointer;
-    padding: 1rem 0;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.2);
-    transition: 0.2s;
-    font-size: 1.1rem;
-    position: relative;
-    z-index: 1;
-  }
-  .expand-arrow {
-    margin-left: 0.5em;
-    font-size: 0.9em;
-  }
-  .category-subitem {
-    padding-left: 2.5rem;
-    font-size: 1rem;
-    background: none;
-    border: none;
-    color: white;
-    text-align: left;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    border-bottom: 1px solid rgba(255,255,255,0.08);
-    transition: background 0.2s;
-    text-decoration: none;
-  }
-  .category-subitem:last-child {
-    border-bottom: none;
-  }
-  .category-subitem:hover {
-    background: rgba(0,123,255,0.15);
-    color: #007bff;
+  @media (max-width: 800px) {
+    .side-menu {
+      width: 100%;
+      border-radius: 0;
+    }
   }
 </style> 

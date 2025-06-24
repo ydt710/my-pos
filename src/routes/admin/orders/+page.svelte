@@ -1,296 +1,513 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { supabase } from '$lib/supabase';
-  import type { Order, OrderStatus, OrderFilters } from '$lib/types/orders';
-  import { getAllOrders, updateOrderStatus } from '$lib/services/orderService';
-  import { fade } from 'svelte/transition';
+  import AdminNav from '$lib/components/AdminNav.svelte';
   import OrderDetailsModal from '$lib/components/OrderDetailsModal.svelte';
-  import { showSnackbar } from '$lib/stores/snackbarStore';
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
+  import StarryBackground from '$lib/components/StarryBackground.svelte';
+  import type { Order, OrderStatus } from '$lib/types/orders';
+  import { formatCurrency } from '$lib/services/settingsService';
 
   let orders: Order[] = [];
-  let loadingOrders = true;
-  let orderError: string | null = null;
+  let filteredOrders: Order[] = [];
+  let loading = true;
   let selectedOrder: Order | null = null;
+  let showOrderModal = false;
+  let showDeleteConfirm = false;
+  let orderToDelete: Order | null = null;
+  let error: string | null = null;
 
-  let filters: OrderFilters = {
-    status: undefined,
-    dateFrom: undefined,
-    dateTo: undefined,
-    search: '',
-    sortBy: 'created_at',
-    sortOrder: 'desc'
+  // Filter states
+  let statusFilter = 'all';
+  let searchTerm = '';
+  let dateFrom = '';
+  let dateTo = '';
+
+  // Financial summary
+  let financialSummary = {
+    totalRevenue: 0,
+    averageOrder: 0,
+    completedOrders: 0,
+    completedRevenue: 0,
+    pendingOrders: 0,
+    pendingRevenue: 0,
+    guestOrders: 0,
+    registeredOrders: 0
   };
 
-  let showConfirmModal = false;
-  let orderIdToDelete: string | null = null;
-  
-  let showCancelConfirm = false;
-  let orderIdToCancel: string | null = null;
+  async function loadOrders() {
+    loading = true;
+    try {
+      const { data, error: fetchError } = await supabase
+        .from('orders')
+        .select(`
+          *,
+          order_items (
+            id,
+            quantity,
+            price,
+            products (id, name, image_url)
+          ),
+          user:profiles!orders_user_id_fkey (
+            auth_user_id,
+            display_name,
+            email,
+            phone_number,
+            address
+          )
+        `)
+        .order('created_at', { ascending: false });
+
+      if (fetchError) throw fetchError;
+      orders = data || [];
+      applyFilters();
+    } catch (err: any) {
+      console.error('Error loading orders:', err);
+      error = err.message;
+    } finally {
+      loading = false;
+    }
+  }
+
+  function applyFilters() {
+    let filtered = [...orders];
+
+    // Status filter
+    if (statusFilter !== 'all') {
+      filtered = filtered.filter(order => order.status === statusFilter);
+    }
+
+    // Search filter
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase();
+      filtered = filtered.filter(order => 
+        order.id.toLowerCase().includes(term) ||
+        order.user?.email?.toLowerCase().includes(term) ||
+        order.user?.display_name?.toLowerCase().includes(term) ||
+        order.guest_info?.email?.toLowerCase().includes(term) ||
+        order.guest_info?.name?.toLowerCase().includes(term)
+      );
+    }
+
+    // Date filters
+    if (dateFrom) {
+      const fromDate = new Date(dateFrom);
+      filtered = filtered.filter(order => new Date(order.created_at) >= fromDate);
+    }
+    if (dateTo) {
+      const toDate = new Date(dateTo);
+      toDate.setHours(23, 59, 59, 999);
+      filtered = filtered.filter(order => new Date(order.created_at) <= toDate);
+    }
+
+    filteredOrders = filtered;
+    calculateFinancialSummary();
+  }
+
+  function calculateFinancialSummary() {
+    const summary = {
+      totalRevenue: 0,
+      averageOrder: 0,
+      completedOrders: 0,
+      completedRevenue: 0,
+      pendingOrders: 0,
+      pendingRevenue: 0,
+      guestOrders: 0,
+      registeredOrders: 0
+    };
+
+    filteredOrders.forEach(order => {
+      const total = (order.subtotal || 0) + (order.tax || 0) + (order.shipping_fee || 0);
+      summary.totalRevenue += total;
+
+      if (order.status === 'completed') {
+        summary.completedOrders++;
+        summary.completedRevenue += total;
+      } else if (order.status === 'pending') {
+        summary.pendingOrders++;
+        summary.pendingRevenue += total;
+      }
+
+      if (order.guest_info) {
+        summary.guestOrders++;
+      } else {
+        summary.registeredOrders++;
+      }
+    });
+
+    summary.averageOrder = filteredOrders.length > 0 ? summary.totalRevenue / filteredOrders.length : 0;
+    financialSummary = summary;
+  }
+
+  async function handleOrderDelete() {
+    if (!orderToDelete) return;
+    
+    try {
+      const { error: deleteError } = await supabase
+        .from('orders')
+        .delete()
+        .eq('id', orderToDelete.id);
+
+      if (deleteError) throw deleteError;
+      
+      await loadOrders();
+      showDeleteConfirm = false;
+      orderToDelete = null;
+    } catch (err: any) {
+      console.error('Error deleting order:', err);
+      error = err.message;
+    }
+  }
+
+  function handleOrderStatusUpdate(orderId: string, newStatus: OrderStatus) {
+    const orderIndex = orders.findIndex(o => o.id === orderId);
+    if (orderIndex !== -1) {
+      orders[orderIndex] = { ...orders[orderIndex], status: newStatus };
+      applyFilters();
+    }
+    showOrderModal = false;
+  }
+
+  function formatDate(dateString: string) {
+    return new Date(dateString).toLocaleDateString('en-ZA', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  }
+
+  function getStatusBadgeClass(status: string) {
+    switch (status) {
+      case 'completed': return 'badge-success';
+      case 'processing': return 'badge-warning';
+      case 'pending': return 'badge-info';
+      case 'cancelled': return 'badge-danger';
+      default: return 'badge-primary';
+    }
+  }
+
+  // Reactive statements
+  $: applyFilters();
 
   onMount(() => {
     loadOrders();
   });
-
-  async function loadOrders() {
-    loadingOrders = true;
-    orderError = null;
-    const { orders: fetchedOrders, error } = await getAllOrders(filters);
-    if (error) {
-      orderError = error;
-    } else {
-      orders = fetchedOrders;
-    }
-    loadingOrders = false;
-  }
-
-  async function handleStatusUpdate(orderId: string, newStatus: OrderStatus) {
-    if (newStatus === 'cancelled') {
-      showCancelConfirm = true;
-      orderIdToCancel = orderId;
-      return;
-    }
-    
-    if (newStatus === 'completed') {
-      try {
-        const { error } = await supabase.rpc('admin_mark_order_completed', { p_order_id: orderId });
-        if (error) throw error;
-        showSnackbar('Order marked as complete and payment recorded.');
-        await loadOrders();
-        if (selectedOrder?.id === orderId) {
-          selectedOrder.status = newStatus;
-        }
-      } catch (err: any) {
-        const errorMessage = err.message || 'Failed to complete order.';
-        orderError = errorMessage;
-        showSnackbar(errorMessage);
-      }
-      return;
-    }
-
-    const { success, error } = await updateOrderStatus(orderId, newStatus);
-    if (success) {
-      await loadOrders();
-      if (selectedOrder?.id === orderId) {
-        selectedOrder.status = newStatus;
-      }
-    } else {
-      orderError = error;
-    }
-  }
-  
-  async function confirmCancelOrder() {
-    const orderId = orderIdToCancel;
-    if (!orderId) return;
-
-    try {
-      const { error } = await supabase.rpc('cancel_order_and_restock', { p_order_id: orderId });
-
-      if (error) {
-        throw new Error(error.message);
-      }
-
-      showSnackbar('Order cancelled and stock returned.');
-      await loadOrders();
-      if (selectedOrder?.id === orderId) {
-        selectedOrder.status = 'cancelled';
-      }
-    } catch (err: any) {
-      const errorMessage = err.message || 'Failed to cancel order.';
-      orderError = errorMessage;
-      showSnackbar(errorMessage);
-    } finally {
-      showCancelConfirm = false;
-      orderIdToCancel = null;
-    }
-  }
-
-  function cancelCancelOrder() {
-    showCancelConfirm = false;
-    orderIdToCancel = null;
-  }
-
-  function formatDate(dateString: string) {
-    return new Date(dateString).toLocaleString();
-  }
-
-  function getCustomerInfo(order: Order) {
-    if (order.guest_info) {
-      return { name: order.guest_info.name, email: order.guest_info.email };
-    } else if (order.user) {
-      const name = 'display_name' in order.user && order.user.display_name ? order.user.display_name : order.user.email?.split('@')[0] || 'N/A';
-      return { name, email: order.user.email || 'N/A' };
-    }
-    return { name: 'N/A', email: 'N/A' };
-  }
-  
-  async function deleteOrder(orderId: string) {
-    loadingOrders = true;
-    orderError = null;
-    try {
-      await supabase.from('order_items').delete().eq('order_id', orderId);
-      await supabase.from('orders').delete().eq('id', orderId);
-      orders = orders.filter(o => o.id !== orderId);
-      showSnackbar('Order deleted successfully.');
-      loadOrders();
-    } catch (err) {
-      orderError = 'Failed to delete order.';
-      showSnackbar(orderError);
-    } finally {
-      loadingOrders = false;
-    }
-  }
-
-  $: if (filters) {
-    loadOrders();
-  }
 </script>
 
-<div class="orders-page" in:fade>
-  <header class="page-header">
-    <h1>Order Management</h1>
-  </header>
+<StarryBackground />
+<AdminNav />
 
-  {#if orderError}
-    <div class="alert error" transition:fade>{orderError}</div>
-  {/if}
-  
-  <div class="filters-card">
-    <div class="filters">
-      <div class="filter-group"><label for="status">Status</label><select id="status" bind:value={filters.status}><option value={undefined}>All</option><option value="pending">Pending</option><option value="processing">Processing</option><option value="completed">Completed</option><option value="cancelled">Cancelled</option></select></div>
-      <div class="filter-group"><label for="dateFrom">From</label><input type="date" id="dateFrom" bind:value={filters.dateFrom} /></div>
-      <div class="filter-group"><label for="dateTo">To</label><input type="date" id="dateTo" bind:value={filters.dateTo} /></div>
-      <div class="filter-group"><label for="search">Search</label><input type="text" id="search" placeholder="Search..." bind:value={filters.search} /></div>
+<main class="admin-main">
+  <div class="admin-container">
+    <div class="admin-header">
+      <h1 class="neon-text-cyan">Order Management</h1>
     </div>
-  </div>
-  
-  {#if loadingOrders}
-    <div class="loading">Loading orders...</div>
-  {:else}
-    <div class="table-card">
-      <div class="table-responsive desktop-only">
-        <table>
-          <thead><tr><th>Order #</th><th>Date</th><th>Customer</th><th>Email</th><th>Type</th><th>Payment</th><th>Total</th><th>Status</th><th>Actions</th></tr></thead>
+
+    {#if error}
+      <div class="alert alert-danger">
+        {error}
+      </div>
+    {/if}
+
+    <!-- Filters Section -->
+    <div class="glass mb-4">
+      <div class="card-body">
+        <div class="grid grid-4 gap-2">
+          <div class="form-group">
+            <label class="form-label">Status</label>
+            <select bind:value={statusFilter} class="form-control form-select">
+              <option value="all">All</option>
+              <option value="pending">Pending</option>
+              <option value="processing">Processing</option>
+              <option value="completed">Completed</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+          </div>
+          
+          <div class="form-group">
+            <label class="form-label">From</label>
+            <input type="date" bind:value={dateFrom} class="form-control" />
+          </div>
+          
+          <div class="form-group">
+            <label class="form-label">To</label>
+            <input type="date" bind:value={dateTo} class="form-control" />
+          </div>
+          
+          <div class="form-group">
+            <label class="form-label">Search</label>
+            <input 
+              type="text" 
+              bind:value={searchTerm} 
+              placeholder="Search..." 
+              class="form-control" 
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {#if loading}
+      <div class="text-center p-4">
+        <div class="spinner-large"></div>
+        <p class="neon-text-cyan mt-2">Loading orders...</p>
+      </div>
+    {:else}
+      <!-- Orders Table -->
+      <div class="glass mb-4">
+        <table class="table-dark">
+          <thead>
+            <tr>
+              <th>Order #</th>
+              <th>Date</th>
+              <th>Customer</th>
+              <th>Email</th>
+              <th>Type</th>
+              <th>Payment</th>
+              <th>Total</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
           <tbody>
-            {#each orders as order (order.id)}
-              <tr class:guest-order={order.guest_info}>
-                <td>{order.order_number || order.id}</td>
+            {#each filteredOrders as order (order.id)}
+              <tr class="hover-glow">
+                <td class="neon-text-white">
+                  {order.order_number || order.id.substring(0, 8)}
+                </td>
                 <td>{formatDate(order.created_at)}</td>
-                <td><strong>{getCustomerInfo(order).name}</strong></td>
-                <td>{getCustomerInfo(order).email}</td>
-                <td>{#if order.guest_info}<span class="badge guest">Guest</span>{:else}<span class="badge registered">Registered</span>{/if}</td>
-                <td>{order.payment_method || '-'}</td>
-                <td>R{order.total}</td>
-                <td><select value={order.status} class="status-select" on:change={(e) => handleStatusUpdate(order.id, e.currentTarget.value as OrderStatus)} disabled={order.status === 'cancelled'}><option value="pending">Pending</option><option value="processing">Processing</option><option value="completed">Completed</option><option value="cancelled">Cancelled</option></select></td>
-                <td><button class="view-details-btn" on:click={() => selectedOrder = order}>Details</button><button class="delete-btn" on:click={() => { showConfirmModal = true; orderIdToDelete = order.id; }}>Delete</button></td>
+                <td>
+                  {#if order.user}
+                    {order.user.display_name || 'N/A'}
+                  {:else if order.guest_info}
+                    {order.guest_info.name || 'Guest'}
+                  {:else}
+                    Unknown
+                  {/if}
+                </td>
+                <td>
+                  {#if order.user}
+                    {order.user.email || 'N/A'}
+                  {:else if order.guest_info}
+                    {order.guest_info.email || 'N/A'}
+                  {:else}
+                    N/A
+                  {/if}
+                </td>
+                <td>
+                  <span class="badge {order.user ? 'badge-info' : 'badge-warning'}">
+                    {order.user ? 'Registered' : 'Guest'}
+                  </span>
+                </td>
+                <td>{order.payment_method || 'cash'}</td>
+                <td class="neon-text-cyan">
+                  {formatCurrency((order.subtotal || 0) + (order.tax || 0) + (order.shipping_fee || 0))}
+                </td>
+                <td>
+                  <span class="badge {getStatusBadgeClass(order.status)}">
+                    {order.status}
+                  </span>
+                </td>
+                <td>
+                  <div class="flex gap-1">
+                    <button 
+                      class="btn btn-secondary btn-sm"
+                      on:click={() => { selectedOrder = order; showOrderModal = true; }}
+                    >
+                      Details
+                    </button>
+                    <button 
+                      class="btn btn-danger btn-sm"
+                      on:click={() => { orderToDelete = order; showDeleteConfirm = true; }}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </td>
               </tr>
             {/each}
           </tbody>
         </table>
-      </div>
-      <div class="mobile-cards mobile-only">
-        {#each orders as order (order.id)}
-          <div class="admin-card">
-            <!-- Mobile card view can be implemented here if needed -->
+
+        {#if filteredOrders.length === 0}
+          <div class="text-center p-4">
+            <p class="neon-text-cyan">No orders found.</p>
           </div>
-        {/each}
+        {/if}
       </div>
-    </div>
-  {/if}
-</div>
 
-{#if selectedOrder}
-    <OrderDetailsModal order={selectedOrder} onClose={() => selectedOrder = null} onStatusUpdate={handleStatusUpdate} />
-{/if}
-
-{#if showConfirmModal}
-    <ConfirmModal message="Delete this order?" onConfirm={() => { if (orderIdToDelete) deleteOrder(orderIdToDelete); showConfirmModal = false; orderIdToDelete = null; }} onCancel={() => { showConfirmModal = false; orderIdToDelete = null; }} />
-{/if}
-
-{#if showCancelConfirm}
-  <div class="modal-backdrop">
-    <div class="modal-content" style="max-width: 500px;">
-      <div class="modal-header">
-        <h2>Cancel Order?</h2>
+      <!-- Financial Summary -->
+      <div class="glass">
+        <div class="card-header">
+          <h3 class="neon-text-cyan">Financial Summary ({filteredOrders.length} orders)</h3>
+        </div>
+        <div class="card-body">
+          <div class="grid grid-4 gap-3">
+            <div class="summary-card glass-light">
+              <h4 class="neon-text-white">Total Revenue</h4>
+              <p class="neon-text-cyan text-2xl font-bold">
+                {formatCurrency(financialSummary.totalRevenue)}
+              </p>
+            </div>
+            
+            <div class="summary-card glass-light">
+              <h4 class="neon-text-white">Average Order</h4>
+              <p class="neon-text-cyan text-2xl font-bold">
+                {formatCurrency(financialSummary.averageOrder)}
+              </p>
+            </div>
+            
+            <div class="summary-card glass-light">
+              <h4 class="text-green-400">Completed</h4>
+              <p class="text-green-400 font-bold">
+                {financialSummary.completedOrders} orders
+              </p>
+              <p class="text-green-400 text-lg font-bold">
+                {formatCurrency(financialSummary.completedRevenue)}
+              </p>
+            </div>
+            
+            <div class="summary-card glass-light">
+              <h4 class="text-yellow-400">Pending</h4>
+              <p class="text-yellow-400 font-bold">
+                {financialSummary.pendingOrders} orders
+              </p>
+              <p class="text-yellow-400 text-lg font-bold">
+                {formatCurrency(financialSummary.pendingRevenue)}
+              </p>
+            </div>
+            
+            <div class="summary-card glass-light">
+              <h4 class="neon-text-white">Customer Types</h4>
+              <p class="text-sm">
+                <span class="neon-text-cyan">{financialSummary.guestOrders} guest</span><br>
+                <span class="neon-text-cyan">{financialSummary.registeredOrders} registered</span>
+              </p>
+            </div>
+          </div>
+        </div>
       </div>
-      <div class="modal-body">
-        <p>This will reapply stock to inventory. Are you sure?</p>
-      </div>
-      <div class="modal-actions">
-        <button class="btn" on:click={cancelCancelOrder}>No</button>
-        <button class="btn danger" on:click={confirmCancelOrder}>Yes, cancel</button>
-      </div>
-    </div>
+    {/if}
   </div>
+</main>
+
+{#if showOrderModal && selectedOrder}
+  <OrderDetailsModal 
+    order={selectedOrder}
+    onClose={() => showOrderModal = false}
+    onStatusUpdate={handleOrderStatusUpdate}
+  />
 {/if}
 
+{#if showDeleteConfirm}
+  <ConfirmModal
+    message="Are you sure you want to delete this order? This action cannot be undone."
+    onConfirm={handleOrderDelete}
+    onCancel={() => { showDeleteConfirm = false; orderToDelete = null; }}
+  />
+{/if}
 
 <style>
-  /* Styles extracted and simplified from admin/+page.svelte */
-  .orders-page { padding: 1rem; max-width: 1400px; margin: 0 auto; }
-  .page-header { margin-bottom: 2rem; }
-  h1 { font-size: 2rem; }
-  .filters-card, .table-card { background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 1.5rem; }
-  .filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; }
-  .filter-group { display: flex; flex-direction: column; gap: 0.5rem; }
-  label { font-size: 0.9rem; color: #666; }
-  input, select { padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px; }
-  .table-responsive { overflow-x: auto; }
-  table { width: 100%; border-collapse: collapse; min-width: 800px; }
-  th, td { padding: 1rem; text-align: left; border-bottom: 1px solid #e9ecef; }
-  th { background: #f8f9fa; }
-  .view-details-btn, .delete-btn { padding: 0.5rem 1rem; border: none; border-radius: 4px; cursor: pointer; }
-  .view-details-btn { background: #28a745; color: white; }
-  .delete-btn { background: #dc3545; color: white; margin-left: 0.5rem; }
-  .badge { padding: .25em .6em; font-size: 75%; font-weight: 700; line-height: 1; text-align: center; white-space: nowrap; vertical-align: baseline; border-radius: .25rem; }
-  .badge.guest { color: #fff; background-color: #6c757d; }
-  .badge.registered { color: #fff; background-color: #17a2b8; }
-  .modal-backdrop {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.5);
-    z-index: 1000;
-    display: flex;
-    justify-content: center;
-    align-items: center;
+  .admin-main {
+    min-height: 100vh;
+    padding-top: 80px;
+    background: transparent;
   }
-  .modal-content {
-    background: white;
-    padding: 0;
-    border-radius: 12px;
-    box-shadow: 0 5px 15px rgba(0,0,0,0.3);
-    display: flex;
-    flex-direction: column;
+
+  .admin-container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 2rem;
+    margin-top: 6pc;
   }
-  .modal-header {
-    padding: 1rem 1.5rem;
-    border-bottom: 1px solid #e9ecef;
+
+  .admin-header {
+    margin-bottom: 2rem;
+    text-align: center;
   }
-  .modal-header h2 {
+
+  .admin-header h1 {
+    font-size: 2.5rem;
+    font-weight: 700;
     margin: 0;
-    font-size: 1.25rem;
+    letter-spacing: 1px;
   }
-  .modal-body {
+
+  .summary-card {
     padding: 1.5rem;
+    border-radius: 8px;
+    text-align: center;
+    transition: var(--transition-fast);
   }
-  .modal-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 1rem;
-    padding: 1rem 1.5rem;
-    border-top: 1px solid #e9ecef;
-    background-color: #f8f9fa;
+
+  .summary-card:hover {
+    border-color: var(--neon-cyan);
+    box-shadow: var(--shadow-neon-cyan);
   }
-  .btn {
-    padding: 0.5rem 1rem;
-    border-radius: 4px;
-    border: 1px solid #ddd;
-    background-color: #f8f9fa;
-    cursor: pointer;
+
+  .summary-card h4 {
+    font-size: 0.9rem;
+    font-weight: 600;
+    margin: 0 0 0.5rem 0;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
   }
-  .btn.danger {
-    background-color: #dc3545;
-    color: white;
-    border-color: #dc3545;
+
+  .summary-card p {
+    margin: 0;
+  }
+
+  .text-2xl {
+    font-size: 1.5rem;
+  }
+
+  .text-lg {
+    font-size: 1.125rem;
+  }
+
+  .text-sm {
+    font-size: 0.875rem;
+  }
+
+  .font-bold {
+    font-weight: 700;
+  }
+
+  .text-green-400 {
+    color: #4ade80;
+  }
+
+  .text-yellow-400 {
+    color: #facc15;
+  }
+
+  @media (max-width: 1200px) {
+    .admin-container {
+      padding: 1rem;
+    }
+    
+    .admin-header h1 {
+      font-size: 2rem;
+    }
+  }
+
+  @media (max-width: 768px) {
+    .table-dark {
+      font-size: 0.8rem;
+    }
+    
+    .summary-card {
+      padding: 1rem;
+    }
+    
+    .summary-card h4 {
+      font-size: 0.8rem;
+    }
+    
+    .text-2xl {
+      font-size: 1.25rem;
+    }
   }
 </style> 

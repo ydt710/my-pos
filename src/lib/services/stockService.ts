@@ -70,7 +70,7 @@ export async function confirmProductionDone(stockMovementId: string | number) {
 // Transfer stock from facility to shop
 export async function transferToShop(productId: string, quantity: number, note?: string) {
   const facilityId = await getLocationId('facility');
-  const shopId = getShopLocationId();
+  const shopId = await getLocationId('shop');
   if (!facilityId || !shopId) throw new Error('Location not found');
   const created_by = await getCurrentProfileId();
   const { data: facilityStock } = await supabase
@@ -86,10 +86,7 @@ export async function transferToShop(productId: string, quantity: number, note?:
   if (quantity > currentFacilityQty) {
     throw new Error('Not enough stock in facility to transfer the requested quantity.');
   }
-  const newFacilityQty = currentFacilityQty - quantity;
-  await supabase
-    .from('stock_levels')
-    .upsert({ product_id: productId, location_id: facilityId, quantity: newFacilityQty }, { onConflict: 'product_id,location_id' });
+  
   await supabase.from('stock_movements').insert({
     product_id: productId,
     from_location_id: facilityId,
@@ -114,9 +111,7 @@ export async function adjustStock(productId: string, locationName: string, newQu
     .eq('location_id', locationId)
     .single();
   const oldQuantity = data?.quantity ?? 0;
-  await supabase
-    .from('stock_levels')
-    .upsert({ product_id: productId, location_id: locationId, quantity: newQuantity }, { onConflict: 'product_id,location_id' });
+  
   await supabase.from('stock_movements').insert({
     product_id: productId,
     from_location_id: locationId,
@@ -130,13 +125,10 @@ export async function adjustStock(productId: string, locationName: string, newQu
 
 // Decrement shop stock for a sale
 export async function sellFromShop(productId: string, quantity: number, note?: string) {
-  const shopId = getShopLocationId();
+  const shopId = await getLocationId('shop');
   if (!shopId) throw new Error('Shop location not found');
   const created_by = await getCurrentProfileId();
-  await supabase.rpc('increment_product_quantity', {
-    product_id: productId,
-    amount: -quantity
-  });
+  
   await supabase.from('stock_movements').insert({
     product_id: productId,
     from_location_id: shopId,
@@ -163,52 +155,29 @@ export async function acceptStockTransfer(transferId: string, actualQuantity: nu
 
 // POS: Reject a stock transfer (log discrepancy)
 export async function rejectStockTransfer(transferId: string, actualQuantity: number, reason: string) {
-  // Get the transfer
-  const { data: transfer, error } = await supabase
-    .from('stock_movements')
-    .select('*')
-    .eq('id', transferId)
-    .single();
-  if (error || !transfer) throw new Error('Transfer not found');
-  if (transfer.status === 'done') return;
-
-  // Update shop stock_levels with actual received
-  const shopId = transfer.to_location_id;
-  const { data: shopStock } = await supabase
-    .from('stock_levels')
-    .select('quantity')
-    .eq('product_id', transfer.product_id)
-    .eq('location_id', shopId)
-    .single();
-  const newShopQty = (shopStock?.quantity ?? 0) + actualQuantity;
-  await supabase
-    .from('stock_levels')
-    .upsert({ product_id: transfer.product_id, location_id: shopId, quantity: newShopQty }, { onConflict: 'product_id,location_id' });
-
-  // Update movement status and quantity
-  await supabase
-    .from('stock_movements')
-    .update({ status: 'rejected', quantity: actualQuantity, note: reason })
-    .eq('id', transferId);
-
-  // Log discrepancy with user trackability
-  const reported_by = await getCurrentProfileId();
-  await supabase.from('stock_discrepancies').insert({
-    transfer_id: transferId,
-    product_id: transfer.product_id,
-    expected_quantity: transfer.quantity,
-    actual_quantity: actualQuantity,
-    reason,
-    reported_by
+  const { error } = await supabase.rpc('reject_stock_transfer', {
+    p_transfer_id: transferId,
+    p_actual_quantity: actualQuantity,
+    p_reason: reason
   });
+
+  if (error) {
+    console.error('Error rejecting transfer:', error);
+    throw new Error(`Failed to reject stock transfer: ${error.message}`);
+  }
 }
 
 export function getShopLocationId(): string | null {
   return PUBLIC_SHOP_LOCATION_ID || null;
 }
 
+// Better version: dynamically get shop location ID
+export async function getShopLocationIdDynamic(): Promise<string | null> {
+  return await getLocationId('shop');
+}
+
 export async function getShopStockLevels(productIds: string[]): Promise<{ [productId: string]: number }> {
-  const shopId = getShopLocationId();
+  const shopId = await getLocationId('shop');
   if (!shopId || productIds.length === 0) return {};
   const { data, error } = await supabase
     .from('stock_levels')

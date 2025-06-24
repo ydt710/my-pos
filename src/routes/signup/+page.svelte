@@ -328,28 +328,83 @@
       if (!html2pdf) {
         throw new Error('PDF generation is only available in the browser.');
       }
+      
+      // Wait a bit for reactive updates to complete
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
       const element = document.getElementById('contract-template');
       if (!element) {
         console.error('Contract template not found');
         return null;
       }
-      const opt = {
-        margin: 0.5,
-        filename: 'contract.pdf',
-        image: { type: 'jpeg', quality: 0.7 }, // Lowered quality for smaller PDF
-        html2canvas: { scale: 2 },
-        jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' }
-      };
-      const pdfBlob = await html2pdf().from(element).set(opt).outputPdf('blob');
-      const filename = `${userId}/${Date.now()}.pdf`;
+
+      try {
+        const opt = {
+          margin: [0.75, 0.5, 0.75, 0.5], // top, right, bottom, left
+          filename: 'contract.pdf',
+          image: { type: 'jpeg', quality: 0.98 },
+          html2canvas: { 
+            scale: 2,
+            useCORS: true,
+            allowTaint: true,
+            logging: false,
+            backgroundColor: '#FFFFFF',
+            letterRendering: true,
+            onclone: (document: Document) => {
+              const contractEl = document.getElementById('contract-template');
+              if (contractEl) {
+                // Force white background and black text
+                contractEl.style.backgroundColor = 'white';
+                contractEl.style.color = 'black';
+                contractEl.style.padding = '20px';
+                
+                // Apply black color to all elements
+                const allElements = contractEl.querySelectorAll('*');
+                allElements.forEach((el: any) => {
+                  // Preserve images
+                  if (el.tagName !== 'IMG') {
+                    el.style.color = 'black';
+                  }
+                });
+                
+                // Add page break CSS to prevent cutting
+                const style = document.createElement('style');
+                style.innerHTML = `
+                  li, p { page-break-inside: avoid; }
+                  ol, ul { page-break-inside: avoid; }
+                  h1, h2, h3, h4, h5, h6 { page-break-after: avoid; }
+                  .no-break { page-break-inside: avoid; }
+                `;
+                contractEl.appendChild(style);
+              }
+            }
+          },
+          jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' },
+          pagebreak: { 
+            mode: ['avoid-all', 'css', 'legacy'],
+            before: '.page-break',
+            after: '.page-break',
+            avoid: ['li', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', '.no-break']
+          }
+        };
+        
+        const pdfBlob = await html2pdf().from(element).set(opt).outputPdf('blob');
+        const filename = `${userId}/${Date.now()}.pdf`;
+        
         const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('signed.contracts')
-        .upload(filename, pdfBlob, { contentType: 'application/pdf', upsert: false });
+          .from('signed.contracts')
+          .upload(filename, pdfBlob, { contentType: 'application/pdf', upsert: false });
+          
         if (uploadError) {
           console.error('Error uploading signed PDF:', uploadError);
           return null;
         }
-      return filename;
+        
+        return filename;
+      } catch (error) {
+        console.error('Error generating PDF:', error);
+        return null;
+      }
     }
   </script>
   
@@ -501,9 +556,9 @@
           <div class="agreement-content">
             <h2 style="text-align:center;">Membership Agreement Preview</h2>
             <div>
-              <div id="contract-template">
-                <h2 style="text-align:center;">MEMBERSHIP AGREEMENT</h2>
-                <p><strong>Between:</strong><br>
+              <div id="contract-template" style="background-color: white; color: black;">
+                <h2 style="text-align:center; color: black;">MEMBERSHIP AGREEMENT</h2>
+                <p style="color: black;"><strong style="color: black;">Between:</strong><br>
                 Route 420 WP<br>
                 ("the Club")<br>
                 and<br>
@@ -1136,6 +1191,16 @@
       word-break: break-word;
       overflow-wrap: break-word;
     }
+    
+    /* Ensure contract template has black text */
+    #contract-template {
+      color: black !important;
+      background-color: white !important;
+    }
+    
+    #contract-template * {
+      color: black !important;
+    }
 
     /* Responsive images, signature, and ID preview in contract */
     #contract-template img {
@@ -1188,5 +1253,34 @@
       page-break-inside: avoid;
       break-inside: avoid;
       display: block;
+    }
+    
+    /* Page break control for PDF generation */
+    #contract-template li,
+    #contract-template p,
+    #contract-template ol > li {
+      page-break-inside: avoid !important;
+      break-inside: avoid !important;
+    }
+    
+    #contract-template h1,
+    #contract-template h2,
+    #contract-template h3,
+    #contract-template h4,
+    #contract-template h5,
+    #contract-template h6 {
+      page-break-after: avoid !important;
+      break-after: avoid !important;
+    }
+    
+    #contract-template ol,
+    #contract-template ul {
+      page-break-inside: auto !important;
+    }
+    
+    /* Keep numbered items together */
+    #contract-template ol > li {
+      orphans: 3;
+      widows: 3;
     }
   </style>

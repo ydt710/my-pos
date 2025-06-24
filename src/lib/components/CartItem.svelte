@@ -1,11 +1,14 @@
 <script lang="ts">
   import type { CartItem as CartItemType } from '$lib/types/index';
-  import { cartStore } from '$lib/stores/cartStore';
+  import { cartStore, customPrices } from '$lib/stores/cartStore';
   
 
   export let item: CartItemType;
   export let loading = false;
   export let userId: string | null = null;
+  
+  // Check if this item has a custom price applied
+  $: hasCustomPrice = userId && $customPrices[item.id] && $customPrices[item.id] !== item.price;
   
   async function updateQuantity(newQuantity: number) {
     await cartStore.updateQuantity(item.id, newQuantity);
@@ -28,7 +31,12 @@
   <img src={item.image_url} alt={item.name} />
   <div class="cart-item-info">
     <div class="cart-item-name">{item.name}</div>
-    <div class="cart-item-price">R{item.price.toFixed(2)} × {item.quantity}</div>
+    <div class="cart-item-price">
+      R{item.price.toFixed(2)} × {item.quantity}
+      {#if hasCustomPrice}
+        <span class="custom-price-indicator" title="Custom price applied">🏷️</span>
+      {/if}
+    </div>
     <div class="cart-item-quantity" role="group" aria-label="Quantity controls">
       <button 
         class="quantity-btn" 
@@ -129,5 +137,11 @@
     padding: 0.25rem 0.5rem;
     font-size: 1.25rem;
     line-height: 1;
+  }
+
+  .custom-price-indicator {
+    color: #007bff;
+    margin-left: 0.5rem;
+    font-size: 0.9em;
   }
 </style> 

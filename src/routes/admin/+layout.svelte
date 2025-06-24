@@ -49,29 +49,22 @@
 </script>
 
 {#if loading}
-  <div class="loading">Loading...</div>
+  <div class="text-center" style="min-height: 100vh; display: flex; align-items: center; justify-content: center;">
+    <div>
+      <div class="spinner-large"></div>
+      <p class="neon-text-cyan mt-2">Loading...</p>
+    </div>
+  </div>
 {:else if isAdmin}
   <AdminNav />
-  <main class="admin-content">
+  <main class="admin-layout-main">
     <slot />
   </main>
 {/if}
 
 <style>
-  .admin-content {
-  
-    max-width: 1400px;
-    margin: 0 auto;
+  .admin-layout-main {
+    min-height: 100vh;
+    background: transparent;
   }
-
-  .loading {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    height: 100vh;
-    font-size: 1.2rem;
-    color: #666;
-  }
-
-
 </style> 

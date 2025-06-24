@@ -2,7 +2,7 @@
   import { onMount, onDestroy, afterUpdate } from 'svelte';
   import { fly, fade } from 'svelte/transition';
   import { cartStore } from '$lib/stores/cartStore';
-  import { loadAllProducts } from '$lib/services/productService';
+  import { loadAllProductsCached } from '$lib/services/productService';
   import { supabase } from '$lib/supabase';
   import type { Product } from '$lib/types/index';
   
@@ -19,6 +19,14 @@
   import { clearProductCache } from '$lib/services/cacheService';
   import Footer from '$lib/components/Footer.svelte';
   import { debounce } from '$lib/utils';
+
+  // Landing page data
+  let landingHero: any = null;
+  let landingCategories: any = null;
+  let landingStores: any = null;
+  let landingFeaturedProducts: any = null;
+  let landingTestimonials: any = null;
+  let featuredProducts: Product[] = [];
 
   let allProducts: Product[] = [];
   let products: Product[] = [];
@@ -73,7 +81,69 @@
   let loadMoreTrigger: HTMLDivElement | null = null;
   let observer: IntersectionObserver | null = null;
 
+  // Function to load landing page data
+  async function loadLandingPageData() {
+    try {
+      // Load hero section
+      const { data: heroData } = await supabase
+        .from('landing_hero')
+        .select('*')
+        .limit(1)
+        .maybeSingle();
+      landingHero = heroData;
 
+      // Load categories section
+      const { data: categoriesData } = await supabase
+        .from('landing_categories')
+        .select('*')
+        .limit(1)
+        .maybeSingle();
+      landingCategories = categoriesData;
+
+      // Load stores section
+      const { data: storesData } = await supabase
+        .from('landing_stores')
+        .select('*')
+        .limit(1)
+        .maybeSingle();
+      landingStores = storesData;
+
+      // Load featured products section
+      const { data: featuredData } = await supabase
+        .from('landing_featured_products')
+        .select('*')
+        .limit(1)
+        .maybeSingle();
+      landingFeaturedProducts = featuredData;
+
+      // Load testimonials section
+      const { data: testimonialsData } = await supabase
+        .from('landing_testimonials')
+        .select('*')
+        .limit(1)
+        .maybeSingle();
+      landingTestimonials = testimonialsData;
+
+      // Load featured products if product IDs are specified
+      if (landingFeaturedProducts?.product_ids?.length > 0) {
+        const { data: products } = await supabase
+          .from('products')
+          .select('*')
+          .in('id', landingFeaturedProducts.product_ids)
+          .limit(8);
+        featuredProducts = products || [];
+      } else {
+        // Fallback: show 4 random products
+        const { data: randomProducts } = await supabase
+          .from('products')
+          .select('*')
+          .limit(4);
+        featuredProducts = randomProducts || [];
+      }
+    } catch (err) {
+      console.error('Error loading landing page data:', err);
+    }
+  }
 
   function loadMoreProducts() {
     // Only load more if there are more products to show
@@ -94,7 +164,6 @@
       pageSize = 8;
     }
     console.log('Updated page size:', { width, pageSize });
-    paginateProducts();
   }
 
   function filterProducts() {
@@ -103,6 +172,8 @@
       observer.disconnect();
       observer = null;
     }
+    // Always update page size before filtering
+    updatePageSize();
     // Always search out of allProducts array
     products = allProducts
       .filter(p => {
@@ -110,25 +181,19 @@
         if (!productFilters.search) {
           return activeCategory ? p.category === activeCategory : true;
         }
-
         // Case-insensitive search term
         const searchTerm = productFilters.search.toLowerCase().trim();
-        
         // Search across multiple fields
         const matchesName = p.name.toLowerCase().includes(searchTerm);
         const matchesCategory = p.category.toLowerCase().includes(searchTerm);
         const matchesDescription = p.description?.toLowerCase().includes(searchTerm) || false;
         const matchesSearch = matchesName || matchesCategory || matchesDescription;
-
         // If searching, only apply category filter if there is an active category
         const matchesCategory2 = activeCategory ? p.category === activeCategory : true;
-        
         return matchesSearch && matchesCategory2;
       })
       .sort((a, b) => a.name.localeCompare(b.name));
-
     totalProducts = products.length;
-    
     // Reset to first page when filtering
     currentPage = 1;
     paginateProducts();
@@ -196,9 +261,12 @@
     }
     posCheckComplete = true;
 
+    // Load landing page data
+    await loadLandingPageData();
+
     // Load all products once and manage them locally
     loading = true;
-    const { products: loadedProducts, error: loadError } = await loadAllProducts();
+    const { products: loadedProducts, error: loadError } = await loadAllProductsCached();
     loading = false;
     if (loadError) {
       error = loadError;
@@ -215,7 +283,6 @@
     }
 
     if (typeof window !== 'undefined') {
-      updatePageSize();
       window.addEventListener('resize', handleResize);
     }
   });
@@ -320,7 +387,7 @@
       clearProductCache(); // Clear cache before reloading products
       
       // Refresh products so product card updates
-      const { products: reloadedProducts } = await loadAllProducts(); 
+      const { products: reloadedProducts } = await loadAllProductsCached(); 
       allProducts = reloadedProducts;
       filterProducts();
 
@@ -328,6 +395,40 @@
       alert('Failed to submit review. Please try again.');
     } finally {
       submittingReview = false;
+    }
+  }
+
+  afterUpdate(() => {
+    // Set up IntersectionObserver for infinite scroll
+    if (observer) {
+      observer.disconnect();
+      observer = null;
+    }
+    if (loadMoreTrigger && currentPage * pageSize < products.length) {
+      observer = new IntersectionObserver((entries) => {
+        if (entries[0].isIntersecting) {
+          loadMoreProducts();
+        }
+      }, {
+        root: null,
+        rootMargin: '0px',
+        threshold: 0.1
+      });
+      observer.observe(loadMoreTrigger);
+    }
+  });
+
+  // Handle category click from landing page
+  function handleLandingCategoryClick(categoryId: string) {
+    if (categoryId === 'all') {
+      activeCategory = undefined;
+    } else {
+      activeCategory = categoryId;
+    }
+    // Scroll to products section
+    const productsSection = document.getElementById('products-section');
+    if (productsSection) {
+      productsSection.scrollIntoView({ behavior: 'smooth' });
     }
   }
 </script>
@@ -345,21 +446,13 @@
   on:selectcategory={e => handleCategoryChange(e.detail.id)}
 />
 
-<!-- Search Bar -->
-
-
-<!-- Watermark -->
-{#if !activeCategory}
-  <div class="watermark" style="--logo-url: url('{logoUrl}')"></div>
-{/if}
-
 <!-- Main Content Area -->
-<main class="products-container">
+<main class="main-content">
   
   {#if loading || !posCheckComplete}
     <div class="loading-container">
       <LoadingSpinner size="60px" />
-      <p>Loading products...</p>
+      <p>Loading...</p>
     </div>
   {:else if error}
     <div class="error-container">
@@ -369,67 +462,185 @@
       </button>
     </div>
   {:else if !activeCategory}
-    <div class="welcome-section">
-      <div class="welcome-overlay"></div>
-      {#if isPosUser}
-        <h1>Welcome POS User</h1>
-      {:else}
-        <h1>Welcome to Route 420</h1>
-      {/if}
-      <div class="content">
-        <p class="tagline">Family-Grown Cannabis, Crafted with Care</p>
-        <div class="message">
-          <p>At Route 420, we're more than just a dispensary – we're a family-run farm dedicated to cultivating the finest cannabis products. Our journey began with a simple passion for quality and a commitment to sustainable farming practices.</p>
-          <p>Every product in our store is grown, harvested, and processed with the same care and attention we give to our own family. We believe in transparency, quality, and the power of nature's gifts.</p>
-          <p>Join us on this journey and experience the difference that family-grown cannabis can make.</p>
+    <!-- LANDING PAGE SECTIONS -->
+    
+    <!-- Hero Section -->
+    {#if landingHero}
+      <section class="hero-section">
+        <div class="hero-content">
+          <div class="hero-text">
+            <h1 class="neon-text-cyan hero-title">{landingHero.title}</h1>
+            {#if isPosUser}
+              <p class="hero-subtitle neon-text-white">Welcome POS User</p>
+            {/if}
+            <p class="hero-description neon-text-white">{landingHero.description}</p>
+            <p class="hero-subtitle neon-text-secondary">{landingHero.subtitle}</p>
+            <a href="#categories" class="btn btn-primary btn-lg hero-cta">
+              {landingHero.cta_text || 'Shop Now'}
+            </a>
+          </div>
+          <div class="hero-products">
+            {#if featuredProducts.length > 0}
+              <div class="hero-product-showcase">
+                {#each featuredProducts.slice(0, 3) as product}
+                  <div class="hero-product glass-light hover-glow">
+                    <img src={product.image_url} alt={product.name} class="hero-product-image" />
+                    <h4 class="neon-text-cyan">{product.name}</h4>
+                    <p class="neon-text-white">R{product.price}</p>
+                  </div>
+                {/each}
+              </div>
+            {/if}
+          </div>
         </div>
-        <p class="select-category">Select a category above to browse our products</p>
-      </div>
-    </div>
+      </section>
+    {/if}
+
+    <!-- Categories Showcase Section -->
+    {#if landingCategories}
+      <section id="categories" class="categories-section">
+        <div class="container">
+          <div class="section-header text-center mb-5">
+            <h2 class="neon-text-cyan">{landingCategories.title}</h2>
+            <p class="neon-text-secondary">{landingCategories.subtitle}</p>
+          </div>
+          <div class="categories-grid">
+            {#each landingCategories.categories as category}
+              <div 
+                class="category-card glass hover-glow" 
+                style="--category-color: {category.color}"
+                on:click={() => handleLandingCategoryClick(category.id)}
+                on:keydown={(e) => e.key === 'Enter' && handleLandingCategoryClick(category.id)}
+                tabindex="0"
+                role="button"
+              >
+                <div class="category-icon" style="color: {category.color};">
+                  <i class="fa-solid {categoryIcons[category.id] || 'fa-cannabis'}"></i>
+                </div>
+                <h3 class="neon-text-white">{category.name}</h3>
+                <p class="neon-text-secondary">{category.description}</p>
+              </div>
+            {/each}
+          </div>
+        </div>
+      </section>
+    {/if}
+
+    <!-- Multiple Stores Section -->
+    {#if landingStores}
+      <section class="stores-section">
+        <div class="stores-content">
+          <h2 class="neon-text-cyan">{landingStores.title}</h2>
+          <p class="neon-text-white">{landingStores.description}</p>
+          <div class="stores-visual">
+            <div class="store-fountain glass">
+              <div class="fountain-base"></div>
+              <div class="fountain-water"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+    {/if}
+
+    <!-- Featured Products Section -->
+    {#if landingFeaturedProducts && featuredProducts.length > 0}
+      <section class="featured-products-section">
+        <div class="container">
+          <div class="section-header text-center mb-5">
+            <h2 class="neon-text-cyan">{landingFeaturedProducts.title}</h2>
+            <p class="neon-text-secondary">{landingFeaturedProducts.subtitle}</p>
+          </div>
+          <div class="featured-products-grid">
+            {#each featuredProducts.slice(0, 4) as product}
+              <ProductCard 
+                {product}
+                stock={stockLevels[product.id] ?? 0}
+                on:addToCart={addToCart}
+                on:showDetails={handleShowDetails}
+                on:showReview={openReviewModal}
+              />
+            {/each}
+          </div>
+        </div>
+      </section>
+    {/if}
+
+    <!-- Customer Testimonials Section -->
+    {#if landingTestimonials && landingTestimonials.testimonials?.length > 0}
+      <section class="testimonials-section">
+        <div class="container">
+          <div class="section-header text-center mb-5">
+            <h2 class="neon-text-cyan">{landingTestimonials.title}</h2>
+          </div>
+          <div class="testimonials-grid">
+            {#each landingTestimonials.testimonials as testimonial}
+              <div class="testimonial-card glass hover-glow">
+                <div class="testimonial-rating">
+                  {#each Array(5) as _, i}
+                    <i class="fa-solid fa-star {i < testimonial.rating ? 'text-yellow-400' : 'text-gray-400'}"></i>
+                  {/each}
+                </div>
+                <p class="neon-text-white testimonial-comment">"{testimonial.comment}"</p>
+                <div class="testimonial-author">
+                  <span class="neon-text-cyan">{testimonial.name}</span>
+                  {#if testimonial.verified}
+                    <span class="verified-badge">✓</span>
+                  {/if}
+                </div>
+              </div>
+            {/each}
+          </div>
+        </div>
+      </section>
+    {/if}
+
     <Footer />
   {:else}
-        <div class="category-header">
-          {#if productFilters.search}
-            <i class="fa-solid fa-magnifying-glass category-header-icon"></i>
-          {:else if activeCategory && categoryIcons[activeCategory]}
-            <i class="fa-solid {categoryIcons[activeCategory]} category-header-icon"></i>
-          {/if}
-          <input
-              type="text"
-              class="search-bar"
-              placeholder="Search products..."
-              bind:value={productFilters.search}
-              on:input={debounce(filterProducts, 300)}
-              aria-label="Search products"
-              autocomplete="off"
-            />
-        </div>
-    <div class="category-section">
-      <div class="products-grid">
-        {#if paginatedProducts.length === 0}
-          <div class="no-results-in-grid">
-            <p>No products found matching "{productFilters.search}"</p>
-            <p class="sub-text">Try a different search or clear your search above.</p>
-          </div>
-        {:else}
-        {#each paginatedProducts as product (product.id)}
-          <div in:fly={{ y: 30, duration: 350 }}>
-            <ProductCard 
-              {product}
-              stock={stockLevels[product.id] ?? 0}
-              on:addToCart={addToCart}
-              on:showDetails={handleShowDetails}
-              on:showReview={openReviewModal}
-            />
-          </div>
-        {/each}
-        <!-- Infinite scroll trigger -->
-        {#if currentPage * pageSize < products.length}
-          <div bind:this={loadMoreTrigger} class="load-more-trigger"></div>
-          {/if}
+    <!-- PRODUCTS SECTION -->
+    <section id="products-section" class="products-section">
+      <div class="category-header">
+        {#if productFilters.search}
+          <i class="fa-solid fa-magnifying-glass category-header-icon"></i>
+        {:else if activeCategory && categoryIcons[activeCategory]}
+          <i class="fa-solid {categoryIcons[activeCategory]} category-header-icon"></i>
         {/if}
+        <input
+          type="text"
+          class="search-bar"
+          placeholder="Search products..."
+          bind:value={productFilters.search}
+          on:input={debounce(filterProducts, 300)}
+          aria-label="Search products"
+          autocomplete="off"
+        />
       </div>
-    </div>
+      <div class="category-section">
+        <div class="products-grid">
+          {#if paginatedProducts.length === 0}
+            <div class="no-results-in-grid">
+              <p>No products found matching "{productFilters.search}"</p>
+              <p class="sub-text">Try a different search or clear your search above.</p>
+            </div>
+          {:else}
+          {#each paginatedProducts as product (product.id)}
+            <div in:fly={{ y: 30, duration: 350 }}>
+              <ProductCard 
+                {product}
+                stock={stockLevels[product.id] ?? 0}
+                on:addToCart={addToCart}
+                on:showDetails={handleShowDetails}
+                on:showReview={openReviewModal}
+              />
+            </div>
+          {/each}
+          <!-- Infinite scroll trigger -->
+          {#if currentPage * pageSize < products.length}
+            <div bind:this={loadMoreTrigger} class="load-more-trigger"></div>
+            {/if}
+          {/if}
+        </div>
+      </div>
+    </section>
   {/if}
 </main>
 
@@ -465,114 +676,302 @@
 {/if}
 
 <style>
-  /* Reserve space for Navbar + CategoryNav at the top */
-  
-  .products-container {
+  .main-content {
     max-width: 1920px;
-    margin-left: auto;
-    margin-right: auto;
-    padding-top: 20px;
+    margin: 0 auto;
+   
   }
 
-  .welcome-section {
-    max-width: 800px;
-    margin: 0 auto;
-    text-align: center;
-    padding: 2rem;
-    border-radius: 16px;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  /* Hero Section */
+  .hero-section {
+    min-height: 80vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4rem 2rem;
     position: relative;
     overflow: hidden;
-    color: #fff;
-    backdrop-filter: blur(10px);
   }
 
-  .welcome-section .welcome-overlay {
-    display: none; /* Remove the overlay since we have the starry background */
+  .hero-content {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4rem;
+    max-width: 1200px;
+    width: 100%;
+    align-items: center;
   }
 
-  .welcome-section h1,
-  .welcome-section .tagline,
-  .welcome-section .message p,
-  .welcome-section .select-category {
-    color: #fff;
-    text-shadow: 0 2px 8px rgba(0,0,0,0.25);
+  .hero-text {
+    text-align: left;
   }
 
-  h1 {
-    font-size: 2.5rem;
-    color: #333;
+  .hero-title {
+    font-size: 4rem;
+    font-weight: 900;
+    margin-bottom: 1rem;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+
+  .hero-subtitle {
+    font-size: 1.5rem;
+    margin-bottom: 1rem;
+    font-weight: 600;
+  }
+
+  .hero-description {
+    font-size: 2rem;
     margin-bottom: 1rem;
     font-weight: 700;
   }
 
-  .tagline {
-    font-size: 1.5rem;
-    color: #007bff;
-    margin-bottom: 2rem;
+  .hero-cta {
+    margin-top: 2rem;
+    padding: 1rem 2rem;
+    font-size: 1.2rem;
     font-weight: 600;
+    text-decoration: none;
   }
 
-  .message {
-    text-align: left;
-    margin-bottom: 2rem;
+  .hero-product-showcase {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1.5rem;
   }
 
-  .message p {
-    font-size: 1.1rem;
-    line-height: 1.6;
-    color: #555;
+  .hero-product {
+    padding: 1.5rem;
+    text-align: center;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: var(--transition-smooth);
+  }
+
+  .hero-product-image {
+    width: 100%;
+    height: 120px;
+    object-fit: cover;
+    border-radius: 8px;
     margin-bottom: 1rem;
   }
 
-  .select-category {
-    font-size: 1.2rem;
-    color: #666;
-    font-style: italic;
-    margin-top: 2rem;
+  /* Categories Section */
+  .categories-section {
+    padding: 6rem 2rem;
+    background: var(--bg-glass);
   }
 
-  .category-title {
+  .container {
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  .section-header {
+    margin-bottom: 3rem;
+  }
+
+  .section-header h2 {
+    font-size: 2.5rem;
+    font-weight: 700;
+    margin-bottom: 1rem;
+  }
+
+  .categories-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 2rem;
+  }
+
+  .category-card {
+    padding: 3rem 2rem;
     text-align: center;
+    border-radius: 16px;
+    cursor: pointer;
+    transition: var(--transition-smooth);
+    border: 2px solid transparent;
+  }
+
+  .category-card:hover {
+    border-color: var(--category-color);
+    box-shadow: 0 0 30px var(--category-color);
+    transform: translateY(-5px);
+  }
+
+  .category-icon {
+    font-size: 3rem;
+    margin-bottom: 1.5rem;
+    opacity: 0.9;
+  }
+
+  .category-card h3 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin-bottom: 1rem;
+  }
+
+  /* Stores Section */
+  .stores-section {
+    padding: 6rem 2rem;
+    text-align: center;
+    background: var(--bg-secondary);
+  }
+
+  .stores-content h2 {
+    font-size: 3rem;
+    font-weight: 700;
     margin-bottom: 2rem;
-    font-size: 2rem;
-    color: #333;
-    text-transform: uppercase;
-    letter-spacing: 1px;
+  }
+
+  .stores-content p {
+    font-size: 1.2rem;
+    max-width: 600px;
+    margin: 0 auto 3rem;
+  }
+
+  .stores-visual {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 300px;
+  }
+
+  .store-fountain {
+    width: 200px;
+    height: 200px;
+    border-radius: 50%;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+
+  .fountain-base {
+    width: 80%;
+    height: 80%;
+    border-radius: 50%;
+    background: var(--gradient-primary);
+    opacity: 0.7;
+  }
+
+  .fountain-water {
+    position: absolute;
+    width: 60%;
+    height: 60%;
+    border-radius: 50%;
+    background: var(--neon-cyan);
+    opacity: 0.3;
+    animation: fountain-pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes fountain-pulse {
+    0%, 100% { transform: scale(1); opacity: 0.3; }
+    50% { transform: scale(1.2); opacity: 0.6; }
+  }
+
+  /* Featured Products Section */
+  .featured-products-section {
+    padding: 6rem 2rem;
+  }
+
+  .featured-products-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 2rem;
+  }
+
+  /* Testimonials Section */
+  .testimonials-section {
+    padding: 6rem 2rem;
+    background: var(--bg-glass);
+  }
+
+  .testimonials-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+    gap: 2rem;
+  }
+
+  .testimonial-card {
+    padding: 2rem;
+    border-radius: 12px;
+    transition: var(--transition-smooth);
+  }
+
+  .testimonial-rating {
+    margin-bottom: 1rem;
+  }
+
+  .testimonial-comment {
+    font-size: 1.1rem;
+    line-height: 1.6;
+    margin-bottom: 1.5rem;
+    font-style: italic;
+  }
+
+  .testimonial-author {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 600;
+  }
+
+  .verified-badge {
+    background: var(--neon-green);
+    color: var(--bg-primary);
+    border-radius: 50%;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8rem;
+    font-weight: bold;
+  }
+
+  /* Products Section */
+  .products-section {
+    padding: 2rem;
+  }
+
+  .category-header {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    padding: 0.5rem 0;
+    margin-bottom: 2rem;
+  }
+
+  .search-bar {
+    padding: 1rem 1.5rem;
+    border: 2px solid var(--border-primary);
+    border-radius: 25px;
+    background: var(--bg-glass);
+    color: var(--text-primary);
+    font-size: 1rem;
+    max-width: 400px;
+    width: 100%;
+    backdrop-filter: blur(10px);
+    transition: var(--transition-fast);
+  }
+
+  .search-bar:focus {
+    outline: none;
+    border-color: var(--neon-cyan);
+    box-shadow: var(--shadow-neon-cyan);
   }
 
   .products-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-    gap: 1.5rem;
-    padding: 1rem;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 2rem;
     padding-bottom: 2rem;
   }
 
-  @media (max-width: 1024px) {
-    .products-grid {
-      grid-template-columns: repeat(3, 1fr);
-      gap: 1rem;
-    }
-  }
-
-  @media (max-width: 800px) {
-    .products-grid {
-      grid-template-columns: repeat(2, 1fr);
-      gap: 1rem;
-    }
-  }
-
-  @media (max-width: 480px) {
-    .products-grid {
-      grid-template-columns: repeat(1, 1fr);
-      gap: 1rem;
-    }
-  }
-
   .loading-container,
-  .error-container,
-  .empty-container {
+  .error-container {
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -583,8 +982,8 @@
   }
 
   .error-message {
-    color: #721c24;
-    background-color: #f8d7da;
+    color: #f87171;
+    background: var(--bg-glass);
     padding: 1.5rem;
     border-radius: 8px;
     margin-bottom: 1.5rem;
@@ -593,182 +992,101 @@
   }
 
   .retry-btn {
-    background: #007bff;
+    background: var(--gradient-primary);
     color: white;
     border: none;
     padding: 0.75rem 1.5rem;
     border-radius: 8px;
     cursor: pointer;
     font-size: 1.1rem;
-    transition: background-color 0.2s;
+    transition: var(--transition-fast);
   }
 
   .retry-btn:hover {
-    background: #0056b3;
+    box-shadow: var(--shadow-neon-cyan);
   }
-  .category-header {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 1rem;
-      padding: 0.5rem 0;
-      margin-bottom: 1rem;
+
+  .text-yellow-400 {
+    color: #facc15;
+  }
+
+  .text-gray-400 {
+    color: #9ca3af;
+  }
+
+  .text-center {
+    text-align: center;
+  }
+
+  .mb-5 {
+    margin-bottom: 3rem;
+  }
+
+  /* Responsive Design */
+  @media (max-width: 1024px) {
+    .hero-content {
+      grid-template-columns: 1fr;
+      gap: 2rem;
+      text-align: center;
     }
 
-  @media (max-width: 1440px) {
-    .products-container {
-      padding-left: 1.5rem;
-      padding-right: 1.5rem;
-      min-height: calc(100vh - 120px);
-      padding-top: 20px;
+    .hero-title {
+      font-size: 3rem;
+    }
+
+    .categories-grid {
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
     }
   }
-  
-  @media (max-width: 800px) {
-    .products-container {
-      padding-left: 1rem;
-      padding-right: 1rem;
-      min-height: calc(100vh - 120px);
-      padding-top: 20px;
+
+  @media (max-width: 768px) {
+    .hero-section {
+      padding: 2rem 1rem;
     }
 
-    .welcome-section {
-      padding: 1.5rem;
-      margin: 0 1rem;
+    .hero-title {
+      font-size: 2.5rem;
     }
 
+    .hero-description {
+      font-size: 1.5rem;
+    }
 
-    h1 {
+    .categories-section,
+    .stores-section,
+    .featured-products-section,
+    .testimonials-section {
+      padding: 3rem 1rem;
+    }
+
+    .section-header h2 {
       font-size: 2rem;
     }
 
-    .tagline {
-      font-size: 1.2rem;
+    .categories-grid,
+    .featured-products-grid,
+    .testimonials-grid {
+      grid-template-columns: 1fr;
     }
 
-    .message p {
-      font-size: 1rem;
+    .products-grid {
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 1rem;
     }
   }
 
   @media (max-width: 480px) {
-    .products-container {
-      padding-left: 0.5rem;
-      padding-right: 0.5rem;
-      min-height: calc(100vh - 120px);
-      padding-top: 20px;
+    .hero-title {
+      font-size: 2rem;
     }
 
-    .welcome-section {
-      padding: 1rem;
-      margin: 0 0.5rem;
+    .hero-description {
+      font-size: 1.2rem;
     }
-  }
 
-  :global(.category-nav) {
-    position: sticky;
-    top: 60px; /* Should match Navbar height */
-    left: 0;
-    right: 0;
-    z-index: 10;
-
-    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-  }
-
-  /* Category section with background image and overlay */
-  .category-section {
-    position: relative;
-    padding: 0.5rem 0;
-    border-radius: 16px;
-    overflow: hidden;
-    
-  }
-  .category-section::before {
-    display: none; /* Remove the overlay since we have the starry background */
-  }
-  .category-section > * {
-    position: relative;
-    z-index: 1;
-  }
-
-  :global(html), :global(body) {
-    margin: 0;
-    padding: 0;
-    background: transparent;
-  }
-
-  .loading-more {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    padding: 1rem;
-    color: #666;
-    font-size: 0.9rem;
-    background: transparent;
-    margin: 1rem 0;
-    min-height: 50px;
-  }
-
-  .load-more-trigger {
-    height: 60px;
-    width: 100%;
-    background: transparent;
-  }
-
-  .search-bar-container {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    margin: 1.5rem 0 0.5rem 0;
-  }
-  .search-bar {
-    width: 100%;
-    max-width: 400px;
-    padding: 0.75rem 1rem;
-    border: 1px solid #ddd;
-    border-radius: 8px;
-    font-size: 1rem;
-    background: #fff;
-    color: #222;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.03);
-    transition: border-color 0.2s;
-  }
-  .search-bar:focus {
-    outline: none;
-    border-color: #007bff;
-    box-shadow: 0 0 0 2px rgba(0,123,255,0.10);
-  }
-  .category-header-icon {
-    font-size: 2.5rem;
-    color: #ced9e4;
-    display: block;
-    text-align: center;
-    
-  }
-
-  .cart-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 1999;
-    background: transparent;
-    cursor: pointer;
-  }
-
-  .no-results-in-grid {
-    grid-column: 1/-1;
-    text-align: center;
-    padding: 2rem 0;
-    color: #fff;
-    background: rgba(0,0,0,0.15);
-    border-radius: 8px;
-    font-size: 1.2rem;
-    font-weight: 500;
-  }
-
-  .no-results-in-grid .sub-text {
-    margin-top: 0.5rem;
-    font-size: 0.95rem;
-    opacity: 0.8;
+    .products-grid {
+      grid-template-columns: 1fr;
+    }
   }
 </style>
+

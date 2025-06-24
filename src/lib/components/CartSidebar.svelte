@@ -5,7 +5,7 @@
   import CartItem from './CartItem.svelte';
   import { supabase } from '$lib/supabase';
   import { fade } from 'svelte/transition';
-  import { getUserBalance, getUserAvailableCredit } from '$lib/services/orderService';
+  import { getUserBalance } from '$lib/services/orderService';
   import { get } from 'svelte/store';
   import { debounce, getBalanceColor } from '$lib/utils';
 
@@ -24,7 +24,6 @@
   let selectedUser: UserSearch | null = null;
   let userLoading = false;
   let selectedUserBalance: number | null = null;
-  let selectedUserAvailableCredit: number | null = null;
   let lastFocusedElement: HTMLElement | null = null;
   
   // --- SEARCH OPTIMIZATION ---
@@ -92,9 +91,6 @@
     // Fetch and display balance for selected user
     getUserBalance(user.id).then(balance => {
       selectedUserBalance = balance;
-      getUserAvailableCredit(user.id).then(credit => {
-        selectedUserAvailableCredit = credit;
-      });
       console.log('[CartSidebar] selectedUserBalance for', user.id, '=', balance);
       selectedPosUser.set({
         id: user.id,
@@ -102,6 +98,9 @@
         name: user.display_name || undefined,
       });
       fetchCustomPricesForUser(user.id);
+    }).catch(error => {
+      console.error('[CartSidebar] Error fetching balance for user', user.id, ':', error);
+      selectedUserBalance = 0;
     });
   }
   
@@ -154,13 +153,17 @@
       (async () => {
         if (val && val.id) {
           fetchCustomPricesForUser(val.id);
-          selectedUserBalance = await getUserBalance(val.id);
-          selectedUserAvailableCredit = await getUserAvailableCredit(val.id);
+          try {
+            selectedUserBalance = await getUserBalance(val.id);
+            console.log('[CartSidebar] Updated selectedUserBalance for', val.id, '=', selectedUserBalance);
+          } catch (error) {
+            console.error('[CartSidebar] Error updating balance for user', val.id, ':', error);
+            selectedUserBalance = 0;
+          }
           // Optionally update selectedUser for UI
           selectedUser = { id: val.id, display_name: val.name ?? null, email: val.email };
         } else {
           selectedUserBalance = null;
-          selectedUserAvailableCredit = null;
           selectedUser = null;
           customPrices.set({}); // Clear prices if user is cleared
         }
@@ -225,16 +228,23 @@
           Assigned to: <strong>{posUser.name || posUser.email}</strong>
           <br />
           <span>
-            {#if selectedUserAvailableCredit === null}
+            {#if selectedUserBalance === null}
               Balance: <span style="color: #666;">Loading...</span>
-            {:else if selectedUserAvailableCredit < 0}
-              Debt: <span style="color: #dc3545;">R{Math.abs(selectedUserAvailableCredit).toFixed(2)}</span>
-            {:else if selectedUserAvailableCredit > 0}
-              Credit: <span style="color: #28a745;">R{selectedUserAvailableCredit.toFixed(2)}</span>
+            {:else if selectedUserBalance < 0}
+              Debt: <span style="color: #dc3545;">R{Math.abs(selectedUserBalance).toFixed(2)}</span>
+            {:else if selectedUserBalance > 0}
+              Credit: <span style="color: #28a745;">R{selectedUserBalance.toFixed(2)}</span>
             {:else}
               Balance: <span style="color: #666;">R0.00</span>
             {/if}
           </span>
+          {#if Object.keys($customPrices).length > 0}
+            <div class="custom-prices-active">
+              <span style="color: #007bff; font-size: 0.9em;">
+                🏷️ Custom prices active ({Object.keys($customPrices).length} products)
+              </span>
+            </div>
+          {/if}
           <button class="clear-user-btn" on:click={() => { selectedPosUser.set(null); selectedUser = null; }} style="margin-top:0.5rem;">Guest Checkout</button>
         </div>
       {:else}
@@ -625,5 +635,13 @@
     z-index: 10;
     padding: 1rem;
     border-bottom: 1px solid #ccc;
+  }
+
+  .custom-prices-active {
+    margin-top: 0.5rem;
+    padding: 0.25rem 0.5rem;
+    background: rgba(0, 123, 255, 0.1);
+    border-radius: 4px;
+    border: 1px solid rgba(0, 123, 255, 0.3);
   }
 </style> 

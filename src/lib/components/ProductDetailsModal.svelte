@@ -262,7 +262,7 @@
                 {/each}
               </div>
             {:else}
-              <p>No reviews yet.</p>
+              <p class="no-reviews">No reviews yet.</p>
             {/if}
             
             <div class="add-review">
@@ -311,12 +311,12 @@
   .modal-backdrop {
     position: fixed;
     inset: 0;
-    background: rgba(0,0,0,0.4);
+    background: rgba(0, 0, 0, 0.85);
     display: flex;
     align-items: flex-start;
     justify-content: center;
-     /* navbar height */
     z-index: 3000;
+    backdrop-filter: blur(8px);
   }
 
   .modal-backdrop:focus {
@@ -330,18 +330,21 @@
 
   .modal-content {
     position: fixed;
-   
-    transform: translateX(-50%, 0);
+    left: 50%;
+    transform: translateX(-50%);
     margin-top: 1.5rem;
     max-height: calc(100vh - 90px);
     overflow-y: auto;
     width: 90%;
-   
+    max-width: 1200px;
     z-index: 3001;
-    background: white;
-    border-radius: 12px;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-   
+    background: #1a1a1a;
+    border-radius: 16px;
+    border: 1px solid rgba(178, 254, 250, 0.3);
+    box-shadow: 
+      0 0 20px rgba(0, 240, 255, 0.2),
+      0 0 40px rgba(255, 0, 222, 0.1),
+      0 8px 32px rgba(0, 0, 0, 0.4);
   }
 
   .close-button {
@@ -352,18 +355,25 @@
     border: none;
     font-size: 1.5rem;
     cursor: pointer;
-    color: #666;
+    color: #b2fefa;
     z-index: 2002;
     padding: 0.5rem;
     border-radius: 50%;
-    transition: background-color 0.2s ease;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
   }
 
   .close-button:hover,
   .close-button:focus {
-    background-color: rgba(0, 0, 0, 0.1);
-    outline: 2px solid #2196f3;
-    outline-offset: 2px;
+    background-color: rgba(178, 254, 250, 0.1);
+    transform: scale(1.1);
+    color: #00f0ff;
+    text-shadow: 0 0 8px rgba(0, 240, 255, 0.6);
+    outline: none;
   }
 
   .product-details {
@@ -401,7 +411,8 @@
     font-size: 2rem;
     font-weight: 600;
     margin: 0;
-    color: #333;
+    color: #b2fefa;
+    text-shadow: 0 0 10px rgba(178, 254, 250, 0.5);
   }
 
   .product__price-row {
@@ -414,16 +425,49 @@
   .product__price {
     font-size: 1.5rem;
     font-weight: 600;
-    color: #2196f3;
+    color: #00deff;
+    text-shadow: 0 0 8px rgba(0, 222, 255, 0.6);
+  }
+
+  .bulk-pricing {
+    padding: 1rem;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(178, 254, 250, 0.2);
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  }
+
+  .bulk-pricing h4 {
+    margin: 0 0 0.75rem 0;
+    font-size: 1rem;
+    color: #b2fefa;
+    text-shadow: 0 0 8px rgba(178, 254, 250, 0.5);
+  }
+
+  .bulk-pricing ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  .bulk-pricing li {
+    padding: 0.5rem 0;
+    color: #ffffff;
+    border-bottom: 1px solid rgba(178, 254, 250, 0.1);
+  }
+
+  .bulk-pricing li:last-child {
+    border-bottom: none;
   }
 
   .product-description {
     font-size: 1rem;
     line-height: 1.6;
-    color: #666;
+    color: #ffffff;
     margin: 0;
     padding: 1.5rem;
-    background: #f8f9fa;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(178, 254, 250, 0.2);
     border-radius: 8px;
   }
 
@@ -432,15 +476,17 @@
     flex-direction: column;
     gap: 0.5rem;
     padding: 1rem;
-    background: #f8f9fa;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(178, 254, 250, 0.2);
     border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   }
 
   .strain-type h3 {
     margin: 0;
     font-size: 1rem;
-    color: #333;
+    color: #b2fefa;
+    text-shadow: 0 0 8px rgba(178, 254, 250, 0.5);
   }
 
   .strain-bar {
@@ -464,7 +510,7 @@
     display: flex;
     justify-content: space-between;
     font-size: 0.8rem;
-    color: #666;
+    color: #ffffff;
   }
 
   .potency-info {
@@ -479,16 +525,18 @@
     flex-direction: column;
     gap: 0.5rem;
     padding: 1rem;
-    background: #f8f9fa;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(178, 254, 250, 0.2);
     border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   }
 
   .thc-info h3,
   .cbd-info h3 {
     margin: 0;
     font-size: 1rem;
-    color: #333;
+    color: #b2fefa;
+    text-shadow: 0 0 8px rgba(178, 254, 250, 0.5);
   }
 
   .potency-bar {
@@ -504,7 +552,7 @@
 
   .potency-value {
     font-size: 0.8rem;
-    color: #666;
+    color: #ffffff;
     font-weight: 500;
   }
 
@@ -518,7 +566,16 @@
   .reviews-section h3 {
     margin: 0;
     font-size: 1.2rem;
-    color: #333;
+    color: #b2fefa;
+    text-shadow: 0 0 8px rgba(178, 254, 250, 0.5);
+  }
+
+  .no-reviews {
+    color: #ffffff;
+    text-align: center;
+    padding: 2rem;
+    font-style: italic;
+    opacity: 0.8;
   }
 
   .reviews-list {
@@ -529,10 +586,10 @@
 
   .review-item {
     padding: 1rem;
-    border: 1px solid #eee;
+    border: 1px solid rgba(178, 254, 250, 0.2);
     border-radius: 8px;
-    background: #fff;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    background: rgba(0, 0, 0, 0.3);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   }
 
   .review-header {
@@ -560,17 +617,17 @@
     margin: 0 0 0.5rem 0;
     font-size: 0.9rem;
     line-height: 1.5;
-    color: #444;
+    color: #ffffff;
   }
 
   .review-date {
     font-size: 0.75rem;
-    color: #666;
+    color: #b2fefa;
   }
 
   .review-user {
     font-size: 0.9rem;
-    color: #666;
+    color: #b2fefa;
     font-weight: 500;
   }
 
@@ -579,16 +636,17 @@
     flex-direction: column;
     gap: 1rem;
     padding: 1rem;
-    border: 1px solid #eee;
+    border: 1px solid rgba(178, 254, 250, 0.2);
     border-radius: 8px;
-    background: #fff;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    background: rgba(0, 0, 0, 0.3);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   }
 
   .add-review h4 {
     margin: 0;
     font-size: 1.1rem;
-    color: #333;
+    color: #b2fefa;
+    text-shadow: 0 0 8px rgba(178, 254, 250, 0.5);
   }
 
   .rating-input {
@@ -602,12 +660,13 @@
     padding: 0;
     cursor: pointer;
     font-size: 1.5rem;
-    color: #E0E0E0;
-    transition: transform 0.2s ease;
+    color: #555;
+    transition: all 0.2s ease;
   }
 
   .star-button:hover:not(:disabled) {
     transform: scale(1.1);
+    color: #FFD700;
   }
 
   .star-button:disabled {
@@ -615,46 +674,82 @@
     opacity: 0.7;
   }
 
+  .star-button .star {
+    filter: drop-shadow(0 0 4px rgba(255, 215, 0, 0.3));
+    transition: all 0.2s ease;
+  }
+
+  .star-button .star.filled {
+    filter: drop-shadow(0 0 8px rgba(255, 215, 0, 0.5));
+  }
+
   .add-review textarea {
-    
+    width: 100%;
     padding: 0.75rem;
-    border: 1px solid #ddd;
-    border-radius: 4px;
+    border: 1px solid rgba(178, 254, 250, 0.3);
+    border-radius: 8px;
     resize: vertical;
     min-height: 100px;
     font-family: inherit;
+    color: #ffffff;
+    background: rgba(0, 0, 0, 0.3);
+    transition: all 0.2s ease;
+  }
+
+  .add-review textarea:focus {
+    outline: none;
+    border-color: #00f0ff;
+    box-shadow: 
+      0 0 0 2px rgba(0, 240, 255, 0.2),
+      0 0 10px rgba(0, 240, 255, 0.4);
   }
 
   .add-review textarea:disabled {
-    background: #f5f5f5;
+    background: rgba(0, 0, 0, 0.2);
     cursor: not-allowed;
+    opacity: 0.7;
   }
 
   .submit-review {
-    background: linear-gradient(135deg, #2196f3, #1976d2);
-    color: white;
+    background: linear-gradient(77deg, hsl(195.35deg 67.65% 41.89%), #00deff, #14ffbd);
+    color: #fff;
     border: none;
     padding: 0.75rem 1.5rem;
-    border-radius: 4px;
+    border-radius: 8px;
     font-size: 1rem;
-    font-weight: 500;
+    font-weight: 600;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
-    transition: all 0.2s ease;
+    transition: all 0.3s ease;
+    text-shadow: 0 0 8px #00f0ff, 0 0 16px #ff00de;
+    letter-spacing: 0.5px;
   }
 
   .submit-review:hover:not(:disabled) {
-    background: linear-gradient(135deg, #1976d2, #1565c0);
-    transform: translateY(-1px);
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    transform: translateY(-2px);
+    box-shadow: 
+      0 0 20px rgba(0, 240, 255, 0.4),
+      0 0 40px rgba(255, 0, 222, 0.2),
+      0 8px 32px rgba(0, 0, 0, 0.3);
+  }
+
+  .submit-review:active:not(:disabled) {
+    transform: translateY(0);
+    box-shadow: 
+      0 0 10px rgba(0, 240, 255, 0.3),
+      0 0 20px rgba(255, 0, 222, 0.1);
   }
 
   .submit-review:disabled {
-    background: #e0e0e0;
+    background: #333;
+    color: #666;
     cursor: not-allowed;
+    box-shadow: none;
+    transform: none;
+    text-shadow: none;
   }
 
   .loading-spinner {
@@ -704,9 +799,14 @@
   .modal-content .modal-header {
     position: sticky;
     top: 0;
-    background: white;
+    background: #1a1a1a;
     z-index: 10;
     padding: 1rem;
-    border-bottom: 1px solid #ccc;
+    border-bottom: 1px solid rgba(178, 254, 250, 0.3);
+  }
+
+  .modal-header h2 {
+    color: #b2fefa;
+    text-shadow: 0 0 10px rgba(178, 254, 250, 0.5);
   }
 </style> 

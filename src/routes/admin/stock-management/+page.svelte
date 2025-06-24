@@ -16,6 +16,7 @@
   import { get } from 'svelte/store';
   import { selectedPosUser } from '$lib/stores/cartStore';
   import { PUBLIC_SHOP_LOCATION_ID } from '$env/static/public';
+  import StarryBackground from '$lib/components/StarryBackground.svelte';
 
   // Define types for locations, stock levels, and movements
   type Location = { id: string | number; name: string };
@@ -50,6 +51,14 @@
   let adjustmentQty = 0;
   let adjustmentLocation = '';
   let note = '';
+
+  // Loading states for buttons
+  let addingProduction = false;
+  let transferring = false;
+  let adjusting = false;
+  let confirmingProduction: { [key: string]: boolean } = {};
+  let acceptingTransfer: { [key: string]: boolean } = {};
+  let rejectingTransfer = false;
 
   let posPendingTransfers: StockMovement[] = [];
   $: pendingProductions = stockMovements.filter(m => m.type === 'production' && m.status === 'pending');
@@ -252,13 +261,28 @@
 
   async function handleAddProduction() {
     if (!selectedProduct || productionQty <= 0) return;
-    await addProduction(selectedProduct, productionQty, note);
-    // await fetchData(); // Removed: Realtime will update
-    productionQty = 0; note = '';
+    addingProduction = true;
+    error = '';
+    try {
+      await addProduction(selectedProduct, productionQty, note);
+      productionQty = 0; note = '';
+    } catch (err) {
+      if (err instanceof Error) {
+        error = err.message;
+      } else if (typeof err === 'string') {
+        error = err;
+      } else {
+        error = 'Failed to add production';
+      }
+    } finally {
+      addingProduction = false;
+    }
   }
 
   async function handleTransferToShop() {
     if (!selectedProduct || transferQty <= 0) return;
+    transferring = true;
+    error = '';
     try {
       await transferToShop(selectedProduct, transferQty, note);
       transferQty = 0; note = '';
@@ -270,24 +294,65 @@
       } else {
         error = 'Failed to transfer stock';
       }
+    } finally {
+      transferring = false;
     }
   }
 
   async function handleAdjustStock() {
     if (!selectedProduct || !adjustmentLocation || adjustmentQty < 0) return;
-    await adjustStock(selectedProduct, adjustmentLocation, adjustmentQty, note);
-    // await fetchData(); // Removed: Realtime will update
-    adjustmentQty = 0; note = '';
+    adjusting = true;
+    error = '';
+    try {
+      await adjustStock(selectedProduct, adjustmentLocation, adjustmentQty, note);
+      adjustmentQty = 0; note = '';
+    } catch (err) {
+      if (err instanceof Error) {
+        error = err.message;
+      } else if (typeof err === 'string') {
+        error = err;
+      } else {
+        error = 'Failed to adjust stock';
+      }
+    } finally {
+      adjusting = false;
+    }
   }
 
   async function handleConfirmProductionDone(id: string | number) {
-    await confirmProductionDone(id);
-    // await fetchData(); // Removed: Realtime will update
+    confirmingProduction[id] = true;
+    error = '';
+    try {
+      await confirmProductionDone(id);
+    } catch (err) {
+      if (err instanceof Error) {
+        error = err.message;
+      } else if (typeof err === 'string') {
+        error = err;
+      } else {
+        error = 'Failed to confirm production done';
+      }
+    } finally {
+      confirmingProduction[id] = false;
+    }
   }
 
   async function handleAcceptTransfer(transfer: StockMovement) {
-    await acceptStockTransfer(transfer.id as string, transfer.quantity);
-    // await fetchData(); // Refresh state so the UI updates immediately - This can cause a race condition. Realtime should handle it.
+    acceptingTransfer[transfer.id] = true;
+    error = '';
+    try {
+      await acceptStockTransfer(transfer.id as string, transfer.quantity);
+    } catch (err) {
+      if (err instanceof Error) {
+        error = err.message;
+      } else if (typeof err === 'string') {
+        error = err;
+      } else {
+        error = 'Failed to accept transfer';
+      }
+    } finally {
+      acceptingTransfer[transfer.id] = false;
+    }
   }
 
   function openRejectModal(transfer: StockMovement) {
@@ -299,10 +364,22 @@
 
   async function submitReject() {
     if (rejectTransferId != null) {
-      await rejectStockTransfer(String(rejectTransferId), rejectActualQty, rejectReason);
-      showRejectModal = false;
-      // await fetchData(); // Removed: Realtime will update
-       // The stock_movements Realtime subscription will handle updating the pending list
+      rejectingTransfer = true;
+      error = '';
+      try {
+        await rejectStockTransfer(String(rejectTransferId), rejectActualQty, rejectReason);
+        showRejectModal = false;
+      } catch (err) {
+        if (err instanceof Error) {
+          error = err.message;
+        } else if (typeof err === 'string') {
+          error = err;
+        } else {
+          error = 'Failed to reject transfer';
+        }
+      } finally {
+        rejectingTransfer = false;
+      }
     }
   }
 </script>
@@ -311,241 +388,267 @@
   <title>Admin Stock Management</title>
 </svelte:head>
 
-<div class="admin-stock-management">
-  <h1>Stock Management</h1>
+<StarryBackground />
 
-  {#if error}
-    <div class="error">{error}</div>
-  {/if}
-  {#if loading}
-    <div>Loading...</div>
-  {:else}
-    {#if isAdmin || isActualPosUser}
-      <div class="stock-forms">
-        {#if isAdmin}
-          <div class="form-section">
-            <h2>Add Production to Facility</h2>
-            <div class="field-group">
-              <label for="prod-product">Product</label>
-              <select id="prod-product" bind:value={selectedProduct}>
-                <option value="">Select Product</option>
-                {#each products as p}
-                  <option value={p.id}>{p.name}</option>
-                {/each}
-              </select>
-            </div>
-            <div class="field-group">
-              <label for="prod-qty">Quantity</label>
-              <input id="prod-qty" type="number" min="1" bind:value={productionQty} placeholder="Quantity" />
-            </div>
-            <div class="field-group">
-              <label for="prod-note">Note</label>
-              <input id="prod-note" type="text" bind:value={note} placeholder="Note (optional)" />
-            </div>
-            <button on:click={handleAddProduction}>Add Production</button>
-          </div>
+<main class="admin-main">
+  <div class="admin-container">
+    <div class="admin-header">
+      <h1 class="neon-text-cyan">Stock Management</h1>
+      <button class="btn btn-primary" on:click={fetchData} disabled={loading}>
+        {#if loading}
+          🔄 Refreshing...
+        {:else}
+          🔄 Refresh Data
         {/if}
-        <div class="form-section">
-          <h2>Transfer Facility → Shop</h2>
-          <div class="field-group">
-            <label for="trans-product">Product</label>
-            <select id="trans-product" bind:value={selectedProduct}>
-              <option value="">Select Product</option>
-              {#each products as p}
-                <option value={p.id}>{p.name}</option>
-              {/each}
-            </select>
-          </div>
-          <div class="field-group">
-            <label for="trans-qty">Quantity</label>
-            <input id="trans-qty" type="number" min="1" bind:value={transferQty} placeholder="Quantity" />
-          </div>
-          <div class="field-group">
-            <label for="trans-note">Note</label>
-            <input id="trans-note" type="text" bind:value={note} placeholder="Note (optional)" />
-          </div>
-          <button on:click={handleTransferToShop}>Transfer</button>
-        </div>
-        {#if isAdmin}
-          <div class="form-section">
-            <h2>Stocktake / Adjustment</h2>
-            <div class="field-group">
-              <label for="adj-product">Product</label>
-              <select id="adj-product" bind:value={selectedProduct}>
-                <option value="">Select Product</option>
-                {#each products as p}
-                  <option value={p.id}>{p.name}</option>
-                {/each}
-              </select>
-            </div>
-            <div class="field-group">
-              <label for="adj-location">Location</label>
-              <select id="adj-location" bind:value={adjustmentLocation}>
-                <option value="">Select Location</option>
-                {#each locations as l}
-                  <option value={l.name}>{l.name}</option>
-                {/each}
-              </select>
-            </div>
-            <div class="field-group">
-              <label for="adj-qty">New Quantity</label>
-              <input id="adj-qty" type="number" min="0" bind:value={adjustmentQty} placeholder="New Quantity" />
-            </div>
-            <div class="field-group">
-              <label for="adj-note">Note</label>
-              <input id="adj-note" type="text" bind:value={note} placeholder="Note (optional)" />
-            </div>
-            <button on:click={handleAdjustStock}>Adjust</button>
-          </div>
-        {/if}
-      </div>
-      <h2>Current Stock Levels</h2>
-      <div class="table-responsive">
-        <table>
-          <thead>
-            <tr>
-              <th>Product</th>
-              {#each locations as l}
-                <th>{l.name}</th>
-              {/each}
-            </tr>
-          </thead>
-          <tbody>
-            {#each products as p}
-              <tr>
-                <td>{p.name}</td>
-                {#each locations as l}
-                  <td>{stockMap[p.id]?.[l.id] ?? 0}</td>
-                {/each}
-              </tr>
-            {/each}
-          </tbody>
-        </table>
-      </div>
-      <h2>Pending Productions</h2>
-      <div class="table-responsive">
-        <table>
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Product</th>
-              <th>Qty</th>
-              <th>Note</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {#each pendingProductions as m}
-              <tr>
-                <td>{new Date(m.created_at).toLocaleString()}</td>
-                <td>{products.find(p => p.id === m.product_id)?.name || m.product_id}</td>
-                <td>{m.quantity}</td>
-                <td>{m.note}</td>
-                <td><button on:click={() => handleConfirmProductionDone(m.id)}>Confirm Done</button></td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
-      </div>
-      <h2>Recent Stock Movements</h2>
-      <div class="table-responsive">
-        <table>
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Product</th>
-              <th>Type</th>
-              <th>From</th>
-              <th>To</th>
-              <th>Qty</th>
-              <th>Note</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {#each stockMovements as m}
-              <tr>
-                <td>{new Date(m.created_at).toLocaleString()}</td>
-                <td>{products.find(p => p.id === m.product_id)?.name || m.product_id}</td>
-                <td>{m.type}</td>
-                <td>{locations.find(l => l.id === m.from_location_id)?.name || '-'}</td>
-                <td>{locations.find(l => l.id === m.to_location_id)?.name || '-'}</td>
-                <td>{m.quantity}</td>
-                <td>{m.note}</td>
-                <td>{m.status || 'done'}</td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
-      </div>
-      <h2>Recent Stock Discrepancies</h2>
-      <div class="table-responsive">
-        <table>
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Product</th>
-              <th>Expected Qty</th>
-              <th>Actual Qty</th>
-              <th>Loss</th>
-              <th>Reason</th>
-              <th>By</th>
-            </tr>
-          </thead>
-          <tbody>
-            {#each discrepancies as d}
-              <tr>
-                <td>{new Date(d.created_at).toLocaleString()}</td>
-                <td>{products.find(p => p.id === d.product_id)?.name || d.product_id}</td>
-                <td>{d.expected_quantity}</td>
-                <td>{d.actual_quantity}</td>
-                <td>{(d.expected_quantity ?? 0) - (d.actual_quantity ?? 0)}</td>
-                <td>{d.reason}</td>
-                <td>{d.reported_by && profiles[d.reported_by] ? (profiles[d.reported_by].display_name || profiles[d.reported_by].email) : 'Unknown'}</td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
-      </div>
-      <!-- Add Pending Transfers to Your Shop table for admins -->
-      <h2>Pending Transfers to Your Shop</h2>
-      <div class="table-responsive">
-        <table>
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Product</th>
-              <th>Qty</th>
-              <th>Note</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {#each posPendingTransfers as t}
-            <tr>
-              <td>{new Date(t.created_at).toLocaleString()}</td>
-              <td>{products.find(p => p.id === t.product_id)?.name || t.product_id}</td>
-              <td>{t.quantity}</td>
-              <td>{t.note}</td>
-              <td>
-                <button on:click={() => handleAcceptTransfer(t)}>Accept</button>
-                <button on:click={() => openRejectModal(t)} style="margin-left:0.5rem;background:#dc3545;">Reject</button>
-              </td>
-            </tr>
-            {/each}
-          </tbody>
-        </table>
+      </button>
+    </div>
+
+    {#if error}
+      <div class="alert alert-danger">{error}</div>
+    {/if}
+
+    {#if loading}
+      <div class="text-center">
+        <div class="spinner-large"></div>
+        <p class="neon-text-cyan mt-2">Loading...</p>
       </div>
     {:else}
-      <div class="pos-pending-transfers">
-        {#if isAdmin || isActualPosUser}
+      {#if isAdmin || isActualPosUser}
+        <div class="grid grid-3 gap-4 mb-4">
           {#if isAdmin}
-            <pre>stockMovements: {JSON.stringify(stockMovements, null, 2)}</pre>
-            <pre>posPendingTransfers: {JSON.stringify(posPendingTransfers, null, 2)}</pre>
+            <div class="glass">
+              <div class="card-header">
+                <h2 class="neon-text-cyan">Add Production to Facility</h2>
+              </div>
+              <div class="card-body">
+                <div class="form-group">
+                  <label for="prod-product" class="form-label">Product</label>
+                  <select id="prod-product" bind:value={selectedProduct} class="form-control form-select">
+                    <option value="">Select Product</option>
+                    {#each products as p}
+                      <option value={p.id}>{p.name}</option>
+                    {/each}
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="prod-qty" class="form-label">Quantity</label>
+                  <input id="prod-qty" type="number" min="1" bind:value={productionQty} placeholder="Quantity" class="form-control" />
+                </div>
+                <div class="form-group">
+                  <label for="prod-note" class="form-label">Note</label>
+                  <input id="prod-note" type="text" bind:value={note} placeholder="Note (optional)" class="form-control" />
+                </div>
+                <button on:click={handleAddProduction} disabled={addingProduction} class="btn btn-primary w-full">Add Production</button>
+              </div>
+            </div>
           {/if}
-          <h2>Pending Transfers to Your Shop</h2>
-          <div class="table-responsive">
-            <table>
+
+          <div class="glass">
+            <div class="card-header">
+              <h2 class="neon-text-cyan">Transfer Facility → Shop</h2>
+            </div>
+            <div class="card-body">
+              <div class="form-group">
+                <label for="trans-product" class="form-label">Product</label>
+                <select id="trans-product" bind:value={selectedProduct} class="form-control form-select">
+                  <option value="">Select Product</option>
+                  {#each products as p}
+                    <option value={p.id}>{p.name}</option>
+                  {/each}
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="trans-qty" class="form-label">Quantity</label>
+                <input id="trans-qty" type="number" min="1" bind:value={transferQty} placeholder="Quantity" class="form-control" />
+              </div>
+              <div class="form-group">
+                <label for="trans-note" class="form-label">Note</label>
+                <input id="trans-note" type="text" bind:value={note} placeholder="Note (optional)" class="form-control" />
+              </div>
+              <button on:click={handleTransferToShop} disabled={transferring} class="btn btn-primary w-full">Transfer</button>
+            </div>
+          </div>
+
+          {#if isAdmin}
+            <div class="glass">
+              <div class="card-header">
+                <h2 class="neon-text-cyan">Stocktake / Adjustment</h2>
+              </div>
+              <div class="card-body">
+                <div class="form-group">
+                  <label for="adj-product" class="form-label">Product</label>
+                  <select id="adj-product" bind:value={selectedProduct} class="form-control form-select">
+                    <option value="">Select Product</option>
+                    {#each products as p}
+                      <option value={p.id}>{p.name}</option>
+                    {/each}
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="adj-location" class="form-label">Location</label>
+                  <select id="adj-location" bind:value={adjustmentLocation} class="form-control form-select">
+                    <option value="">Select Location</option>
+                    {#each locations as l}
+                      <option value={l.name}>{l.name}</option>
+                    {/each}
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="adj-qty" class="form-label">New Quantity</label>
+                  <input id="adj-qty" type="number" min="0" bind:value={adjustmentQty} placeholder="New Quantity" class="form-control" />
+                </div>
+                <div class="form-group">
+                  <label for="adj-note" class="form-label">Note</label>
+                  <input id="adj-note" type="text" bind:value={note} placeholder="Note (optional)" class="form-control" />
+                </div>
+                <button on:click={handleAdjustStock} disabled={adjusting} class="btn btn-primary w-full">Adjust</button>
+              </div>
+            </div>
+          {/if}
+        </div>
+
+        <div class="glass mb-4">
+          <div class="card-header">
+            <h2 class="neon-text-cyan">Current Stock Levels</h2>
+          </div>
+          <div class="card-body">
+            <table class="table-dark">
+              <thead>
+                <tr>
+                  <th>Product</th>
+                  {#each locations as l}
+                    <th>{l.name}</th>
+                  {/each}
+                </tr>
+              </thead>
+              <tbody>
+                {#each products as p}
+                  <tr class="hover-glow">
+                    <td class="neon-text-white">{p.name}</td>
+                    {#each locations as l}
+                      <td class="neon-text-cyan">{stockMap[p.id]?.[l.id] ?? 0}</td>
+                    {/each}
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="glass mb-4">
+          <div class="card-header">
+            <h2 class="neon-text-cyan">Pending Productions</h2>
+          </div>
+          <div class="card-body">
+            <table class="table-dark">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Product</th>
+                  <th>Qty</th>
+                  <th>Note</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each pendingProductions as m}
+                  <tr class="hover-glow">
+                    <td>{new Date(m.created_at).toLocaleString()}</td>
+                    <td class="neon-text-white">{products.find(p => p.id === m.product_id)?.name || m.product_id}</td>
+                    <td class="neon-text-cyan">{m.quantity}</td>
+                    <td>{m.note}</td>
+                    <td>
+                      <button on:click={() => handleConfirmProductionDone(m.id)} disabled={confirmingProduction[m.id]} class="btn btn-success btn-sm">
+                        Confirm Done
+                      </button>
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="glass mb-4">
+          <div class="card-header">
+            <h2 class="neon-text-cyan">Recent Stock Movements</h2>
+          </div>
+          <div class="card-body">
+            <table class="table-dark">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Product</th>
+                  <th>Type</th>
+                  <th>From</th>
+                  <th>To</th>
+                  <th>Qty</th>
+                  <th>Note</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each stockMovements as m}
+                  <tr class="hover-glow">
+                    <td>{new Date(m.created_at).toLocaleString()}</td>
+                    <td class="neon-text-white">{products.find(p => p.id === m.product_id)?.name || m.product_id}</td>
+                    <td><span class="badge badge-info">{m.type}</span></td>
+                    <td>{locations.find(l => l.id === m.from_location_id)?.name || '-'}</td>
+                    <td>{locations.find(l => l.id === m.to_location_id)?.name || '-'}</td>
+                    <td class="neon-text-cyan">{m.quantity}</td>
+                    <td>{m.note}</td>
+                    <td>
+                      <span class="badge {m.status === 'done' ? 'badge-success' : 'badge-warning'}">
+                        {m.status || 'done'}
+                      </span>
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="glass mb-4">
+          <div class="card-header">
+            <h2 class="neon-text-cyan">Recent Stock Discrepancies</h2>
+          </div>
+          <div class="card-body">
+            <table class="table-dark">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Product</th>
+                  <th>Expected Qty</th>
+                  <th>Actual Qty</th>
+                  <th>Loss</th>
+                  <th>Reason</th>
+                  <th>By</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each discrepancies as d}
+                  <tr class="hover-glow">
+                    <td>{new Date(d.created_at).toLocaleString()}</td>
+                    <td class="neon-text-white">{products.find(p => p.id === d.product_id)?.name || d.product_id}</td>
+                    <td class="neon-text-cyan">{d.expected_quantity}</td>
+                    <td class="neon-text-cyan">{d.actual_quantity}</td>
+                    <td class="text-red-400">{(d.expected_quantity ?? 0) - (d.actual_quantity ?? 0)}</td>
+                    <td>{d.reason}</td>
+                    <td>{d.reported_by && profiles[d.reported_by] ? (profiles[d.reported_by].display_name || profiles[d.reported_by].email) : 'Unknown'}</td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="glass">
+          <div class="card-header">
+            <h2 class="neon-text-cyan">Pending Transfers to Your Shop</h2>
+          </div>
+          <div class="card-body">
+            <table class="table-dark">
               <thead>
                 <tr>
                   <th>Date</th>
@@ -557,180 +660,96 @@
               </thead>
               <tbody>
                 {#each posPendingTransfers as t}
-                <tr>
-                  <td>{new Date(t.created_at).toLocaleString()}</td>
-                  <td>{products.find(p => p.id === t.product_id)?.name || t.product_id}</td>
-                  <td>{t.quantity}</td>
-                  <td>{t.note}</td>
-                  <td>
-                    <button on:click={() => handleAcceptTransfer(t)}>Accept</button>
-                    <button on:click={() => openRejectModal(t)} style="margin-left:0.5rem;background:#dc3545;">Reject</button>
-                  </td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        </div>
-        {#if showRejectModal}
-          <div class="modal-backdrop"></div>
-          <div class="modal">
-            <h3>Reject Transfer</h3>
-            <div class="form-group">
-              <label for="reject-actual-qty">Actual Quantity Received</label>
-              <input id="reject-actual-qty" type="number" min="0" bind:value={rejectActualQty} />
-            </div>
-            <div class="form-group">
-              <label for="reject-reason">Reason for Rejection</label>
-              <input id="reject-reason" type="text" bind:value={rejectReason} />
-            </div>
-            <div class="modal-actions">
-              <button on:click={submitReject} style="background:#dc3545;">Submit</button>
-              <button on:click={() => showRejectModal = false}>Cancel</button>
-            </div>
+                  <tr class="hover-glow">
+                    <td>{new Date(t.created_at).toLocaleString()}</td>
+                    <td class="neon-text-white">{products.find(p => p.id === t.product_id)?.name || t.product_id}</td>
+                    <td class="neon-text-cyan">{t.quantity}</td>
+                    <td>{t.note}</td>
+                    <td>
+                      <div class="flex gap-1">
+                        <button on:click={() => handleAcceptTransfer(t)} disabled={acceptingTransfer[t.id]} class="btn btn-success btn-sm">Accept</button>
+                        <button on:click={() => openRejectModal(t)} disabled={rejectingTransfer} class="btn btn-danger btn-sm">Reject</button>
+                      </div>
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
           </div>
-        {/if}
-        {/if}
+        </div>
+      {/if}
+    {/if}
+
+    {#if showRejectModal}
+      <div class="modal-backdrop"></div>
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3 class="neon-text-cyan">Reject Transfer</h3>
+          <button class="modal-close" on:click={() => showRejectModal = false}>&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label for="reject-actual-qty" class="form-label">Actual Quantity Received</label>
+            <input id="reject-actual-qty" type="number" min="0" bind:value={rejectActualQty} class="form-control" />
+          </div>
+          <div class="form-group">
+            <label for="reject-reason" class="form-label">Reason for Rejection</label>
+            <input id="reject-reason" type="text" bind:value={rejectReason} class="form-control" />
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button on:click={submitReject} class="btn btn-danger">Submit</button>
+          <button on:click={() => showRejectModal = false} class="btn btn-secondary">Cancel</button>
+        </div>
       </div>
     {/if}
-  {/if}
-  {#if showRejectModal}
-    <div class="modal-backdrop"></div>
-    <div class="modal">
-      <h3>Reject Transfer</h3>
-      <div class="form-group">
-        <label for="reject-actual-qty">Actual Quantity Received</label>
-        <input id="reject-actual-qty" type="number" min="0" bind:value={rejectActualQty} />
-      </div>
-      <div class="form-group">
-        <label for="reject-reason">Reason for Rejection</label>
-        <input id="reject-reason" type="text" bind:value={rejectReason} />
-      </div>
-      <div class="modal-actions">
-        <button on:click={submitReject} style="background:#dc3545;">Submit</button>
-        <button on:click={() => showRejectModal = false}>Cancel</button>
-      </div>
-    </div>
-  {/if}
-</div>
+  </div>
+</main>
 
 <style>
-  .admin-stock-management {
-    max-width: 900px;
-    margin: 2rem auto;
-    padding: 1rem;
-    background: #fff;
-    border-radius: 12px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  .admin-main {
+    min-height: 100vh;
+    padding-top: 80px;
+    background: transparent;
   }
-  h1, h2 { color: #333; }
-  .stock-forms {
+
+  .admin-container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 2rem;
+  }
+
+  .admin-header {
     display: flex;
-    gap: 2rem;
-    margin-bottom: 2rem;
-    flex-wrap: wrap;
-  }
-  .form-section {
-    flex: 1 1 250px;
-    background: #f8f9fa;
-    padding: 1rem;
-    border-radius: 8px;
-    margin-bottom: 1rem;
-    min-width: 250px;
-  }
-  .field-group {
-    display: flex;
-    flex-direction: column;
-    margin-bottom: 0.75rem;
-  }
-  .field-group label {
-    font-size: 0.95rem;
-    margin-bottom: 0.25rem;
-    color: #555;
-    font-weight: 500;
-  }
-  input, select {
-    padding: 0.5rem;
-    border-radius: 4px;
-    border: 1px solid #ddd;
-    font-size: 1rem;
-    max-width: 300px;
-    width: 100%;
-    box-sizing: border-box;
-  }
-  button {
-    background: #28a745;
-    color: #fff;
-    border: none;
-    cursor: pointer;
-    font-weight: bold;
-    transition: background 0.2s;
-    padding: 0.6rem 1.2rem;
-    border-radius: 4px;
-    margin-top: 0.5rem;
-    font-size: 1rem;
-    width: auto;
-    align-self: flex-start;
-  }
-  button:hover { background: #218838; }
-  table {
-    width: 100%;
-    border-collapse: collapse;
+    justify-content: space-between;
+    align-items: center;
     margin-bottom: 2rem;
   }
-  th, td {
-    border: 1px solid #eee;
-    padding: 0.5rem;
-    text-align: left;
+
+  .admin-header h1 {
+    font-size: 2.5rem;
+    font-weight: 700;
+    margin: 0;
+    letter-spacing: 1px;
   }
-  th { background: #f1f1f1; }
-  .error { color: #dc3545; margin-bottom: 1rem; }
-  .modal-backdrop {
-    position: fixed;
-    top: 0; left: 0; right: 0; bottom: 0;
-    background: rgba(0,0,0,0.4);
-    z-index: 1000;
+
+  .text-red-400 {
+    color: #f87171;
   }
-  .modal {
-    position: fixed;
-    top: 50%; left: 50%;
-    transform: translate(-50%, -50%);
-    background: #fff;
+
+  @media (max-width: 768px) {
+    .admin-container {
+      padding: 1rem;
+    }
     
-    border-radius: 8px;
-    z-index: 1010;
-    min-width: 300px;
-    box-shadow: 0 2px 16px rgba(0,0,0,0.2);
-  }
-  @media (max-width: 900px) {
-    .stock-forms {
+    .admin-header {
       flex-direction: column;
       gap: 1rem;
+      align-items: stretch;
     }
-    .form-section {
-      min-width: 0;
-      width: 100%;
-      padding: 0.5rem;
-    }
-    .admin-stock-management {
-      padding: 0.5rem;
-    }
-    .table-responsive {
-      width: 100%;
-      overflow-x: auto;
-      -webkit-overflow-scrolling: touch;
-      margin-bottom: 1rem;
-    }
-    table {
-      min-width: 600px;
-      font-size: 0.95rem;
-    }
-    th, td {
-      padding: 0.4rem;
-    }
-    button {
-      width: 100%;
-      font-size: 1rem;
-      padding: 0.5rem 0.75rem;
+    
+    .admin-header h1 {
+      font-size: 2rem;
     }
   }
 </style> 

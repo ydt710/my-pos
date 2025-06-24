@@ -1,11 +1,15 @@
 import { createClient } from '@supabase/supabase-js';
 import { browser } from '$app/environment';
 
-const supabaseUrl = 'https://wglybohfygczpapjxwwz.supabase.co';
-const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndnbHlib2hmeWdjenBhcGp4d3d6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYyMDI2OTYsImV4cCI6MjA2MTc3ODY5Nn0.F9Ja7Npo2aj-1EzgmG275aF_nkm6BvY7MprqQKhpFp0';
-//const supabaseUrl = 'http://127.0.0.1:54321';
-//const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0';
-// Create a single client for all operations with session handling
+const supabaseUrl = 'http://127.0.0.1:54321';
+const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0';
+
+if (browser && (supabaseUrl.includes('127.0.0.1') || supabaseUrl.includes('localhost'))) {
+  console.log('🔧 Supabase: Using LOCAL development database');
+} else if (browser) {
+  console.log('🌐 Supabase: Using PRODUCTION database');
+}
+
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
@@ -14,6 +18,8 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     storage: browser ? window.localStorage : undefined
   }
 });
+
+
 
 // Only set up auth state listener in the browser
 if (browser) {
@@ -54,4 +60,26 @@ export async function refreshSession() {
     return false;
   }
   return true;
+}
+
+// Helper function to test database connection
+export async function testDatabaseConnection() {
+  try {
+    const { data, error } = await supabase
+      .from('landing_hero')
+      .select('title')
+      .limit(1)
+      .maybeSingle();
+    
+    if (error) {
+      console.error('Database connection test failed:', error);
+      return { success: false, error: error.message };
+    }
+    
+    console.log('✅ Database connection successful');
+    return { success: true, data };
+  } catch (err) {
+    console.error('Database connection test error:', err);
+    return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
+  }
 }

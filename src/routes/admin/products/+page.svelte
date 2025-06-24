@@ -7,6 +7,7 @@
   import ProductEditModal from '$lib/components/ProductEditModal.svelte';
   import { getShopStockLevels } from '$lib/services/stockService';
   import { PUBLIC_SHOP_LOCATION_ID } from '$env/static/public';
+  import StarryBackground from '$lib/components/StarryBackground.svelte';
 
   let products: Product[] = [];
   let filteredProducts: Product[] = [];
@@ -258,14 +259,19 @@
 
   async function addCustomPrice() {
     customPriceError = '';
-    if (!selectedCustomPriceUser || !editing || !newCustomPrice) {
+    if (!selectedCustomPriceUser || !editing || newCustomPrice === '' || newCustomPrice === null || newCustomPrice === undefined) {
       customPriceError = 'Select a user and enter a price.';
+      return;
+    }
+    const priceValue = Number(newCustomPrice);
+    if (isNaN(priceValue) || priceValue < 0) {
+      customPriceError = 'Please enter a valid price (0 or greater).';
       return;
     }
     const { error } = await supabase
       .from('user_product_prices')
       .upsert([
-        { user_id: selectedCustomPriceUser.id, product_id: String(editing.id), custom_price: Number(newCustomPrice) }
+        { user_id: selectedCustomPriceUser.id, product_id: String(editing.id), custom_price: priceValue }
       ], { onConflict: 'user_id,product_id' });
     if (error) {
       customPriceError = error.message;
@@ -288,45 +294,79 @@
 
 </script>
 
-<div class="product-management-page">
-  <div class="section-header">
-      <h2>Product Management</h2>
-      <button class="primary-btn" on:click={openAddModal}>+ Add Product</button>
-  </div>
+<StarryBackground />
 
-  <div class="filters-card">
-    <div class="filters-grid">
-      <div class="filter-group"><label for="search">Search</label><input id="search" type="text" placeholder="Search products..." bind:value={productFilters.search} on:input={applyProductFilters}/></div>
-      <div class="filter-group"><label for="category">Category</label><select id="category" bind:value={productFilters.category} on:change={applyProductFilters}><option value="">All Categories</option>{#each categories as category}<option value={category.id}>{category.name}</option>{/each}</select></div>
-      <div class="filter-group"><label for="minPrice">Min Price</label><input id="minPrice" type="number" min="0" step="0.01" placeholder="Min price" bind:value={productFilters.minPrice} on:input={applyProductFilters}/></div>
-      <div class="filter-group"><label for="maxPrice">Max Price</label><input id="maxPrice" type="number" min="0" step="0.01" placeholder="Max price" bind:value={productFilters.maxPrice} on:input={applyProductFilters}/></div>
-      <div class="filter-group"><label for="sortBy">Sort By</label><select id="sortBy" bind:value={productFilters.sortBy} on:change={applyProductFilters}><option value="name">Name</option><option value="price">Price</option><option value="category">Category</option></select></div>
-      <div class="filter-group"><label for="sortOrder">Order</label><select id="sortOrder" bind:value={productFilters.sortOrder} on:change={applyProductFilters}><option value="asc">Ascending</option><option value="desc">Descending</option></select></div>
+<main class="admin-main">
+  <div class="admin-container">
+    <div class="admin-header">
+      <h2 class="neon-text-cyan">Product Management</h2>
+      <button class="btn btn-primary" on:click={openAddModal}>+ Add Product</button>
     </div>
-  </div>
-  
-  {#if showEditModal && editing}
-    <ProductEditModal
-      product={editing}
-      categories={categories}
-      loading={loading}
-      isAdd={isAddMode}
-      on:save={async (e) => { 
-        if(isAddMode) {
-          newProduct = e.detail.product;
-        } else {
-          editing = e.detail.product;
-        }
-        await saveProduct(); 
-      }}
-      on:cancel={closeEditModal}
-      on:customprices={() => showCustomPrices = true}
-    />
-  {/if}
-  
-  <div class="table-card">
-    <div class="table-responsive">
-      <table>
+
+    <div class="glass mb-4">
+      <div class="card-body">
+        <div class="grid grid-3 gap-2">
+          <div class="form-group">
+            <label for="search" class="form-label">Search</label>
+            <input id="search" type="text" placeholder="Search products..." bind:value={productFilters.search} on:input={applyProductFilters} class="form-control"/>
+          </div>
+          <div class="form-group">
+            <label for="category" class="form-label">Category</label>
+            <select id="category" bind:value={productFilters.category} on:change={applyProductFilters} class="form-control form-select">
+              <option value="">All Categories</option>
+              {#each categories as category}
+                <option value={category.id}>{category.name}</option>
+              {/each}
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="minPrice" class="form-label">Min Price</label>
+            <input id="minPrice" type="number" min="0" step="0.01" placeholder="Min price" bind:value={productFilters.minPrice} on:input={applyProductFilters} class="form-control"/>
+          </div>
+          <div class="form-group">
+            <label for="maxPrice" class="form-label">Max Price</label>
+            <input id="maxPrice" type="number" min="0" step="0.01" placeholder="Max price" bind:value={productFilters.maxPrice} on:input={applyProductFilters} class="form-control"/>
+          </div>
+          <div class="form-group">
+            <label for="sortBy" class="form-label">Sort By</label>
+            <select id="sortBy" bind:value={productFilters.sortBy} on:change={applyProductFilters} class="form-control form-select">
+              <option value="name">Name</option>
+              <option value="price">Price</option>
+              <option value="category">Category</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="sortOrder" class="form-label">Order</label>
+            <select id="sortOrder" bind:value={productFilters.sortOrder} on:change={applyProductFilters} class="form-control form-select">
+              <option value="asc">Ascending</option>
+              <option value="desc">Descending</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    {#if showEditModal && editing}
+      <ProductEditModal
+        product={editing}
+        categories={categories}
+        loading={loading}
+        isAdd={isAddMode}
+        on:save={async (e) => { 
+          if(isAddMode) {
+            newProduct = e.detail.product;
+          } else {
+            editing = e.detail.product;
+          }
+          await saveProduct(); 
+        }}
+        on:cancel={closeEditModal}
+        on:customprices={() => showCustomPrices = true}
+      />
+    {/if}
+    
+    <div class="glass">
+      <table class="table-dark">
         <thead>
           <tr>
             <th>Image</th><th>Name</th><th>Category</th><th>Price</th><th>Tags</th><th>Stock</th><th>Actions</th>
@@ -334,11 +374,11 @@
         </thead>
         <tbody>
           {#each filteredProducts as product (product.id)}
-            <tr>
+            <tr class="hover-glow">
               <td><img src={product.image_url} alt={product.name} class="product-thumbnail"/></td>
-              <td>{product.name}</td>
+              <td class="neon-text-white">{product.name}</td>
               <td>{categories.find(c => String(c.id) === String(product.category))?.name || product.category}</td>
-              <td>
+              <td class="neon-text-cyan">
                 {#if product.is_special && product.special_price}
                   <span style="text-decoration: line-through; color: #888;">R{product.price}</span>
                   <span style="color: #e67e22; font-weight: bold; margin-left: 0.5em;">R{product.special_price}</span>
@@ -347,42 +387,43 @@
                 {/if}
               </td>
               <td>
-                {#if product.is_new}<span class="tag-badge new">New</span>{/if}
-                {#if product.is_special}<span class="tag-badge special">Special</span>{/if}
+                {#if product.is_new}<span class="badge badge-info">New</span>{/if}
+                {#if product.is_special}<span class="badge badge-warning">Special</span>{/if}
               </td>
-              <td>{stockLevels[product.id] ?? 0}</td>
-              <td class="action-buttons">
-                <button class="edit-btn" on:click={() => openEditModal(product)}>Edit</button>
-                <button class="delete-btn" on:click={() => { showProductConfirmModal = true; productIdToDelete = String(product.id); }}>Delete</button>
+              <td class="neon-text-cyan">{stockLevels[product.id] ?? 0}</td>
+              <td>
+                <div class="flex gap-1">
+                  <button class="btn btn-secondary btn-sm" on:click={() => openEditModal(product)}>Edit</button>
+                  <button class="btn btn-danger btn-sm" on:click={() => { showProductConfirmModal = true; productIdToDelete = String(product.id); }}>Delete</button>
+                </div>
               </td>
             </tr>
           {/each}
         </tbody>
       </table>
     </div>
-  </div>
 
-  {#if showProductConfirmModal}
+    {#if showProductConfirmModal}
       <ConfirmModal
-          message="Are you sure you want to delete this product?"
-          onConfirm={() => { if (productIdToDelete !== null) deleteProduct(productIdToDelete); showProductConfirmModal = false; productIdToDelete = null; }}
-          onCancel={() => { showProductConfirmModal = false; productIdToDelete = null; }}
+        message="Are you sure you want to delete this product?"
+        onConfirm={() => { if (productIdToDelete !== null) deleteProduct(productIdToDelete); showProductConfirmModal = false; productIdToDelete = null; }}
+        onCancel={() => { showProductConfirmModal = false; productIdToDelete = null; }}
       />
-  {/if}
+    {/if}
 
-  {#if editing && showCustomPrices}
+    {#if editing && showCustomPrices}
       <div class="modal-backdrop" role="button" on:click={() => showCustomPrices = false}></div>
-      <div class="modal custom-prices-modal" role="dialog" aria-modal="true">
+      <div class="modal-content custom-prices-modal" role="dialog" aria-modal="true">
         <div class="modal-header">
-          <h3>Custom Prices for {editing.name}</h3>
-          <button class="close-btn" on:click={() => showCustomPrices = false}>&times;</button>
+          <h3 class="neon-text-cyan">Custom Prices for {editing.name}</h3>
+          <button class="modal-close" on:click={() => showCustomPrices = false}>&times;</button>
         </div>
         <div class="modal-body">
-          <div class="add-custom-price-form">
+          <div class="glass-light p-3 mb-3">
             <div class="form-group">
-              <label for="user-search">Search for a user</label>
+              <label for="user-search" class="form-label">Search for a user</label>
               <div class="search-wrapper">
-                <input id="user-search" type="text" placeholder="Search by name or email..." bind:value={customPriceUserSearch} on:input={searchCustomPriceUsers} />
+                <input id="user-search" type="text" placeholder="Search by name or email..." bind:value={customPriceUserSearch} on:input={searchCustomPriceUsers} class="form-control" />
                 {#if customPriceUserLoading}<div class="spinner"></div>{/if}
               </div>
               {#if customPriceUserResults.length > 0}
@@ -397,205 +438,146 @@
             </div>
 
             {#if selectedCustomPriceUser}
-              <div class="selected-user-info">
-                Selected: <strong>{selectedCustomPriceUser.display_name || selectedCustomPriceUser.email}</strong>
+              <div class="selected-user-info glass-light p-2 mb-2">
+                Selected: <strong class="neon-text-cyan">{selectedCustomPriceUser.display_name || selectedCustomPriceUser.email}</strong>
               </div>
             {/if}
             
             <div class="form-group">
-              <label for="new-custom-price">Set Custom Price (R)</label>
-              <div class="price-input-group">
-                <input id="new-custom-price" type="number" min="0" step="0.01" placeholder="Enter price" bind:value={newCustomPrice} />
-                <button class="primary-btn" on:click={addCustomPrice}>Add Price</button>
+              <label for="new-custom-price" class="form-label">Set Custom Price (R)</label>
+              <div class="flex gap-2">
+                <input id="new-custom-price" type="number" min="0" step="0.01" placeholder="Enter price" bind:value={newCustomPrice} class="form-control" />
+                <button class="btn btn-primary" on:click={addCustomPrice}>Add Price</button>
               </div>
             </div>
-            {#if customPriceError}<p class="error-message">{customPriceError}</p>{/if}
+            {#if customPriceError}<div class="alert alert-danger">{customPriceError}</div>{/if}
           </div>
           
           <div class="custom-prices-list">
-            <h4>Existing Custom Prices</h4>
-            <div class="table-responsive">
-              <table>
-                <thead><tr><th>User</th><th>Price</th><th>Action</th></tr></thead>
-                <tbody>
-                  {#each customPrices as cp}
-                    <tr>
-                      <td>{cp.display_name || cp.email}</td>
-                      <td>R{cp.custom_price}</td>
-                      <td><button class="delete-btn small" on:click={() => removeCustomPrice(String(cp.id))}>Remove</button></td>
-                    </tr>
-                  {/each}
-                  {#if customPrices.length === 0}
-                    <tr><td colspan="3" class="empty-state">No custom prices have been set for this product.</td></tr>
-                  {/if}
-                </tbody>
-              </table>
-            </div>
+            <h4 class="neon-text-cyan mb-2">Existing Custom Prices</h4>
+            <table class="table-dark">
+              <thead>
+                <tr><th>User</th><th>Price</th><th>Action</th></tr>
+              </thead>
+              <tbody>
+                {#each customPrices as cp}
+                  <tr>
+                    <td>{cp.display_name || cp.email}</td>
+                    <td class="neon-text-cyan">R{cp.custom_price}</td>
+                    <td><button class="btn btn-danger btn-sm" on:click={() => removeCustomPrice(String(cp.id))}>Remove</button></td>
+                  </tr>
+                {/each}
+                {#if customPrices.length === 0}
+                  <tr><td colspan="3" class="text-center text-muted">No custom prices have been set for this product.</td></tr>
+                {/if}
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
-  {/if}
-</div>
+    {/if}
+  </div>
+</main>
 
 <style>
-  /* Using a subset of styles from the original admin page */
-  .product-management-page { max-width: 1400px; margin: 0 auto; padding: 2rem;margin-top: 15px }
-  .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
-  .section-header h2 { margin: 0; color: #333; font-size: 1.5rem; }
-  .filters-card, .form-card, .table-card { background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 1.5rem; }
-  .filters-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; }
-  .filter-group { display: flex; flex-direction: column; gap: 0.5rem; }
-  .filter-group label { font-size: 0.9rem; color: #666; font-weight: 500; }
-  .filter-group input, .filter-group select { padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px; font-size: 0.9rem; }
-  .primary-btn { 
-    background: linear-gradient(to right, #0062E6, #33AEFF);
-    color: white; 
-    padding: 0.6rem 1.2rem; 
-    border: none; 
-    border-radius: 8px;
-    font-size: 0.95rem; 
-    font-weight: 500;
-    cursor: pointer; 
-    transition: all 0.2s ease;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  .admin-main {
+    min-height: 100vh;
+    padding-top: 80px;
+    background: transparent;
   }
-  .primary-btn:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+
+  .admin-container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 2rem;
+    margin-top: 6pc;
   }
-  .edit-btn, .delete-btn { padding: 0.75rem 1.5rem; border: none; border-radius: 6px; font-size: 1rem; cursor: pointer; transition: all 0.2s; }
-  .edit-btn { background: #ffc107; color: #212529; padding: 0.5rem 1rem; }
-  .delete-btn { background: #dc3545; color: white; padding: 0.5rem 1rem; }
-  .table-responsive { overflow-x: auto; }
-  table { width: 100%; border-collapse: collapse; min-width: 600px; }
-  th, td { padding: 1rem; text-align: left; border-bottom: 1px solid #e9ecef; }
-  th { background: #f8f9fa; color: #495057; font-weight: 600; }
-  .product-thumbnail { width: 50px; height: 50px; object-fit: cover; border-radius: 4px; }
-  .action-buttons { display: flex; gap: 0.5rem; }
-  .tag-badge { display: inline-block; padding: 0.2em 0.6em; margin-right: 0.3em; border-radius: 8px; font-size: 0.85em; font-weight: 600; color: #fff; }
-  .tag-badge.new { background: #007bff; }
-  .tag-badge.special { background: #e67e22; }
-  .modal-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.4); z-index: 2000; }
-  .modal { /* Simplified for brevity */ position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #fff; padding: 2rem; border-radius: 12px; z-index: 3001; }
+
+  .admin-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+  }
+
+  .admin-header h2 {
+    margin: 0;
+    font-size: 1.5rem;
+  }
+
+  .product-thumbnail {
+    width: 50px;
+    height: 50px;
+    object-fit: cover;
+    border-radius: 4px;
+    border: 1px solid var(--border-primary);
+  }
 
   .custom-prices-modal {
-    display: flex;
-    flex-direction: column;
     max-width: 600px;
     width: 90vw;
     max-height: 80vh;
-    background: #f8f9fa;
-    padding: 0;
-    border-radius: 12px;
-    overflow: hidden;
-    box-shadow: 0 5px 15px rgba(0,0,0,0.3);
-  }
-
-  .custom-prices-modal .modal-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 1rem 1.5rem;
-      border-bottom: 1px solid #e9ecef;
-      background: white;
-  }
-
-  .custom-prices-modal .modal-header h3 {
-      margin: 0;
-      font-size: 1.25rem;
-      color: #343a40;
-  }
-
-  .custom-prices-modal .close-btn {
-      background: none;
-      border: none;
-      font-size: 2rem;
-      line-height: 1;
-      color: #6c757d;
-      cursor: pointer;
-      padding: 0;
-  }
-
-  .custom-prices-modal .modal-body {
-      padding: 1.5rem;
-      overflow-y: auto;
-  }
-
-  .add-custom-price-form {
-      background: white;
-      padding: 1.5rem;
-      border-radius: 8px;
-      margin-bottom: 1.5rem;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
   }
 
   .search-wrapper {
-      position: relative;
+    position: relative;
   }
 
   .user-search-results {
-      list-style: none;
-      padding: 0;
-      margin: 0.5rem 0 0 0;
-      border: 1px solid #ddd;
-      border-radius: 4px;
-      max-height: 150px;
-      overflow-y: auto;
+    list-style: none;
+    padding: 0;
+    margin: 0.5rem 0 0 0;
+    border: 1px solid var(--border-primary);
+    border-radius: 4px;
+    max-height: 150px;
+    overflow-y: auto;
+    background: var(--bg-secondary);
   }
+
   .user-search-results li {
-      padding: 0.75rem;
-      cursor: pointer;
+    padding: 0.75rem;
+    cursor: pointer;
+    color: var(--text-primary);
+    border-bottom: 1px solid var(--border-primary);
   }
-  .user-search-results li:hover, .user-search-results li:focus {
-      background: #f1f3f5;
+
+  .user-search-results li:hover,
+  .user-search-results li:focus {
+    background: var(--bg-glass-light);
+    color: var(--neon-cyan);
+  }
+
+  .user-search-results li:last-child {
+    border-bottom: none;
   }
 
   .selected-user-info {
-      margin: 1rem 0;
-      padding: 0.75rem;
-      background: #e9f7ff;
-      border-radius: 4px;
-      border: 1px solid #b3e0ff;
-  }
-
-  .price-input-group {
-      display: flex;
-      gap: 0.5rem;
-  }
-  .price-input-group input {
-      flex-grow: 1;
-  }
-  .price-input-group .primary-btn {
-    padding: 0.5rem 1rem;
-    font-size: 0.9rem;
-  }
-
-  .error-message {
-      color: #dc3545;
-      font-size: 0.9rem;
-      margin-top: 0.5rem;
+    border: 1px solid var(--neon-cyan);
+    border-radius: 4px;
   }
 
   .custom-prices-list h4 {
-      margin-bottom: 1rem;
-      color: #333;
+    margin-bottom: 1rem;
   }
 
-  .delete-btn.small {
-      padding: 0.25rem 0.5rem;
-      font-size: 0.8rem;
+  .text-muted {
+    color: var(--text-muted);
   }
 
-  .empty-state {
-      text-align: center;
-      padding: 2rem;
-      color: #666;
-  }
-  
   @media (max-width: 768px) {
-      .custom-prices-modal {
-          width: 95vw;
-          max-height: 90vh;
-      }
+    .admin-container {
+      padding: 1rem;
+    }
+    
+    .admin-header {
+      flex-direction: column;
+      gap: 1rem;
+      align-items: stretch;
+    }
+    
+    .custom-prices-modal {
+      width: 95vw;
+      max-height: 90vh;
+    }
   }
 </style> 

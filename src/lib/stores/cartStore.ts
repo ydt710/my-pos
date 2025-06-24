@@ -258,26 +258,53 @@ export async function updateIsPosOrAdmin() {
 
 // Fetch all custom prices for a user and update the store
 export async function fetchCustomPricesForUser(userId: string) {
-  if (!userId) { customPrices.set({}); return; }
+  if (!userId) { 
+    customPrices.set({}); 
+    console.log('[CartStore] No userId provided, clearing custom prices');
+    return; 
+  }
+  
+  console.log('[CartStore] Fetching custom prices for user:', userId);
+  
   const { data, error } = await supabase
     .from('user_product_prices')
     .select('product_id, custom_price')
     .eq('user_id', userId);
-  if (error) { customPrices.set({}); return; }
+    
+  if (error) { 
+    console.error('[CartStore] Error fetching custom prices:', error);
+    customPrices.set({}); 
+    return; 
+  }
+  
   const priceMap = Object.fromEntries((data || []).map(row => [row.product_id, Number(row.custom_price)]));
+  console.log('[CartStore] Custom prices loaded:', priceMap);
   customPrices.set(priceMap);
 }
 
 // Helper to get the effective price for a product and user
 export function getEffectivePrice(product: Product, userId?: string, quantity: number = 1): number {
   const prices = get(customPrices);
-  if (userId && prices[product.id]) return prices[product.id];
+  
+  // Check for custom price first
+  if (userId && prices[product.id]) {
+    console.log(`[CartStore] Using custom price for product ${product.name} (${product.id}): R${prices[product.id]} for user ${userId}`);
+    return prices[product.id];
+  }
+  
+  // Check for bulk pricing
   if (product.bulk_prices && Array.isArray(product.bulk_prices) && product.bulk_prices.length > 0) {
     // Sort tiers descending by min_qty, find the best match
     const sorted = [...product.bulk_prices].sort((a, b) => b.min_qty - a.min_qty);
     const tier = sorted.find(t => quantity >= t.min_qty);
-    if (tier) return tier.price;
+    if (tier) {
+      console.log(`[CartStore] Using bulk price for product ${product.name}: R${tier.price} (qty: ${quantity}, tier: ${tier.min_qty}+)`);
+      return tier.price;
+    }
   }
+  
+  // Return regular price
+  console.log(`[CartStore] Using regular price for product ${product.name}: R${product.price}`);
   return product.price;
 }
 

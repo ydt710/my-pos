@@ -1,5 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { browser } from '$app/environment';
+  import { starryBackground } from '$lib/stores/settingsStore';
+
+  export let enabled = true; // Allow parent component override
 
   let canvas: HTMLCanvasElement;
   let ctx: CanvasRenderingContext2D | null = null;
@@ -14,6 +18,16 @@
   let prevWidth = 0;
   let prevHeight = 0;
   let fadeIn = false;
+
+  // Reactive statement to control animation based on store and prop
+  $: shouldAnimate = enabled && $starryBackground;
+  $: {
+    if (shouldAnimate && !isAnimating) {
+      startAnimation();
+    } else if (!shouldAnimate && isAnimating) {
+      stopAnimation();
+    }
+  }
 
   if (import.meta.hot) {
     import.meta.hot.dispose(() => {
@@ -54,6 +68,7 @@
   ];
 
   function detectMobile() {
+    if (!browser) return false;
     return /Mobi|Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
   }
 
@@ -184,8 +199,15 @@
     ctx.stroke();
   }
 
+  function drawStaticBackground() {
+    if (!canvas || !ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#0f172a'; // Darker static background
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+
   function animate(timestamp: number) {
-    if (!isAnimating || !canvas || !ctx) return;
+    if (!isAnimating || !canvas || !ctx || !browser) return;
 
     // Throttle frame rate
     const elapsed = timestamp - lastTime;
@@ -242,11 +264,13 @@
       return true;
     });
 
-    animationFrameId = requestAnimationFrame(animate);
+    if (browser) {
+      animationFrameId = requestAnimationFrame(animate);
+    }
   }
 
   function startAnimation() {
-    if (!isAnimating) {
+    if (!isAnimating && browser) {
       isAnimating = true;
       requestAnimationFrame(animate);
     }
@@ -254,7 +278,7 @@
 
   function stopAnimation() {
     isAnimating = false;
-    if (animationFrameId) {
+    if (animationFrameId && browser) {
       cancelAnimationFrame(animationFrameId);
     }
   }
@@ -270,11 +294,11 @@
 
   let resizeTimeout: ReturnType<typeof setTimeout>;
   function handleResize() {
-    if (!canvas) return;
+    if (!canvas || !browser) return;
 
     clearTimeout(resizeTimeout);
     resizeTimeout = setTimeout(() => {
-      if (!canvas || !ctx) return;
+      if (!canvas || !ctx || !browser) return;
       applyOptimizations();
       const dpr = window.devicePixelRatio || 1;
       const newWidth = window.innerWidth * dpr;
@@ -292,6 +316,11 @@
         initStars();
         prevWidth = newWidth;
         prevHeight = newHeight;
+        
+        // Redraw background if not animating
+        if (!shouldAnimate) {
+          drawStaticBackground();
+        }
       } else if (Math.abs(newWidth - prevWidth) > 2 || Math.abs(newHeight - prevHeight) > 2) {
         canvas.width = newWidth;
         canvas.height = newHeight;
@@ -302,13 +331,18 @@
         updateStarPositions();
         prevWidth = newWidth;
         prevHeight = newHeight;
+        
+        // Redraw background if not animating
+        if (!shouldAnimate) {
+          drawStaticBackground();
+        }
       }
     }, 250);
   }
 
   onMount(() => {
     console.log('[StarryBackground] Mounted');
-    if (!canvas) return;
+    if (!canvas || !browser) return;
     
     ctx = canvas.getContext('2d', { alpha: false });
     if (!ctx) return;
@@ -316,14 +350,20 @@
     applyOptimizations();
     handleResize();
     fadeIn = true;
-    startAnimation();
+    
+    // Start animation or draw static background based on settings
+    if (shouldAnimate) {
+      startAnimation();
+    } else {
+      drawStaticBackground();
+    }
 
     window.addEventListener('resize', handleResize);
     // Pause animation when not visible
     const handleVisibility = () => {
-      if (document.hidden) {
+      if (document.hidden || !shouldAnimate) {
         stopAnimation();
-      } else {
+      } else if (shouldAnimate) {
         startAnimation();
       }
     };
@@ -347,11 +387,13 @@
   });
 </script>
 
+{#if browser}
 <canvas
   bind:this={canvas}
   class="starry-background {fadeIn ? 'fade-in' : ''}"
   aria-hidden="true"
 ></canvas>
+{/if}
 
 <style>
   .starry-background {
@@ -362,7 +404,7 @@
     min-height: 100vh;
     height: 100%;
     z-index: -1;
-    background: #000510;
+    background: #0f172a; /* Dark slate background for consistency */
     pointer-events: none; /* Ensure no interaction with elements below */
     opacity: 0;
   }

@@ -3,10 +3,11 @@
   import { supabase } from '$lib/supabase';
   import { goto } from '$app/navigation';
   import { fade } from 'svelte/transition';
-  import { getUserAvailableCredit } from '$lib/services/orderService';
+  import { getUserBalance } from '$lib/services/orderService';
   import { onDestroy } from 'svelte';
   import type { Transaction } from '$lib/types/ledger';
   import { debounce } from '$lib/utils';
+  import StarryBackground from '$lib/components/StarryBackground.svelte';
 
   interface User {
     id: string;
@@ -104,7 +105,7 @@
 
   async function fetchAllUserBalances() {
     if (!users.length) return;
-    const promises = users.map(user => getUserAvailableCredit(user.id));
+    const promises = users.map(user => getUserBalance(user.id));
     const results = await Promise.all(promises);
     userBalances = users.reduce<{ [key: string]: number }>((acc, user, i) => {
       acc[user.id] = results[i];
@@ -252,7 +253,7 @@
         userLedgerError = 'Failed to load ledger.';
       } else {
         userLedger = ledger || [];
-        userStats.debt = userLedger.reduce((sum, e) => sum + (e.amount || 0), 0);
+        userStats.debt = userLedger.reduce((sum, e) => sum + (e.balance_amount || 0), 0);
       }
       // Fetch contract URL from profiles
       const { data: profile } = await supabase
@@ -301,7 +302,7 @@
     const amount = isDebt ? -Math.abs(adjustmentAmount) : Math.abs(adjustmentAmount);
     const note = adjustmentNote || `Admin ${isDebt ? 'Debt' : 'Credit'} Adjustment`;
     
-    const { error: rpcError } = await supabase.rpc('admin_adjust_user_balance', {
+    const { error: rpcError } = await supabase.rpc('admin_adjust_balance', {
       p_user_id: user.id,
       p_amount: amount,
       p_note: note
@@ -324,28 +325,35 @@
   }
 </script>
 
-<div class="users-page" in:fade>
-  <header class="page-header">
-    <h1>User Management</h1>
-    <input placeholder="Search users…" value={searchTerm} on:input={onSearch} />
-  </header>
+<StarryBackground />
 
-  {#if error}
-    <div class="alert error" role="alert" transition:fade>{error}</div>
-  {/if}
+<main class="admin-main">
+  <div class="admin-container">
+    <div class="admin-header">
+      <h1 class="neon-text-cyan">User Management</h1>
+      <input placeholder="Search users…" value={searchTerm} on:input={onSearch} class="form-control" style="max-width: 300px;" />
+    </div>
 
-  {#if success}
-    <div class="alert success" role="alert" transition:fade>{success}</div>
-  {/if}
+    {#if error}
+      <div class="alert alert-danger" role="alert" transition:fade>{error}</div>
+    {/if}
 
-  {#if loading}
-    <div class="loading">Loading users…</div>
-  {:else if users.length === 0}
-    <div class="no-users">No users found</div>
-  {:else}
-    <div class="table-card">
-      <div class="table-responsive">
-        <table class="users-table">
+    {#if success}
+      <div class="alert alert-success" role="alert" transition:fade>{success}</div>
+    {/if}
+
+    {#if loading}
+      <div class="text-center">
+        <div class="spinner-large"></div>
+        <p class="neon-text-cyan mt-2">Loading users…</p>
+      </div>
+    {:else if users.length === 0}
+      <div class="text-center p-4">
+        <p class="neon-text-cyan">No users found</p>
+      </div>
+    {:else}
+      <div class="glass">
+        <table class="table-dark">
           <thead>
             <tr>
               <th>Email</th>
@@ -360,31 +368,35 @@
           <tbody>
             {#each users as user (user.id)}
               {@const balance = userBalances?.[user.id]}
-              <tr on:click={() => openUserDetail(user)} style="cursor:pointer;">
-                <td>{user.email}</td>
+              <tr on:click={() => openUserDetail(user)} style="cursor:pointer;" class="hover-glow">
+                <td class="neon-text-white">{user.email}</td>
                 <td>{user.display_name || '-'}</td>
                 <td>{formatDate(user.created_at)}</td>
                 <td>
-                  <span class="role-badge" class:admin={user.is_admin}>
+                  <span class="badge {user.is_admin ? 'badge-warning' : 'badge-info'}">
                     {user.is_admin ? 'Admin' : 'User'}
                   </span>
                 </td>
-                <td>{user.role === 'pos' ? 'Yes' : 'No'}</td>
+                <td>
+                  <span class="badge {user.role === 'pos' ? 'badge-success' : 'badge-secondary'}">
+                    {user.role === 'pos' ? 'Yes' : 'No'}
+                  </span>
+                </td>
                 <td>
                   {#if typeof balance !== 'number'}
-                    <span style="color: #666;">Loading...</span>
+                    <span class="text-muted">Loading...</span>
                   {:else if balance < 0}
-                    <span style="color: #dc3545;">Debt: R{Math.abs(balance).toFixed(2)}</span>
+                    <span class="text-red-400">Debt: R{Math.abs(balance).toFixed(2)}</span>
                   {:else if balance > 0}
-                    <span style="color: #28a745;">Credit: R{balance.toFixed(2)}</span>
+                    <span class="text-green-400">Credit: R{balance.toFixed(2)}</span>
                   {:else}
-                    <span style="color: #666;">R0.00</span>
+                    <span class="text-muted">R0.00</span>
                   {/if}
-                  <button class="ledger-btn" on:click|stopPropagation={() => openLedgerModal(user)} title="View Ledger">📄</button>
+                  <button class="btn btn-secondary btn-sm ml-2" on:click|stopPropagation={() => openLedgerModal(user)} title="View Ledger">📄</button>
                 </td>
                 <td>
                   <button 
-                    class="delete-user-btn"
+                    class="btn btn-danger btn-sm"
                     on:click|stopPropagation={() => confirmDeleteUser(user)}
                     aria-label="Delete user {user.email}"
                   >
@@ -396,26 +408,27 @@
           </tbody>
         </table>
       </div>
-    </div>
-  {/if}
+    {/if}
 
-  {#if ledgerModalUser}
-    <div class="modal-backdrop" on:click={closeLedgerModal}>
-      <div class="modal-content" on:click|stopPropagation>
-        <div class="modal-header">
-          <h2>Ledger for {ledgerModalUser.email}</h2>
-          <button class="close-btn" on:click={closeLedgerModal}>&times;</button>
-        </div>
-        <div class="modal-body">
-          {#if loadingLedger}
-            <div>Loading ledger entries...</div>
-          {:else if ledgerError}
-            <div class="error-message">{ledgerError}</div>
-          {:else if ledgerEntries.length === 0}
-            <div>No ledger entries for this user.</div>
-          {:else}
-            <div class="ledger-table">
-              <table>
+    {#if ledgerModalUser}
+      <div class="modal-backdrop" on:click={closeLedgerModal}>
+        <div class="modal-content" on:click|stopPropagation>
+          <div class="modal-header">
+            <h2 class="neon-text-cyan">Ledger for {ledgerModalUser.email}</h2>
+            <button class="modal-close" on:click={closeLedgerModal}>&times;</button>
+          </div>
+          <div class="modal-body">
+            {#if loadingLedger}
+              <div class="text-center">
+                <div class="spinner"></div>
+                <p class="neon-text-cyan mt-2">Loading ledger entries...</p>
+              </div>
+            {:else if ledgerError}
+              <div class="alert alert-danger">{ledgerError}</div>
+            {:else if ledgerEntries.length === 0}
+              <div class="text-center text-muted">No ledger entries for this user.</div>
+            {:else}
+              <table class="table-dark">
                 <thead>
                   <tr>
                     <th>Date</th>
@@ -428,481 +441,258 @@
                   {#each ledgerEntries as entry}
                     <tr>
                       <td>{new Date(entry.created_at).toLocaleString()}</td>
-                      <td>{entry.type}</td>
-                      <td style="color: {entry.amount < 0 ? '#dc3545' : entry.amount > 0 ? '#28a745' : '#333'};">
-                        {entry.amount < 0 ? `-R${Math.abs(entry.amount).toFixed(2)}` : `R${entry.amount.toFixed(2)}`}
+                      <td><span class="badge badge-info">{entry.category}</span></td>
+                      <td class="{entry.total_amount < 0 ? 'text-red-400' : entry.total_amount > 0 ? 'text-green-400' : 'neon-text-cyan'}">
+                        {entry.total_amount < 0 ? `-R${Math.abs(entry.total_amount).toFixed(2)}` : `R${entry.total_amount.toFixed(2)}`}
                       </td>
-                      <td>{entry.order_id || '-'}</td>
+                      <td class="neon-text-cyan">{entry.order_id || '-'}</td>
                     </tr>
                   {/each}
                 </tbody>
               </table>
-            </div>
-          {/if}
-        </div>
-        <div class="modal-actions">
-          <button class="cancel-btn" on:click={closeLedgerModal}>Close</button>
-        </div>
-      </div>
-    </div>
-  {/if}
-
-  {#if showDeleteModal && userToDelete}
-    <div class="modal-backdrop" role="dialog" aria-modal="true" tabindex="-1" on:keydown={(e) => { if (e.key === 'Escape') cancelDeleteUser(); }}>
-      <div class="modal-content" role="document" tabindex="0" on:click|stopPropagation style="max-width: 500px;">
-        <div class="modal-header">
-          <h2 id="delete-modal-title">Confirm Delete</h2>
-        </div>
-        <div class="modal-body">
-          <p>Are you sure you want to delete user <strong>{userToDelete.email}</strong>?</p>
-        </div>
-        <div class="modal-actions">
-          <button class="cancel-btn" on:click={cancelDeleteUser} aria-label="Cancel delete">Cancel</button>
-          <button class="delete-user-btn" on:click={handleDeleteUser} aria-label="Confirm delete user">Delete</button>
-        </div>
-      </div>
-    </div>
-  {/if}
-
-  {#if selectedUser}
-    <div class="modal-backdrop" on:click={closeUserDetail}>
-      <div class="modal-content" on:click|stopPropagation>
-        <div class="modal-header">
-          <h2>User Details: {selectedUser.display_name || selectedUser.email}</h2>
-          <button class="close-btn" on:click={closeUserDetail}>×</button>
-        </div>
-        <div class="modal-body">
-          <div class="user-details-grid">
-            <div class="detail-item"><strong>Email:</strong> {selectedUser.email}</div>
-            <div class="detail-item"><strong>Joined:</strong> {formatDate(selectedUser.created_at)}</div>
-            <div class="detail-item"><strong>Debt/Credit:</strong> {userStats.debt < 0 ? `Debt: R${Math.abs(userStats.debt).toFixed(2)}` : `Credit: R${userStats.debt.toFixed(2)}`}</div>
-            <div class="detail-item"><strong>Total Orders:</strong> {userStats.totalOrders}</div>
-            <div class="detail-item"><strong>Total Spent:</strong> R{userStats.totalSpent.toFixed(2)}</div>
-            {#if contractUrl}
-              <div class="detail-item"><button on:click={downloadContract}>Download Signed Contract</button></div>
             {/if}
           </div>
-
-          <div class="balance-adjustment-section">
-            <h4>Adjust Balance</h4>
-            <div class="form-group">
-              <label for="adjustment-amount">Amount (R)</label>
-              <input id="adjustment-amount" type="number" placeholder="e.g., 500" bind:value={adjustmentAmount} />
-            </div>
-            <div class="form-group">
-              <label for="adjustment-note">Note (Optional)</label>
-              <input id="adjustment-note" type="text" placeholder="Reason for adjustment" bind:value={adjustmentNote} />
-            </div>
-            <div class="adjustment-actions">
-              <button class="btn-success" on:click={() => {if (selectedUser) handleBalanceAdjustment(selectedUser, false)}}>+ Add Credit</button>
-              <button class="btn-danger" on:click={() => {if (selectedUser) handleBalanceAdjustment(selectedUser, true)}}>- Add Debt</button>
-            </div>
+          <div class="modal-actions">
+            <button class="btn btn-secondary" on:click={closeLedgerModal}>Close</button>
           </div>
-          
-          <h3 style="margin-top:2rem;">Orders</h3>
-          {#if userOrdersLoading}
-            <div>Loading orders...</div>
-          {:else if userOrdersError}
-            <div class="error-message">{userOrdersError}</div>
-          {:else if userOrders.length === 0}
-            <div>No orders found for this user.</div>
-          {:else}
-            <table class="ledger-table">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Status</th>
-                  <th>Total</th>
-                  <th>Order #</th>
-                  <th>Note</th>
-                </tr>
-              </thead>
-              <tbody>
-                {#each userOrders as order}
-                  <tr>
-                    <td>{formatDate(order.created_at)}</td>
-                    <td>{order.status}</td>
-                    <td>R{order.total.toFixed(2)}</td>
-                    <td>{order.order_number}</td>
-                    <td>{order.note || '-'}</td>
-                  </tr>
-                {/each}
-              </tbody>
-            </table>
-          {/if}
-          <h3 style="margin-top:2rem;">Ledger Entries</h3>
-          {#if userLedgerLoading}
-            <div>Loading ledger...</div>
-          {:else if userLedgerError}
-            <div class="error-message">{userLedgerError}</div>
-          {:else if userLedger.length === 0}
-            <div>No ledger entries for this user.</div>
-          {:else}
-            <table class="ledger-table">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Type</th>
-                  <th>Amount</th>
-                  <th>Order</th>
-                </tr>
-              </thead>
-              <tbody>
-                {#each userLedger as entry}
-                  <tr>
-                    <td>{formatDate(entry.created_at)}</td>
-                    <td>{entry.type}</td>
-                    <td style="color: {entry.amount < 0 ? '#dc3545' : entry.amount > 0 ? '#28a745' : '#333'};">
-                      {entry.amount < 0 ? `-R${Math.abs(entry.amount).toFixed(2)}` : `R${entry.amount.toFixed(2)}`}
-                    </td>
-                    <td>{entry.order_id || '-'}</td>
-                  </tr>
-                {/each}
-              </tbody>
-            </table>
-          {/if}
         </div>
       </div>
-    </div>
-  {/if}
-</div>
+    {/if}
+
+    {#if showDeleteModal && userToDelete}
+      <div class="modal-backdrop" role="dialog" aria-modal="true" tabindex="-1" on:keydown={(e) => { if (e.key === 'Escape') cancelDeleteUser(); }}>
+        <div class="modal-content" role="document" tabindex="0" on:click|stopPropagation style="max-width: 500px;">
+          <div class="modal-header">
+            <h2 id="delete-modal-title" class="neon-text-cyan">Confirm Delete</h2>
+            <button class="modal-close" on:click={cancelDeleteUser}>&times;</button>
+          </div>
+          <div class="modal-body">
+            <p class="neon-text-white">Are you sure you want to delete user <strong class="neon-text-cyan">{userToDelete.email}</strong>?</p>
+          </div>
+          <div class="modal-actions">
+            <button class="btn btn-secondary" on:click={cancelDeleteUser} aria-label="Cancel delete">Cancel</button>
+            <button class="btn btn-danger" on:click={handleDeleteUser} aria-label="Confirm delete user">Delete</button>
+          </div>
+        </div>
+      </div>
+    {/if}
+
+    {#if selectedUser}
+      <div class="modal-backdrop" on:click={closeUserDetail}>
+        <div class="modal-content user-detail-modal" on:click|stopPropagation>
+          <div class="modal-header">
+            <h2 class="neon-text-cyan">User Details: {selectedUser.display_name || selectedUser.email}</h2>
+            <button class="modal-close" on:click={closeUserDetail}>×</button>
+          </div>
+          <div class="modal-body">
+            <div class="grid grid-2 gap-3 mb-4">
+              <div class="glass-light p-3">
+                <strong class="neon-text-cyan">Email:</strong> 
+                <span class="neon-text-white">{selectedUser.email}</span>
+              </div>
+              <div class="glass-light p-3">
+                <strong class="neon-text-cyan">Joined:</strong> 
+                <span class="neon-text-white">{formatDate(selectedUser.created_at)}</span>
+              </div>
+              <div class="glass-light p-3">
+                <strong class="neon-text-cyan">Debt/Credit:</strong> 
+                <span class="{userStats.debt < 0 ? 'text-red-400' : 'text-green-400'}">
+                  {userStats.debt < 0 ? `Debt: R${Math.abs(userStats.debt).toFixed(2)}` : `Credit: R${userStats.debt.toFixed(2)}`}
+                </span>
+              </div>
+              <div class="glass-light p-3">
+                <strong class="neon-text-cyan">Total Orders:</strong> 
+                <span class="neon-text-white">{userStats.totalOrders}</span>
+              </div>
+              <div class="glass-light p-3">
+                <strong class="neon-text-cyan">Total Spent:</strong> 
+                <span class="neon-text-white">R{userStats.totalSpent.toFixed(2)}</span>
+              </div>
+              {#if contractUrl}
+                <div class="glass-light p-3">
+                  <button on:click={downloadContract} class="btn btn-primary btn-sm">Download Signed Contract</button>
+                </div>
+              {/if}
+            </div>
+
+            <div class="glass p-3 mb-4">
+              <h4 class="neon-text-cyan mb-3">Adjust Balance</h4>
+              <div class="grid grid-2 gap-2 mb-3">
+                <div class="form-group">
+                  <label for="adjustment-amount" class="form-label">Amount (R)</label>
+                  <input id="adjustment-amount" type="number" placeholder="e.g., 500" bind:value={adjustmentAmount} class="form-control" />
+                </div>
+                <div class="form-group">
+                  <label for="adjustment-note" class="form-label">Note (Optional)</label>
+                  <input id="adjustment-note" type="text" placeholder="Reason for adjustment" bind:value={adjustmentNote} class="form-control" />
+                </div>
+              </div>
+              <div class="flex gap-2">
+                <button class="btn btn-success" on:click={() => {if (selectedUser) handleBalanceAdjustment(selectedUser, false)}}>+ Add Credit</button>
+                <button class="btn btn-danger" on:click={() => {if (selectedUser) handleBalanceAdjustment(selectedUser, true)}}>- Add Debt</button>
+              </div>
+            </div>
+            
+            <div class="glass mb-4">
+              <div class="card-header">
+                <h3 class="neon-text-cyan">Orders</h3>
+              </div>
+              <div class="card-body">
+                {#if userOrdersLoading}
+                  <div class="text-center">
+                    <div class="spinner"></div>
+                    <p class="neon-text-cyan mt-2">Loading orders...</p>
+                  </div>
+                {:else if userOrdersError}
+                  <div class="alert alert-danger">{userOrdersError}</div>
+                {:else if userOrders.length === 0}
+                  <div class="text-center text-muted">No orders found for this user.</div>
+                {:else}
+                  <table class="table-dark">
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>Status</th>
+                        <th>Total</th>
+                        <th>Order #</th>
+                        <th>Note</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {#each userOrders as order}
+                        <tr>
+                          <td>{formatDate(order.created_at)}</td>
+                          <td><span class="badge badge-info">{order.status}</span></td>
+                          <td class="neon-text-cyan">R{order.total.toFixed(2)}</td>
+                          <td class="neon-text-white">{order.order_number}</td>
+                          <td>{order.note || '-'}</td>
+                        </tr>
+                      {/each}
+                    </tbody>
+                  </table>
+                {/if}
+              </div>
+            </div>
+
+            <div class="glass">
+              <div class="card-header">
+                <h3 class="neon-text-cyan">Ledger Entries</h3>
+              </div>
+              <div class="card-body">
+                {#if userLedgerLoading}
+                  <div class="text-center">
+                    <div class="spinner"></div>
+                    <p class="neon-text-cyan mt-2">Loading ledger...</p>
+                  </div>
+                {:else if userLedgerError}
+                  <div class="alert alert-danger">{userLedgerError}</div>
+                {:else if userLedger.length === 0}
+                  <div class="text-center text-muted">No ledger entries for this user.</div>
+                {:else}
+                  <table class="table-dark">
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>Type</th>
+                        <th>Amount</th>
+                        <th>Order</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {#each userLedger as entry}
+                        <tr>
+                          <td>{formatDate(entry.created_at)}</td>
+                          <td><span class="badge badge-info">{entry.category}</span></td>
+                          <td class="{entry.total_amount < 0 ? 'text-red-400' : entry.total_amount > 0 ? 'text-green-400' : 'neon-text-cyan'}">
+                            {entry.total_amount < 0 ? `-R${Math.abs(entry.total_amount).toFixed(2)}` : `R${entry.total_amount.toFixed(2)}`}
+                          </td>
+                          <td class="neon-text-cyan">{entry.order_id || '-'}</td>
+                        </tr>
+                      {/each}
+                    </tbody>
+                  </table>
+                {/if}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    {/if}
+  </div>
+</main>
 
 <style>
-  :root {
-    --primary: #007bff;
-    --primary-dark: #0069d9;
-    --danger: #dc3545;
-    --danger-dark: #c82333;
-    --success: #28a745;
-    --success-dark: #218838;
-    --muted: #6c757d;
-    --light: #f8f9fa;
-    --gray-border: #dee2e6;
-    --font-main: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  .admin-main {
+    min-height: 100vh;
+    padding-top: 80px;
+    background: transparent;
   }
-  body {
-    font-family: var(--font-main);
-    color: #333;
-    background: #f4f5f7;
-  }
-  .btn {
-    padding: 0.5rem 1rem;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 0.875rem;
-    transition: all 0.2s;
-    font-family: inherit;
-  }
-  .btn-primary {
-    background: var(--primary);
-    color: white;
-  }
-  .btn-primary:hover {
-    background: var(--primary-dark);
-  }
-  .btn-danger {
-    background: var(--danger);
-    color: white;
-  }
-  .btn-danger:hover {
-    background: var(--danger-dark);
-  }
-  .btn-success {
-    background: var(--success);
-    color: white;
-  }
-  .btn-success:hover {
-    background: var(--success-dark);
-  }
-  .btn-secondary {
-    background: var(--light);
-    color: var(--muted);
-  }
-  .btn-secondary:hover {
-    background: #e2e6ea;
-  }
-  .role-badge {
-    padding: 0.2em 0.5em;
-    border-radius: 4px;
-    font-weight: bold;
-  }
-  .role-badge.admin {
-    background: #ffc107;
-    color: #333;
-  }
-  .text-muted {
-    color: #888;
-  }
-  .text-debt {
-    color: var(--danger);
-  }
-  .text-credit {
-    color: var(--success);
-  }
-  .table-card {
-    background: white;
-    padding: 1.5rem;
-    border-radius: 12px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-    margin-bottom: 1.5rem;
-  }
-  .table-responsive {
-    overflow-x: auto;
-  }
-  .users-table {
-    width: 100%;
-    border-collapse: collapse;
-  }
-  .users-table th, .users-table td {
-    padding: 0.75em 1em;
-    border-bottom: 1px solid #ddd;
-  }
-  .users-table-container {
-    margin-top: 2rem;
-  }
-  @media (max-width: 1000px) {
-    .users-table {
-      font-size: 0.95rem;
-    }
-  }
-  @media (max-width: 800px) {
-    .users-table {
-      min-width: 800px;
-    }
-    .users-table th,
-    .users-table td {
-      padding: 0.5rem;
-    }
-  }
-  @media (max-width: 600px) {
-    .page-header {
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 1rem;
-    }
-    .page-header input {
-      max-width: 100%;
-      width: 100%;
-    }
-  }
-  @media (max-width: 500px) {
-    .modal-content {
-      padding: 1rem;
-    }
-  }
-  .modal-backdrop {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.5);
-    z-index: 1000;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-  }
-  .modal-content {
-    background: white;
-    padding: 0;
-    border-radius: 12px;
-    box-shadow: 0 5px 15px rgba(0,0,0,0.3);
-    max-width: 90vw;
-    width: 800px;
-    max-height: 90vh;
-    display: flex;
-    flex-direction: column;
-  }
-  button, input {
-    transition: background 0.2s, color 0.2s, border-color 0.2s;
-  }
-  .alert {
-    padding: 1rem;
-    border-radius: 8px;
-    margin-bottom: 1rem;
-  }
-  .alert.error {
-    background: #f8d7da;
-    color: #721c24;
-  }
-  .alert.success {
-    background: #d4edda;
-    color: #155724;
-  }
-  .loading {
-    text-align: center;
-    padding: 2rem;
-    color: #666;
-  }
-  .no-users {
-    text-align: center;
-    color: #888;
+
+  .admin-container {
+    max-width: 1400px;
+    margin: 0 auto;
     padding: 2rem;
   }
-  .page-header {
+
+  .admin-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 2rem;
     margin-bottom: 2rem;
   }
-  .page-header input {
-    max-width: 300px;
-    width: 100%;
-    padding: 0.5rem 1rem;
-    border: 1px solid #ddd;
-    border-radius: 8px;
-    font-size: 1rem;
-    background: #fff;
-    color: #222;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.03);
-    transition: border-color 0.2s;
+
+  .admin-header h1 {
+    font-size: 2.5rem;
+    font-weight: 700;
+    margin: 0;
+    letter-spacing: 1px;
   }
-  .page-header input:focus {
-    outline: none;
-    border-color: var(--primary);
-    box-shadow: 0 0 0 2px rgba(0,123,255,0.10);
+
+  .user-detail-modal {
+    max-width: 90vw;
+    width: 800px;
+    max-height: 90vh;
+  }
+
+  .text-red-400 {
+    color: #f87171;
+  }
+
+  .text-green-400 {
+    color: #4ade80;
+  }
+
+  .text-muted {
+    color: var(--text-muted);
+  }
+
+  .ml-2 {
+    margin-left: 0.5rem;
+  }
+
+  @media (max-width: 768px) {
+    .admin-container {
+      padding: 1rem;
     }
-  .ledger-btn {
-    background: none;
-    border: none;
-    font-size: 1.1em;
-    margin-left: 0.5em;
-    cursor: pointer;
-    color: #007bff;
-    transition: color 0.2s;
-  }
-  .ledger-btn:hover {
-    color: #0056b3;
-  }
-  .ledger-table {
-    overflow-x: auto;
-    margin-top: 1rem;
-  }
-  .ledger-table table {
-    width: 100%;
-    border-collapse: collapse;
-  }
-  .ledger-table th, .ledger-table td {
-    padding: 0.75rem;
-    border-bottom: 1px solid #eee;
-    text-align: left;
-  }
-  .ledger-table th {
-    background: #f8f9fa;
-    font-weight: 600;
-    color: #333;
-  }
-  .error-message {
-    background: #f8d7da;
-    color: #721c24;
-    padding: 1rem;
-    border-radius: 4px;
-    margin-bottom: 1rem;
-  }
-  .delete-user-btn {
-    padding: 0.5rem 1rem;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 0.875rem;
-    background: #dc3545;
-    color: white;
-    transition: background 0.2s;
-  }
-  .delete-user-btn:hover {
-    background: #c82333;
-  }
-  .modal-actions {
-    justify-content: flex-end;
-    padding: 1rem 1.5rem;
-    border-top: 1px solid var(--gray-border);
-    background: #f8f9fa;
-  }
-  .cancel-btn {
-    background: #e9ecef;
-    color: #495057;
-    border: none;
-    border-radius: 4px;
-    padding: 0.5rem 1rem;
-    cursor: pointer;
-    font-size: 0.875rem;
-    transition: background 0.2s;
-  }
-  .cancel-btn:hover {
-    background: #dee2e6;
-  }
-  .users-page{
-    padding: 20px;
-  }
-  .modal-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 1rem 1.5rem;
-      border-bottom: 1px solid var(--gray-border);
-  }
-
-  .modal-header h2 {
-      margin: 0;
-      font-size: 1.25rem;
-  }
-
-  .modal-body {
-      padding: 1.5rem;
-      overflow-y: auto;
-  }
-
-  .close-btn {
-      background: none;
-      border: none;
+    
+    .admin-header {
+      flex-direction: column;
+      gap: 1rem;
+      align-items: stretch;
+    }
+    
+    .admin-header h1 {
       font-size: 2rem;
-      line-height: 1;
-      cursor: pointer;
-      padding: 0;
-      color: var(--muted);
-  }
-  .user-details-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-    gap: 1rem;
-    margin-bottom: 2rem;
-  }
-  .balance-adjustment-section {
-    background: #f8f9fa;
-    padding: 1.5rem;
-    border-radius: 8px;
-    margin-top: 1.5rem;
-    border: 1px solid #e9ecef;
-  }
-  .balance-adjustment-section h4 {
-    margin: 0 0 1rem;
-    font-size: 1.1rem;
-  }
-  .form-group {
-    margin-bottom: 1rem;
-  }
-  .form-group label {
-    display: block;
-    margin-bottom: 0.5rem;
-    font-weight: 500;
-  }
-  .form-group input {
-    width: 100%;
-    padding: 0.5rem;
-    border-radius: 4px;
-    border: 1px solid #ccc;
-  }
-  .adjustment-actions {
-    display: flex;
-    gap: 1rem;
-    margin-top: 1rem;
-  }
-  .adjustment-actions button {
-    flex-grow: 1;
-    padding: 0.75rem;
-    border: none;
-    border-radius: 6px;
-    font-size: 1rem;
-    font-weight: 500;
-    cursor: pointer;
+    }
+    
+    .admin-header input {
+      max-width: 100%;
+      width: 100%;
+    }
+    
+    .user-detail-modal {
+      width: 95vw;
+    }
   }
 </style> 

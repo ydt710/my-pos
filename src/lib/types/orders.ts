@@ -49,6 +49,7 @@ export interface Order {
   subtotal: number;
   tax: number;
   shipping_fee: number;
+  is_pos_order?: boolean;
 }
 
 export interface OrderFilters {

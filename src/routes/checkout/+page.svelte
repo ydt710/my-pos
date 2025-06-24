@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { cartStore, selectedPosUser, getTotal, getItemCount } from '$lib/stores/cartStore';
-  import { createOrder, getUserAvailableCredit, updateOrderStatus, payOrder } from '$lib/services/orderService';
+  import { createOrder, getUserBalance, updateOrderStatus } from '$lib/services/orderService';
   import { goto } from '$app/navigation';
   import type { CartItem } from '$lib/types/index';
   import type { PosUser } from '$lib/stores/cartStore';
@@ -26,6 +26,7 @@
   };
   let cashGiven: number | '' = '';
   let userAvailableCredit: number | null = null;
+  let userAvailableDebt: number | null = null;
   let selectedCustomer: PosUser = null;
 
   let extraCashOption: 'change' | 'credit' = 'change'; // default
@@ -66,7 +67,7 @@
     // If POS user selected, use balance from selectedPosUser if present
     const posUser = get(selectedPosUser);
     if (posUser && posUser.id) {
-      userAvailableCredit = await getUserAvailableCredit(posUser.id);
+      userAvailableCredit = await getUserBalance(posUser.id);
     }
 
 
@@ -175,14 +176,20 @@
       // Ensure cashGiven is always a valid number
       let cash = Number(cashGiven);
       if (isNaN(cash) || cash < 0) cash = 0;
-      
+      const items = $cartStore.map(item => ({
+        product_id: item.id,
+        quantity: item.quantity,
+        price: item.price
+      }));
+
+      // This call now matches the simpler, refactored RPC function
       const result = await createOrder(
-        total, 
-        $cartStore, 
-        isGuest ? guestInfo : undefined, 
-        paymentUserId, 
-        paymentMethod, 
-        cash, 
+        total,
+        $cartStore,
+        isGuest ? guestInfo : undefined,
+        paymentUserId,
+        paymentMethod,
+        cash,
         isPosUser,
         extraCashOption
       );
@@ -191,7 +198,7 @@
         success = '🎉 Order placed successfully! Thank you for your purchase.';
         // Refresh balance after order
         if (paymentUserId) {
-          const refreshedBalance = await getUserAvailableCredit(paymentUserId);
+          const refreshedBalance = await getUserBalance(paymentUserId);
           console.log('[CHECKOUT PATCH] Refreshed user balance after order:', refreshedBalance);
           userAvailableCredit = refreshedBalance;
         }
@@ -222,24 +229,25 @@
   let remainingCredit = 0;
   let lastSelectedCustomerId: string | null = null;
 
+  async function fetchUserBalanceSummary(userId: string) {
+    const { data, error } = await supabase
+      .rpc('get_user_balance_summary', { p_user_id: userId })
+      .single();
+    if (error) {
+      console.error('Failed to fetch user balance summary:', error);
+      return { credit: 0, debt: 0 };
+    }
+    return data;
+  }
+
   const unsubscribe = selectedPosUser.subscribe(async (val) => {
     selectedCustomer = val;
-    if (val && val.id && val.id !== lastSelectedCustomerId) {
-      lastSelectedCustomerId = val.id;
-      userAvailableCredit = await getUserAvailableCredit(val.id);
-      startingCredit = userAvailableCredit > 0 ? userAvailableCredit : 0;
-      const userDebt = userAvailableCredit < 0 ? Math.abs(userAvailableCredit) : 0;
-      creditUsed = Math.min(startingCredit, getTotal($cartStore) + userDebt);
-      remainingCredit = Math.max(0, startingCredit - creditUsed);
-      // If credit covers the whole order, set cashGiven to 0
-      if (creditUsed >= getTotal($cartStore) + userDebt) {
-        cashGiven = 0;
-      }
-    } else if (!val || !val.id) {
-      userAvailableCredit = null;
-      startingCredit = 0;
-      remainingCredit = 0;
-      creditUsed = 0;
+    if (val && val.id) {
+      userAvailableCredit = await getUserBalance(val.id);
+      userAvailableDebt = Math.abs(Math.min(0, userAvailableCredit));
+    } else {
+      userAvailableCredit = 0;
+      userAvailableDebt = 0;
     }
   });
   onDestroy(unsubscribe);
@@ -521,6 +529,12 @@
                   Credit to Account
                 </label>
               </div>
+            </div>
+          {/if}
+          {#if selectedCustomer}
+            <div>
+              <strong>Credit:</strong> R{userAvailableCredit?.toFixed(2) ?? '0.00'} <br>
+              <strong>Debt:</strong> R{userAvailableDebt?.toFixed(2) ?? '0.00'}
             </div>
           {/if}
           {#if startingCredit > 0}

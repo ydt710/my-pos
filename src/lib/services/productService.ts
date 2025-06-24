@@ -20,6 +20,9 @@ async function retry<T>(fn: () => Promise<T>, retries = 2, delay = 500): Promise
   throw lastErr;
 }
 
+const PRODUCT_CACHE_KEY = 'cached_products';
+const PRODUCT_CACHE_TTL = 60 * 60 * 1000; // 1 hour
+
 export async function getProduct(id: string): Promise<Product | null> {
   cleanupProductCache();
   const cachedProduct = getCachedProduct(id);
@@ -224,5 +227,31 @@ export async function loadAllProducts(): Promise<{ products: Product[]; error: s
   } catch (err) {
     console.error('Unexpected error fetching products:', err);
     return { products: [], error: 'Failed to fetch products. Please try again later.' };
+  }
+}
+
+export async function loadAllProductsCached() {
+  if (typeof window !== 'undefined') {
+    const cached = localStorage.getItem(PRODUCT_CACHE_KEY);
+    if (cached) {
+      try {
+        const { products, timestamp } = JSON.parse(cached);
+        if (Array.isArray(products) && Date.now() - timestamp < PRODUCT_CACHE_TTL) {
+          return { products, error: null, fromCache: true };
+        }
+      } catch {}
+    }
+  }
+  // Fallback to Supabase fetch
+  const { products, error } = await loadAllProducts();
+  if (!error && typeof window !== 'undefined') {
+    localStorage.setItem(PRODUCT_CACHE_KEY, JSON.stringify({ products, timestamp: Date.now() }));
+  }
+  return { products, error, fromCache: false };
+}
+
+export function clearProductCache() {
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem(PRODUCT_CACHE_KEY);
   }
 } 

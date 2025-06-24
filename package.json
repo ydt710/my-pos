@@ -17,6 +17,7 @@
 		"@sveltejs/adapter-auto": "^6.0.0",
 		"@sveltejs/kit": "^2.16.0",
 		"@sveltejs/vite-plugin-svelte": "^5.0.0",
+		"html2pdf.js": "^0.10.3",
 		"imagemin": "^9.0.1",
 		"imagemin-gifsicle": "^7.0.0",
 		"imagemin-mozjpeg": "^10.0.0",
@@ -33,10 +34,9 @@
 		"vite": "^6.2.6"
 	},
 	"dependencies": {
-		"@supabase/supabase-js": "^2.49.4",
+		"@supabase/supabase-js": "^2.50.0",
 		"chart.js": "^4.5.0",
 		"chartjs-adapter-date-fns": "^3.0.0",
-		"html2pdf.js": "^0.10.3",
 		"pdf-lib": "^1.17.1",
 		"signature_pad": "^5.0.9"
 	}

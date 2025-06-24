@@ -292,19 +292,30 @@
     background: rgba(0, 0, 0, 0.2);
   }
 
+  .category-button:hover {
+    box-shadow: 
+      0 0 10px rgba(0, 240, 255, 0.2),
+      0 2px 8px rgba(0, 0, 0, 0.1);
+  }
+
   .category-button:focus {
-    border-color: #007bff;
-    box-shadow: 0 0 0 3px rgba(0,123,255,0.25);
+    border-color: #00f0ff;
+    box-shadow: 
+      0 0 0 3px rgba(0, 240, 255, 0.3),
+      0 0 15px rgba(0, 240, 255, 0.4);
   }
 
   .category-button.active {
-    border-color: #007bff;
+    border-color: #00f0ff;
     transform: translateY(-3px);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    box-shadow: 
+      0 0 15px rgba(0, 240, 255, 0.4),
+      0 0 30px rgba(255, 0, 222, 0.2),
+      0 4px 12px rgba(0, 0, 0, 0.3);
   }
 
   .category-button.active .category-overlay {
-    background: rgba(0, 123, 255, 0.3);
+    background: rgba(0, 240, 255, 0.3);
   }
 
   .image-container {
