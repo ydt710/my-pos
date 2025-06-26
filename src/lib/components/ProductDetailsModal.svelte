@@ -29,6 +29,9 @@
     review_count?: number;
   };
   export let show = false;
+  export let stock: number = 0;
+  let selectedQuantity = 1;
+  let loading = false;
   
   let reviews: Review[] = [];
   let newReview = {
@@ -129,6 +132,43 @@
     }
   }
   
+  function handleQuantityChange(change: number) {
+    const newQuantity = selectedQuantity + change;
+    if (newQuantity > stock) return;
+    if (newQuantity >= 1 && newQuantity <= stock) {
+      selectedQuantity = newQuantity;
+    }
+  }
+  function handleQuantityInput(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const value = input.value;
+    if (value === '') return;
+    const numberValue = parseInt(value);
+    if (numberValue > stock) {
+      input.value = stock.toString();
+      selectedQuantity = stock;
+      return;
+    }
+    if (!isNaN(numberValue) && numberValue >= 1 && numberValue <= stock) {
+      selectedQuantity = numberValue;
+    }
+  }
+  function handleQuantityBlur(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const value = input.value;
+    const numberValue = parseInt(value);
+    if (value === '' || isNaN(numberValue) || numberValue < 1) {
+      input.value = selectedQuantity.toString();
+    }
+  }
+  async function handleAddToCart() {
+    if (loading || stock <= 0) return;
+    loading = true;
+    dispatch('addToCart', { product, quantity: selectedQuantity });
+    loading = false;
+    selectedQuantity = 1;
+  }
+  
   $: if (show) {
     loadReviews();
   }
@@ -181,6 +221,46 @@
         <div class="product-info">
           <div class="product__price-row">
             <span class="product__price">R{product.price}</span>
+          </div>
+          <div class="quantity-controls-modal">
+            <button 
+              class="quantity-btn" 
+              aria-label="Decrease quantity" 
+              on:click={() => handleQuantityChange(-1)}
+              disabled={selectedQuantity <= 1 || loading || stock <= 0}
+            >-</button>
+            <input
+              type="number"
+              class="quantity-input"
+              value={selectedQuantity}
+              min="1"
+              max={stock}
+              on:input={handleQuantityInput}
+              on:blur={handleQuantityBlur}
+              disabled={loading || stock <= 0}
+              aria-label="Product quantity"
+            />
+            <button 
+              class="quantity-btn" 
+              aria-label="Increase quantity" 
+              on:click={() => handleQuantityChange(1)}
+              disabled={selectedQuantity >= stock || loading || stock <= 0}
+            >+</button>
+            <button 
+              class="add-to-cart-btn" 
+              on:click={handleAddToCart}
+              disabled={loading || stock <= 0}
+              aria-label="Add {product.name} to cart"
+            >
+              {#if loading}
+                <span class="loading-spinner" aria-hidden="true"></span>
+                <span>Adding...</span>
+              {:else if stock <= 0}
+                <span>Out of Stock</span>
+              {:else}
+                Add to Cart
+              {/if}
+            </button>
           </div>
           {#if product.bulk_prices && product.bulk_prices.length > 0}
             <div class="bulk-pricing">
@@ -808,5 +888,88 @@
   .modal-header h2 {
     color: #b2fefa;
     text-shadow: 0 0 10px rgba(178, 254, 250, 0.5);
+  }
+
+  .quantity-controls-modal {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    border: 1px solid rgba(178, 254, 250, 0.2);
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.3);
+  }
+
+  .quantity-btn {
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    font-size: 1.5rem;
+    color: #555;
+    transition: all 0.2s ease;
+  }
+
+  .quantity-btn:hover:not(:disabled) {
+    transform: scale(1.1);
+    color: #FFD700;
+  }
+
+  .quantity-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.7;
+  }
+
+  .quantity-input {
+    width: 40px;
+    padding: 0.25rem;
+    border: 1px solid rgba(178, 254, 250, 0.3);
+    border-radius: 8px;
+    text-align: center;
+    font-family: inherit;
+    color: #ffffff;
+    background: rgba(0, 0, 0, 0.3);
+  }
+
+  .add-to-cart-btn {
+    background: linear-gradient(77deg, hsl(195.35deg 67.65% 41.89%), #00deff, #14ffbd);
+    color: #fff;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    transition: all 0.3s ease;
+    text-shadow: 0 0 8px #00f0ff, 0 0 16px #ff00de;
+    letter-spacing: 0.5px;
+  }
+
+  .add-to-cart-btn:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 
+      0 0 20px rgba(0, 240, 255, 0.4),
+      0 0 40px rgba(255, 0, 222, 0.2),
+      0 8px 32px rgba(0, 0, 0, 0.3);
+  }
+
+  .add-to-cart-btn:active:not(:disabled) {
+    transform: translateY(0);
+    box-shadow: 
+      0 0 10px rgba(0, 240, 255, 0.3),
+      0 0 20px rgba(255, 0, 222, 0.1);
+  }
+
+  .add-to-cart-btn:disabled {
+    background: #333;
+    color: #666;
+    cursor: not-allowed;
+    box-shadow: none;
+    transform: none;
+    text-shadow: none;
   }
 </style> 

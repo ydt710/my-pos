@@ -81,6 +81,13 @@ GRANT EXECUTE ON FUNCTION public.handle_stock_movement() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_order_payment_summary(uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_all_orders_with_payment_summary() TO authenticated;
 
+-- Stock management functions
+GRANT EXECUTE ON FUNCTION public.confirm_production_done(uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.accept_stock_transfer(uuid, integer) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.reject_stock_transfer(uuid, integer, text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_pending_transfers_count() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_pending_shop_transfers_count() TO authenticated;
+
 -- Utility functions
 GRANT EXECUTE ON FUNCTION public.generate_invoice_number() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.calculate_tax_amount(numeric) TO authenticated;

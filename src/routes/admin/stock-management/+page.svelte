@@ -98,7 +98,7 @@
     // Fetch locations
     const { data: locData, error: locErr } = await supabase.from('stock_locations').select('*');
     if (locErr) { error = 'Failed to load locations'; loading = false; return; }
-    locations = locData;
+    locations = sortLocations(locData);
     // Fetch stock levels
     // Removed delay as Realtime will handle updates
     const { data: stockData, error: stockErr } = await supabase.from('stock_levels').select('*');
@@ -382,6 +382,17 @@
       }
     }
   }
+
+  // After fetching locations, sort so 'facility' comes first, then 'shop', then others
+  function sortLocations(locations: Location[]): Location[] {
+    return [...locations].sort((a, b) => {
+      if (a.name === 'facility') return -1;
+      if (b.name === 'facility') return 1;
+      if (a.name === 'shop') return -1;
+      if (b.name === 'shop') return 1;
+      return a.name.localeCompare(b.name);
+    });
+  }
 </script>
 
 <svelte:head>
@@ -512,26 +523,28 @@
             <h2 class="neon-text-cyan">Current Stock Levels</h2>
           </div>
           <div class="card-body">
-            <table class="table-dark">
-              <thead>
-                <tr>
-                  <th>Product</th>
-                  {#each locations as l}
-                    <th>{l.name}</th>
-                  {/each}
-                </tr>
-              </thead>
-              <tbody>
-                {#each products as p}
-                  <tr class="hover-glow">
-                    <td class="neon-text-white">{p.name}</td>
+            <div class="responsive-table">
+              <table class="table-dark">
+                <thead>
+                  <tr>
+                    <th>Product</th>
                     {#each locations as l}
-                      <td class="neon-text-cyan">{stockMap[p.id]?.[l.id] ?? 0}</td>
+                      <th>{l.name}</th>
                     {/each}
                   </tr>
-                {/each}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {#each products as p}
+                    <tr class="hover-glow">
+                      <td class="neon-text-white">{p.name}</td>
+                      {#each locations as l}
+                        <td class="neon-text-cyan">{stockMap[p.id]?.[l.id] ?? 0}</td>
+                      {/each}
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
 
@@ -540,32 +553,34 @@
             <h2 class="neon-text-cyan">Pending Productions</h2>
           </div>
           <div class="card-body">
-            <table class="table-dark">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Product</th>
-                  <th>Qty</th>
-                  <th>Note</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {#each pendingProductions as m}
-                  <tr class="hover-glow">
-                    <td>{new Date(m.created_at).toLocaleString()}</td>
-                    <td class="neon-text-white">{products.find(p => p.id === m.product_id)?.name || m.product_id}</td>
-                    <td class="neon-text-cyan">{m.quantity}</td>
-                    <td>{m.note}</td>
-                    <td>
-                      <button on:click={() => handleConfirmProductionDone(m.id)} disabled={confirmingProduction[m.id]} class="btn btn-success btn-sm">
-                        Confirm Done
-                      </button>
-                    </td>
+            <div class="responsive-table">
+              <table class="table-dark">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Product</th>
+                    <th>Qty</th>
+                    <th>Note</th>
+                    <th>Action</th>
                   </tr>
-                {/each}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {#each pendingProductions as m}
+                    <tr class="hover-glow">
+                      <td>{new Date(m.created_at).toLocaleString()}</td>
+                      <td class="neon-text-white">{products.find(p => p.id === m.product_id)?.name || m.product_id}</td>
+                      <td class="neon-text-cyan">{m.quantity}</td>
+                      <td>{m.note}</td>
+                      <td>
+                        <button on:click={() => handleConfirmProductionDone(m.id)} disabled={confirmingProduction[m.id]} class="btn btn-success btn-sm">
+                          Confirm Done
+                        </button>
+                      </td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
 
@@ -574,38 +589,40 @@
             <h2 class="neon-text-cyan">Recent Stock Movements</h2>
           </div>
           <div class="card-body">
-            <table class="table-dark">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Product</th>
-                  <th>Type</th>
-                  <th>From</th>
-                  <th>To</th>
-                  <th>Qty</th>
-                  <th>Note</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {#each stockMovements as m}
-                  <tr class="hover-glow">
-                    <td>{new Date(m.created_at).toLocaleString()}</td>
-                    <td class="neon-text-white">{products.find(p => p.id === m.product_id)?.name || m.product_id}</td>
-                    <td><span class="badge badge-info">{m.type}</span></td>
-                    <td>{locations.find(l => l.id === m.from_location_id)?.name || '-'}</td>
-                    <td>{locations.find(l => l.id === m.to_location_id)?.name || '-'}</td>
-                    <td class="neon-text-cyan">{m.quantity}</td>
-                    <td>{m.note}</td>
-                    <td>
-                      <span class="badge {m.status === 'done' ? 'badge-success' : 'badge-warning'}">
-                        {m.status || 'done'}
-                      </span>
-                    </td>
+            <div class="responsive-table">
+              <table class="table-dark">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Product</th>
+                    <th>Type</th>
+                    <th>From</th>
+                    <th>To</th>
+                    <th>Qty</th>
+                    <th>Note</th>
+                    <th>Status</th>
                   </tr>
-                {/each}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {#each stockMovements as m}
+                    <tr class="hover-glow">
+                      <td>{new Date(m.created_at).toLocaleString()}</td>
+                      <td class="neon-text-white">{products.find(p => p.id === m.product_id)?.name || m.product_id}</td>
+                      <td><span class="badge badge-info">{m.type}</span></td>
+                      <td>{locations.find(l => l.id === m.from_location_id)?.name || '-'}</td>
+                      <td>{locations.find(l => l.id === m.to_location_id)?.name || '-'}</td>
+                      <td class="neon-text-cyan">{m.quantity}</td>
+                      <td>{m.note}</td>
+                      <td>
+                        <span class="badge {m.status === 'done' ? 'badge-success' : 'badge-warning'}">
+                          {m.status || 'done'}
+                        </span>
+                      </td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
 
@@ -614,32 +631,34 @@
             <h2 class="neon-text-cyan">Recent Stock Discrepancies</h2>
           </div>
           <div class="card-body">
-            <table class="table-dark">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Product</th>
-                  <th>Expected Qty</th>
-                  <th>Actual Qty</th>
-                  <th>Loss</th>
-                  <th>Reason</th>
-                  <th>By</th>
-                </tr>
-              </thead>
-              <tbody>
-                {#each discrepancies as d}
-                  <tr class="hover-glow">
-                    <td>{new Date(d.created_at).toLocaleString()}</td>
-                    <td class="neon-text-white">{products.find(p => p.id === d.product_id)?.name || d.product_id}</td>
-                    <td class="neon-text-cyan">{d.expected_quantity}</td>
-                    <td class="neon-text-cyan">{d.actual_quantity}</td>
-                    <td class="text-red-400">{(d.expected_quantity ?? 0) - (d.actual_quantity ?? 0)}</td>
-                    <td>{d.reason}</td>
-                    <td>{d.reported_by && profiles[d.reported_by] ? (profiles[d.reported_by].display_name || profiles[d.reported_by].email) : 'Unknown'}</td>
+            <div class="responsive-table">
+              <table class="table-dark">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Product</th>
+                    <th>Expected Qty</th>
+                    <th>Actual Qty</th>
+                    <th>Loss</th>
+                    <th>Reason</th>
+                    <th>By</th>
                   </tr>
-                {/each}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {#each discrepancies as d}
+                    <tr class="hover-glow">
+                      <td>{new Date(d.created_at).toLocaleString()}</td>
+                      <td class="neon-text-white">{products.find(p => p.id === d.product_id)?.name || d.product_id}</td>
+                      <td class="neon-text-cyan">{d.expected_quantity}</td>
+                      <td class="neon-text-cyan">{d.actual_quantity}</td>
+                      <td class="text-red-400">{(d.expected_quantity ?? 0) - (d.actual_quantity ?? 0)}</td>
+                      <td>{d.reason}</td>
+                      <td>{d.reported_by && profiles[d.reported_by] ? (profiles[d.reported_by].display_name || profiles[d.reported_by].email) : 'Unknown'}</td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
 
@@ -648,33 +667,35 @@
             <h2 class="neon-text-cyan">Pending Transfers to Your Shop</h2>
           </div>
           <div class="card-body">
-            <table class="table-dark">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Product</th>
-                  <th>Qty</th>
-                  <th>Note</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {#each posPendingTransfers as t}
-                  <tr class="hover-glow">
-                    <td>{new Date(t.created_at).toLocaleString()}</td>
-                    <td class="neon-text-white">{products.find(p => p.id === t.product_id)?.name || t.product_id}</td>
-                    <td class="neon-text-cyan">{t.quantity}</td>
-                    <td>{t.note}</td>
-                    <td>
-                      <div class="flex gap-1">
-                        <button on:click={() => handleAcceptTransfer(t)} disabled={acceptingTransfer[t.id]} class="btn btn-success btn-sm">Accept</button>
-                        <button on:click={() => openRejectModal(t)} disabled={rejectingTransfer} class="btn btn-danger btn-sm">Reject</button>
-                      </div>
-                    </td>
+            <div class="responsive-table">
+              <table class="table-dark">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Product</th>
+                    <th>Qty</th>
+                    <th>Note</th>
+                    <th>Action</th>
                   </tr>
-                {/each}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {#each posPendingTransfers as t}
+                    <tr class="hover-glow">
+                      <td>{new Date(t.created_at).toLocaleString()}</td>
+                      <td class="neon-text-white">{products.find(p => p.id === t.product_id)?.name || t.product_id}</td>
+                      <td class="neon-text-cyan">{t.quantity}</td>
+                      <td>{t.note}</td>
+                      <td>
+                        <div class="flex gap-1">
+                          <button on:click={() => handleAcceptTransfer(t)} disabled={acceptingTransfer[t.id]} class="btn btn-success btn-sm">Accept</button>
+                          <button on:click={() => openRejectModal(t)} disabled={rejectingTransfer} class="btn btn-danger btn-sm">Reject</button>
+                        </div>
+                      </td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       {/if}
@@ -750,6 +771,66 @@
     
     .admin-header h1 {
       font-size: 2rem;
+    }
+  }
+
+  .responsive-table {
+    width: 100%;
+    overflow-x: auto;
+    background: rgba(24,28,40,0.85);
+    border-radius: 14px;
+    box-shadow: 0 0 24px #00f2fe22;
+    border: 1.5px solid #00f2fe44;
+    margin-bottom: 2rem;
+    padding: 0.5rem 0.5rem 0.5rem 0.5rem;
+  }
+
+  .responsive-table table {
+    min-width: 700px;
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    background: transparent;
+  }
+
+  .responsive-table th, .responsive-table td {
+    padding: 0.7rem 1rem;
+    font-size: 1rem;
+    white-space: nowrap;
+    border-bottom: 1px solid rgba(0,242,254,0.08);
+  }
+
+  .responsive-table th {
+    color: #00f2fe;
+    font-weight: 700;
+    background: rgba(24,28,40,0.92);
+    border-bottom: 2px solid #00f2fe44;
+  }
+
+  .responsive-table tr:last-child td {
+    border-bottom: none;
+  }
+
+  @media (max-width: 900px) {
+    .responsive-table table {
+      min-width: 600px;
+    }
+    .responsive-table th, .responsive-table td {
+      font-size: 0.95rem;
+      padding: 0.5rem 0.5rem;
+    }
+  }
+  @media (max-width: 600px) {
+    .responsive-table {
+      padding: 0.2rem 0.1rem 0.5rem 0.1rem;
+      border-radius: 8px;
+    }
+    .responsive-table table {
+      min-width: 520px;
+    }
+    .responsive-table th, .responsive-table td {
+      font-size: 0.89rem;
+      padding: 0.35rem 0.3rem;
     }
   }
 </style> 

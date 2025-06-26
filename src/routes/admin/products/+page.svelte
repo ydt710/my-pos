@@ -24,7 +24,9 @@
     cbd_max: 0,
     indica: 0,
     is_new: false,
-    is_special: false
+    is_special: false,
+    is_out_of_stock: false,
+    low_stock_buffer: 1000
   };
   let imageFile: File | null = null;
   let uploadProgress = 0;
@@ -369,7 +371,7 @@
       <table class="table-dark">
         <thead>
           <tr>
-            <th>Image</th><th>Name</th><th>Category</th><th>Price</th><th>Tags</th><th>Stock</th><th>Actions</th>
+            <th>Image</th><th>Name</th><th>Category</th><th>Price</th><th>Tags</th><th>Stock</th><th>Buffer</th><th>Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -389,8 +391,15 @@
               <td>
                 {#if product.is_new}<span class="badge badge-info">New</span>{/if}
                 {#if product.is_special}<span class="badge badge-warning">Special</span>{/if}
+                {#if product.is_out_of_stock}<span class="badge badge-danger">Out of Stock</span>{/if}
               </td>
-              <td class="neon-text-cyan">{stockLevels[product.id] ?? 0}</td>
+              <td class="neon-text-cyan">
+                {stockLevels[product.id] ?? 0}
+                {#if !product.is_out_of_stock && (product.low_stock_buffer ?? 0) > 0 && (stockLevels[product.id] ?? 0) <= (product.low_stock_buffer ?? 0)}
+                  <span class="low-stock-indicator" title="Low stock alert">⚠️</span>
+                {/if}
+              </td>
+              <td class="neon-text-muted">{product.low_stock_buffer ?? 1000}</td>
               <td>
                 <div class="flex gap-1">
                   <button class="btn btn-secondary btn-sm" on:click={() => openEditModal(product)}>Edit</button>
@@ -562,6 +571,17 @@
 
   .text-muted {
     color: var(--text-muted);
+  }
+
+  .low-stock-indicator {
+    margin-left: 0.5rem;
+    font-size: 0.9rem;
+    animation: pulse-warning 2s infinite;
+  }
+
+  @keyframes pulse-warning {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
   }
 
   @media (max-width: 768px) {

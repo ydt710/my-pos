@@ -8,9 +8,10 @@
     import Chart from 'chart.js/auto';
     import type { Chart as ChartType, ChartData, ChartOptions } from 'chart.js';
     import 'chartjs-adapter-date-fns';
-      import { createNeonGradient, neonShadowPlugin } from '$lib/utils/chartNeon';
-  import StarryBackground from '$lib/components/StarryBackground.svelte';
-  import { starryBackground } from '$lib/stores/settingsStore';
+    import { createNeonGradient, neonShadowPlugin } from '$lib/utils/chartNeon';
+    import StarryBackground from '$lib/components/StarryBackground.svelte';
+    import DatePicker from '$lib/components/DatePicker.svelte';
+    import { starryBackground } from '$lib/stores/settingsStore';
 
   let user: any = null;
   let isAdmin = false;
@@ -43,6 +44,10 @@
     let cashCollectedPeriod: 'day' | 'week' | 'month' = 'day';
     let cashCollectedStartDate = new Date();
     let cashCollectedEndDate = new Date();
+    
+    // Convert dates to string format for DatePicker
+    let cashCollectedStartDateStr = '';
+    let cashCollectedEndDateStr = '';
 
     let cashPaidChartInstance: ChartType | null = null;
     let creditChartInstance: ChartType | null = null;
@@ -56,21 +61,90 @@
     let creditPeriod: 'day' | 'week' | 'month' = 'day';
     let creditStartDate = new Date(new Date().setDate(new Date().getDate() - 30));
     let creditEndDate = new Date();
+    let creditStartDateStr = '';
+    let creditEndDateStr = '';
 
     let debtPeriod: 'day' | 'week' | 'month' = 'day';
     let debtStartDate = new Date(new Date().setDate(new Date().getDate() - 30));
     let debtEndDate = new Date();
+    let debtStartDateStr = '';
+    let debtEndDateStr = '';
 
     let totalSpentStartDate = new Date(new Date().setDate(new Date().getDate() - 30));
     let totalSpentEndDate = new Date();
+    let totalSpentStartDateStr = '';
+    let totalSpentEndDateStr = '';
     let totalSpentLimit = 10;
 
     // Set default range to last 30 days
     cashCollectedStartDate.setDate(cashCollectedStartDate.getDate() - 30);
+    
+
+    
+    // Handle date string changes and convert back to Date objects
+    function handleDateStringChange(type: string, isStart: boolean, value: string) {
+        if (!value) return; // Don't process empty values
+        
+        const date = new Date(value + 'T00:00:00'); // Ensure consistent timezone handling
+        if (!isNaN(date.getTime())) {
+            switch(type) {
+                case 'cashCollected':
+                    if (isStart) {
+                        cashCollectedStartDate = date;
+                        cashCollectedStartDateStr = value;
+                    } else {
+                        cashCollectedEndDate = date;
+                        cashCollectedEndDateStr = value;
+                    }
+                    debouncedCashCollectedUpdate();
+                    break;
+                case 'credit':
+                    if (isStart) {
+                        creditStartDate = date;
+                        creditStartDateStr = value;
+                    } else {
+                        creditEndDate = date;
+                        creditEndDateStr = value;
+                    }
+                    debouncedCreditUpdate();
+                    break;
+                case 'debt':
+                    if (isStart) {
+                        debtStartDate = date;
+                        debtStartDateStr = value;
+                    } else {
+                        debtEndDate = date;
+                        debtEndDateStr = value;
+                    }
+                    debouncedDebtUpdate();
+                    break;
+                case 'totalSpent':
+                    if (isStart) {
+                        totalSpentStartDate = date;
+                        totalSpentStartDateStr = value;
+                    } else {
+                        totalSpentEndDate = date;
+                        totalSpentEndDateStr = value;
+                    }
+                    debouncedTotalSpentUpdate();
+                    break;
+            }
+        }
+    }
 
     Chart.register(neonShadowPlugin);
 
     onMount(async () => {
+      // Initialize date strings from Date objects
+      cashCollectedStartDateStr = cashCollectedStartDate.toISOString().split('T')[0];
+      cashCollectedEndDateStr = cashCollectedEndDate.toISOString().split('T')[0];
+      creditStartDateStr = creditStartDate.toISOString().split('T')[0];
+      creditEndDateStr = creditEndDate.toISOString().split('T')[0];
+      debtStartDateStr = debtStartDate.toISOString().split('T')[0];
+      debtEndDateStr = debtEndDate.toISOString().split('T')[0];
+      totalSpentStartDateStr = totalSpentStartDate.toISOString().split('T')[0];
+      totalSpentEndDateStr = totalSpentEndDate.toISOString().split('T')[0];
+
       const { data: { user: authUser } } = await supabase.auth.getUser();
       user = authUser;
       if (!user) return goto('/');
@@ -91,7 +165,6 @@
         fetchAndRenderRevenueChart(),
         fetchAndRenderDebtCreatedChart(),
         fetchAndRenderCashCollectedChart(),
-        fetchAndRenderCashPaidChart(),
         fetchAndRenderCreditChart(),
         fetchAndRenderDebtChart(),
         fetchAndRenderTotalSpentChart()
@@ -167,14 +240,19 @@
           return;
         }
         
-        const chartType = revenueFilter === 'today' ? 'line' : 'bar';
         let labels, data;
 
-        if (chartType === 'line') {
-            labels = chartRpcData.map((d: any) => new Date(d.period).getTime());
-            data = chartRpcData.map((d: any) => ({ x: new Date(d.period).getTime(), y: d.revenue }));
-        } else {
-            labels = chartRpcData.map((d: any) => d.period);
+        if (revenueFilter === 'today') {
+            labels = chartRpcData.map((d: any) => new Date(d.period).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+            data = chartRpcData.map((d: any) => d.revenue);
+        } else if (revenueFilter === 'week') {
+            labels = chartRpcData.map((d: any) => new Date(d.period).toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short' }));
+            data = chartRpcData.map((d: any) => d.revenue);
+        } else if (revenueFilter === 'month') {
+            labels = chartRpcData.map((d: any) => new Date(d.period).toLocaleDateString('en-US', { day: '2-digit', month: 'short' }));
+            data = chartRpcData.map((d: any) => d.revenue);
+        } else if (revenueFilter === 'year') {
+            labels = chartRpcData.map((d: any) => new Date(d.period).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }));
             data = chartRpcData.map((d: any) => d.revenue);
         }
 
@@ -199,6 +277,7 @@
         const chartOptions: ChartOptions = {
             responsive: true,
             maintainAspectRatio: false,
+            resizeDelay: 200,
             plugins: {
                 legend: { display: false },
                 tooltip: {
@@ -213,23 +292,36 @@
             },
             scales: {
                 x: revenueFilter === 'today' ? {
-                    type: 'time',
-                    time: { unit: 'hour', tooltipFormat: 'HH:mm', displayFormats: { hour: 'HH:mm' }},
+                    type: 'category',
                     grid: { display: false },
-                    ticks: { color: '#b2fefa', font: { weight: 'bold' } }
+                    ticks: { 
+                        color: '#b2fefa', 
+                        font: { weight: 'bold' },
+                        maxTicksLimit: window.innerWidth < 768 ? 6 : 12,
+                        maxRotation: window.innerWidth < 768 ? 45 : 0
+                    }
                 } : {
                     grid: { display: false },
-                    ticks: { color: '#b2fefa', font: { weight: 'bold' } }
+                    ticks: { 
+                        color: '#b2fefa', 
+                        font: { weight: 'bold' },
+                        maxTicksLimit: window.innerWidth < 768 ? 6 : 12,
+                        maxRotation: window.innerWidth < 768 ? 45 : 0
+                    }
                 },
                 y: { 
                     beginAtZero: true,
                     grid: { color: 'rgba(0,242,254,0.1)' },
-                    ticks: { color: '#b2fefa', font: { weight: 'bold' } }
+                    ticks: { 
+                        color: '#b2fefa', 
+                        font: { weight: 'bold' },
+                        maxTicksLimit: window.innerWidth < 768 ? 5 : 8
+                    }
                 }
             }
         };
 
-        revenueChartInstance = new Chart(ctx, { type: chartType, data: chartData, options: chartOptions, plugins: [neonShadowPlugin] });
+        revenueChartInstance = new Chart(ctx, { type: revenueFilter === 'today' ? 'line' : 'bar', data: chartData, options: chartOptions, plugins: [neonShadowPlugin] });
     }
 
     function setRevenueFilter(filter: string) { 
@@ -239,110 +331,113 @@
 
     async function fetchAndRenderDebtCreatedChart() {
         if (debtCreatedChartInstance) debtCreatedChartInstance.destroy();
-        
         const ctx = document.getElementById('debtCreatedChart') as HTMLCanvasElement;
         if (!ctx) return;
         const ctx2d = ctx.getContext('2d');
         if (!ctx2d) return;
-
-        try {
-            const { data, error } = await supabase.rpc('get_debt_created_vs_paid', { filter_option: debtCreatedFilter });
-            if (error) throw error;
-            
-            const chartType = debtCreatedFilter === 'today' ? 'line' : 'bar';
-            let debtCreatedData, debtPaidData, labels;
-
-            if (chartType === 'line') {
-                labels = data.map((d: any) => new Date(d.period).getTime());
-                debtCreatedData = data.map((d: any) => ({ x: new Date(d.period).getTime(), y: d.debt_created }));
-                debtPaidData = data.map((d: any) => ({ x: new Date(d.period).getTime(), y: d.debt_paid }));
-            } else {
-                labels = data.map((d: any) => d.period);
-                debtCreatedData = data.map((d: any) => d.debt_created);
-                debtPaidData = data.map((d: any) => d.debt_paid);
-            }
-
-            const debtCreatedGradient = createNeonGradient(ctx2d, '#ff6a00', '#ee0979');
-            const debtPaidGradient = createNeonGradient(ctx2d, '#43e97b', '#38f9d7');
-
-            debtCreatedChartInstance = new Chart(ctx, {
-                type: chartType,
-                data: {
-                    labels: labels,
-                    datasets: [
-                        {
-                            label: 'Debt Created',
-                            data: debtCreatedData,
-                            backgroundColor: debtCreatedGradient,
-                            borderColor: '#ff6a00',
-                            borderWidth: 3,
-                            pointBackgroundColor: '#fff',
-                            pointBorderColor: '#ff6a00',
-                            pointRadius: 6,
-                            fill: true,
-                            tension: 0.4,
-                        },
-                        {
-                            label: 'Debt Paid',
-                            data: debtPaidData,
-                            backgroundColor: debtPaidGradient,
-                            borderColor: '#43e97b',
-                            borderWidth: 3,
-                            pointBackgroundColor: '#fff',
-                            pointBorderColor: '#43e97b',
-                            pointRadius: 6,
-                            fill: true,
-                            tension: 0.4,
-                        }
-                    ]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: { 
-                            position: 'top',
-                            labels: {
-                                color: '#fff',
-                                font: { weight: 'bold' }
-                            }
-                        },
-                        tooltip: {
-                            backgroundColor: 'rgba(30,30,60,0.95)',
-                            titleColor: '#ff6a00',
-                            bodyColor: '#fff',
-                            borderColor: '#ff6a00',
-                            borderWidth: 2,
-                            padding: 12,
-                            cornerRadius: 8,
-                            mode: 'index',
-                            intersect: false,
+        const { data, error } = await supabase.rpc('get_debt_created_vs_paid', { filter_option: debtCreatedFilter });
+        if (error) throw error;
+        let labels, debtCreatedData, debtPaidData;
+        if (debtCreatedFilter === 'today') {
+            labels = data.map((d: any) => new Date(d.period).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+            debtCreatedData = data.map((d: any) => d.debt_created);
+            debtPaidData = data.map((d: any) => d.debt_paid);
+        } else if (debtCreatedFilter === 'week') {
+            labels = data.map((d: any) => new Date(d.period).toLocaleDateString('en-US', { weekday: 'short' }));
+            debtCreatedData = data.map((d: any) => d.debt_created);
+            debtPaidData = data.map((d: any) => d.debt_paid);
+        } else if (debtCreatedFilter === 'month') {
+            labels = data.map((d: any) => new Date(d.period).getDate().toString().padStart(2, '0'));
+            debtCreatedData = data.map((d: any) => d.debt_created);
+            debtPaidData = data.map((d: any) => d.debt_paid);
+        } else if (debtCreatedFilter === 'year') {
+            labels = data.map((d: any) => new Date(d.period).toLocaleDateString('en-US', { month: 'short' }));
+            debtCreatedData = data.map((d: any) => d.debt_created);
+            debtPaidData = data.map((d: any) => d.debt_paid);
+        }
+        const debtCreatedGradient = createNeonGradient(ctx2d, '#ff6a00', '#ee0979');
+        const debtPaidGradient = createNeonGradient(ctx2d, '#43e97b', '#38f9d7');
+        debtCreatedChartInstance = new Chart(ctx, {
+            type: debtCreatedFilter === 'today' ? 'line' : 'bar',
+            data: {
+                labels: labels,
+                datasets: [
+                    {
+                        label: 'Debt Created',
+                        data: debtCreatedData,
+                        backgroundColor: debtCreatedGradient,
+                        borderColor: '#ff6a00',
+                        borderWidth: 3,
+                        pointBackgroundColor: '#fff',
+                        pointBorderColor: '#ff6a00',
+                        pointRadius: 6,
+                        fill: true,
+                        tension: 0.4,
+                    },
+                    {
+                        label: 'Debt Paid',
+                        data: debtPaidData,
+                        backgroundColor: debtPaidGradient,
+                        borderColor: '#43e97b',
+                        borderWidth: 3,
+                        pointBackgroundColor: '#fff',
+                        pointBorderColor: '#43e97b',
+                        pointRadius: 6,
+                        fill: true,
+                        tension: 0.4,
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                resizeDelay: 200,
+                plugins: {
+                    legend: { 
+                        position: 'top',
+                        labels: {
+                            color: '#fff',
+                            font: { weight: 'bold' },
+                            padding: window.innerWidth < 768 ? 10 : 20
                         }
                     },
-                    scales: {
-                        x: chartType === 'line' ? {
-                            type: 'time',
-                            time: { unit: 'hour', tooltipFormat: 'HH:mm', displayFormats: { hour: 'HH:mm' } },
-                            grid: { display: false },
-                            ticks: { color: '#fff', font: { weight: 'bold' } }
-                        } : {
-                            stacked: true,
-                            grid: { display: false },
-                            ticks: { color: '#fff', font: { weight: 'bold' } }
-                        },
-                        y: { 
-                            stacked: chartType === 'bar',
-                            beginAtZero: true,
-                            grid: { color: 'rgba(255,106,0,0.1)' },
-                            ticks: { color: '#fff', font: { weight: 'bold' } }
-                        }
+                    tooltip: {
+                        backgroundColor: 'rgba(30,30,60,0.95)',
+                        titleColor: '#ff6a00',
+                        bodyColor: '#fff',
+                        borderColor: '#ff6a00',
+                        borderWidth: 2,
+                        padding: 12,
+                        cornerRadius: 8,
+                        mode: 'index',
+                        intersect: false,
                     }
                 },
-                plugins: [neonShadowPlugin]
-            });
-        } catch (err) {
-            console.error('Error fetching debt data:', err);
-        }
+                scales: {
+                    x: {
+                        type: 'category',
+                        grid: { display: false },
+                        ticks: { 
+                            color: '#fff', 
+                            font: { weight: 'bold' },
+                            maxTicksLimit: window.innerWidth < 768 ? 6 : 12,
+                            maxRotation: window.innerWidth < 768 ? 45 : 0
+                        }
+                    },
+                    y: { 
+                        stacked: debtCreatedFilter !== 'today',
+                        beginAtZero: true,
+                        grid: { color: 'rgba(255,106,0,0.1)' },
+                        ticks: { 
+                            color: '#fff', 
+                            font: { weight: 'bold' },
+                            maxTicksLimit: window.innerWidth < 768 ? 5 : 8
+                        }
+                    }
+                }
+            },
+            plugins: [neonShadowPlugin]
+        });
     }
 
     function setDebtCreatedFilter(filter: 'today' | 'week' | 'month' | 'year') {
@@ -365,8 +460,29 @@
             console.error('Error fetching cash collected chart data:', error);
             return;
         }
-        const labels = data.map((row: any) => new Date(row.period_start).toLocaleDateString());
-        const values = data.map((row: any) => Number(row.cash_collected));
+        let labels, values;
+        if (cashCollectedPeriod === 'day') {
+            // Use the new event-level function for the day period
+            const { data: eventData, error: eventError } = await supabase.rpc('get_cash_collected_events', {
+                p_start_date: cashCollectedStartDate.toISOString(),
+                p_end_date: cashCollectedEndDate.toISOString()
+            });
+            if (eventError || !eventData) {
+                console.error('Error fetching cash collected events:', eventError);
+                return;
+            }
+            labels = eventData.map((row: any) => new Date(row.period).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+            values = eventData.map((row: any) => Number(row.cash_collected));
+        } else if (cashCollectedPeriod === 'week') {
+            labels = data.map((row: any) => new Date(row.period_start).toLocaleDateString('en-US', { weekday: 'short' }));
+            values = data.map((row: any) => Number(row.cash_collected));
+        } else if (cashCollectedPeriod === 'month') {
+            labels = data.map((row: any) => new Date(row.period_start).getDate().toString().padStart(2, '0'));
+            values = data.map((row: any) => Number(row.cash_collected));
+        } else if (cashCollectedPeriod === 'year') {
+            labels = data.map((row: any) => new Date(row.period_start).toLocaleDateString('en-US', { month: 'short' }));
+            values = data.map((row: any) => Number(row.cash_collected));
+        }
         const gradient = createNeonGradient(ctx2d, '#43e97b', '#38f9d7');
         cashCollectedChartInstance = new Chart(ctx, {
             type: 'line',
@@ -388,6 +504,7 @@
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
+                resizeDelay: 200,
                 plugins: {
                     legend: { display: false },
                     tooltip: {
@@ -402,13 +519,23 @@
                 },
                 scales: {
                     x: {
+                        type: 'category',
                         grid: { display: false },
-                        ticks: { color: '#b2fefa', font: { weight: 'bold' } }
+                        ticks: { 
+                            color: '#b2fefa', 
+                            font: { weight: 'bold' },
+                            maxTicksLimit: window.innerWidth < 768 ? 6 : 12,
+                            maxRotation: window.innerWidth < 768 ? 45 : 0
+                        }
                     },
                     y: {
                         beginAtZero: true,
                         grid: { color: 'rgba(67,233,123,0.1)' },
-                        ticks: { color: '#b2fefa', font: { weight: 'bold' } }
+                        ticks: { 
+                            color: '#b2fefa', 
+                            font: { weight: 'bold' },
+                            maxTicksLimit: window.innerWidth < 768 ? 5 : 8
+                        }
                     }
                 }
             },
@@ -416,43 +543,85 @@
         });
     }
 
-    function onCashCollectedFilterChange() {
+    // Debounced chart update functions
+    const debouncedCashCollectedUpdate = debounce(() => {
         fetchAndRenderCashCollectedChart();
+    }, 300);
+    
+    const debouncedCreditUpdate = debounce(() => {
+        fetchAndRenderCreditChart();
+    }, 300);
+    
+    const debouncedDebtUpdate = debounce(() => {
+        fetchAndRenderDebtChart();
+    }, 300);
+    
+    const debouncedTotalSpentUpdate = debounce(() => {
+        fetchAndRenderTotalSpentChart();
+    }, 300);
+    
+    function onCashCollectedFilterChange() {
+        debouncedCashCollectedUpdate();
+    }
+    
+    // Functions to set appropriate date ranges based on period
+    function updateDateRangeForPeriod(type: string, period: 'day' | 'week' | 'month') {
+        const now = new Date();
+        let startDate: Date;
+        let endDate = new Date(now);
+        
+        switch(period) {
+            case 'day':
+                startDate = new Date(now);
+                startDate.setHours(0, 0, 0, 0);
+                endDate.setHours(23, 59, 59, 999);
+                break;
+            case 'week':
+                startDate = new Date(now);
+                startDate.setDate(now.getDate() - 7);
+                startDate.setHours(0, 0, 0, 0);
+                endDate.setHours(23, 59, 59, 999);
+                break;
+            case 'month':
+                startDate = new Date(now);
+                startDate.setDate(now.getDate() - 30);
+                startDate.setHours(0, 0, 0, 0);
+                endDate.setHours(23, 59, 59, 999);
+                break;
+            default:
+                startDate = new Date(now);
+                startDate.setDate(now.getDate() - 7);
+        }
+        
+        switch(type) {
+            case 'cashCollected':
+                cashCollectedStartDate = startDate;
+                cashCollectedEndDate = endDate;
+                cashCollectedStartDateStr = startDate.toISOString().split('T')[0];
+                cashCollectedEndDateStr = endDate.toISOString().split('T')[0];
+                break;
+            case 'credit':
+                creditStartDate = startDate;
+                creditEndDate = endDate;
+                creditStartDateStr = startDate.toISOString().split('T')[0];
+                creditEndDateStr = endDate.toISOString().split('T')[0];
+                break;
+            case 'debt':
+                debtStartDate = startDate;
+                debtEndDate = endDate;
+                debtStartDateStr = startDate.toISOString().split('T')[0];
+                debtEndDateStr = endDate.toISOString().split('T')[0];
+                break;
+        }
     }
 
-    let cashPaidLoading = false;
-    let cashPaidError = '';
-    let cashPaidData: any[] = [];
-    async function fetchAndRenderCashPaidChart() {
-      cashPaidLoading = true;
-      cashPaidError = '';
-      if (cashPaidChartInstance) cashPaidChartInstance.destroy();
-      const ctx = document.getElementById('cashPaidChart') as HTMLCanvasElement;
-      if (!ctx) { cashPaidLoading = false; return; }
-      const ctx2d = ctx.getContext('2d');
-      if (!ctx2d) { cashPaidLoading = false; return; }
-      try {
-        const { data, error } = await supabase.rpc('get_cash_paid_over_time', {
-          p_period: cashPaidPeriod,
-          p_start_date: new Date(cashPaidStartDate).toISOString(),
-          p_end_date: new Date(cashPaidEndDate).toISOString()
-        });
-        if (error) throw error;
-        cashPaidData = data;
-        const labels = data.map((row: any) => new Date(row.period).toLocaleDateString());
-        const values = data.map((row: any) => Number(row.cash_paid));
-        const gradient = createNeonGradient(ctx2d, '#43e97b', '#38f9d7');
-        cashPaidChartInstance = new Chart(ctx, {
-          type: 'line',
-          data: { labels, datasets: [{ label: 'Cash Paid', data: values, borderColor: '#43e97b', backgroundColor: gradient, borderWidth: 3, pointBackgroundColor: '#fff', pointBorderColor: '#43e97b', pointRadius: 6, fill: true, tension: 0.4 }] },
-          options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { backgroundColor: 'rgba(30,30,60,0.95)', titleColor: '#43e97b', bodyColor: '#fff', borderColor: '#43e97b', borderWidth: 2, padding: 12, cornerRadius: 8 } }, scales: { x: { grid: { display: false }, ticks: { color: '#b2fefa', font: { weight: 'bold' } } }, y: { beginAtZero: true, grid: { color: 'rgba(67,233,123,0.1)' }, ticks: { color: '#b2fefa', font: { weight: 'bold' } } } } }, plugins: [neonShadowPlugin] });
-      } catch (err: any) {
-        cashPaidError = err.message || 'Failed to load chart data.';
-      } finally {
-        cashPaidLoading = false;
-      }
+    // Update charts when periods change and auto-adjust date ranges
+    $: {
+        if (cashCollectedPeriod) {
+            updateDateRangeForPeriod('cashCollected', cashCollectedPeriod);
+            debouncedCashCollectedUpdate();
+        }
     }
-    const debouncedFetchAndRenderCashPaidChart = debounce(fetchAndRenderCashPaidChart, 300);
 
     async function fetchAndRenderCreditChart() {
         if (creditChartInstance) creditChartInstance.destroy();
@@ -466,13 +635,77 @@
             p_end_date: creditEndDate.toISOString()
         });
         if (error || !data) { console.error('Error fetching credit data:', error); return; }
-        const labels = data.map((row: any) => new Date(row.period).toLocaleDateString());
-        const values = data.map((row: any) => Number(row.credit));
+        
+        let labels, values;
+        if (creditPeriod === 'day') {
+            labels = data.map((row: any) => new Date(row.period).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+            values = data.map((row: any) => Number(row.credit));
+        } else if (creditPeriod === 'week') {
+            labels = data.map((row: any) => new Date(row.period).toLocaleDateString('en-US', { weekday: 'short' }));
+            values = data.map((row: any) => Number(row.credit));
+        } else if (creditPeriod === 'month') {
+            labels = data.map((row: any) => new Date(row.period).getDate().toString().padStart(2, '0'));
+            values = data.map((row: any) => Number(row.credit));
+        }
+        
         const gradient = createNeonGradient(ctx2d, '#00f2fe', '#4facfe');
         creditChartInstance = new Chart(ctx, {
             type: 'line',
-            data: { labels, datasets: [{ label: 'Credit', data: values, borderColor: '#00f2fe', backgroundColor: gradient, borderWidth: 3, pointBackgroundColor: '#fff', pointBorderColor: '#00f2fe', pointRadius: 6, fill: true, tension: 0.4 }] },
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { backgroundColor: 'rgba(30,30,60,0.95)', titleColor: '#00f2fe', bodyColor: '#fff', borderColor: '#00f2fe', borderWidth: 2, padding: 12, cornerRadius: 8 } }, scales: { x: { grid: { display: false }, ticks: { color: '#b2fefa', font: { weight: 'bold' } } }, y: { beginAtZero: true, grid: { color: 'rgba(0,242,254,0.1)' }, ticks: { color: '#b2fefa', font: { weight: 'bold' } } } } }, plugins: [neonShadowPlugin] });
+            data: { 
+                labels, 
+                datasets: [{ 
+                    label: 'Credit', 
+                    data: values, 
+                    borderColor: '#00f2fe', 
+                    backgroundColor: gradient, 
+                    borderWidth: 3, 
+                    pointBackgroundColor: '#fff', 
+                    pointBorderColor: '#00f2fe', 
+                    pointRadius: 6, 
+                    fill: true, 
+                    tension: 0.4 
+                }] 
+            },
+            options: { 
+                responsive: true, 
+                maintainAspectRatio: false, 
+                resizeDelay: 200,
+                plugins: { 
+                    legend: { display: false }, 
+                    tooltip: { 
+                        backgroundColor: 'rgba(30,30,60,0.95)', 
+                        titleColor: '#00f2fe', 
+                        bodyColor: '#fff', 
+                        borderColor: '#00f2fe', 
+                        borderWidth: 2, 
+                        padding: 12, 
+                        cornerRadius: 8 
+                    } 
+                }, 
+                scales: { 
+                    x: { 
+                        type: 'category',
+                        grid: { display: false }, 
+                        ticks: { 
+                            color: '#b2fefa', 
+                            font: { weight: 'bold' },
+                            maxTicksLimit: window.innerWidth < 768 ? 6 : 12,
+                            maxRotation: window.innerWidth < 768 ? 45 : 0
+                        } 
+                    }, 
+                    y: { 
+                        beginAtZero: true, 
+                        grid: { color: 'rgba(0,242,254,0.1)' }, 
+                        ticks: { 
+                            color: '#b2fefa', 
+                            font: { weight: 'bold' },
+                            maxTicksLimit: window.innerWidth < 768 ? 5 : 8
+                        } 
+                    } 
+                } 
+            }, 
+            plugins: [neonShadowPlugin] 
+        });
     }
 
     async function fetchAndRenderDebtChart() {
@@ -487,13 +720,77 @@
             p_end_date: debtEndDate.toISOString()
         });
         if (error || !data) { console.error('Error fetching debt data:', error); return; }
-        const labels = data.map((row: any) => new Date(row.period).toLocaleDateString());
-        const values = data.map((row: any) => Number(row.debt));
+        
+        let labels, values;
+        if (debtPeriod === 'day') {
+            labels = data.map((row: any) => new Date(row.period).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+            values = data.map((row: any) => Number(row.debt));
+        } else if (debtPeriod === 'week') {
+            labels = data.map((row: any) => new Date(row.period).toLocaleDateString('en-US', { weekday: 'short' }));
+            values = data.map((row: any) => Number(row.debt));
+        } else if (debtPeriod === 'month') {
+            labels = data.map((row: any) => new Date(row.period).getDate().toString().padStart(2, '0'));
+            values = data.map((row: any) => Number(row.debt));
+        }
+        
         const gradient = createNeonGradient(ctx2d, '#ff6a00', '#ee0979');
         debtChartInstance = new Chart(ctx, {
             type: 'line',
-            data: { labels, datasets: [{ label: 'Debt', data: values, borderColor: '#ff6a00', backgroundColor: gradient, borderWidth: 3, pointBackgroundColor: '#fff', pointBorderColor: '#ff6a00', pointRadius: 6, fill: true, tension: 0.4 }] },
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { backgroundColor: 'rgba(30,30,60,0.95)', titleColor: '#ff6a00', bodyColor: '#fff', borderColor: '#ff6a00', borderWidth: 2, padding: 12, cornerRadius: 8 } }, scales: { x: { grid: { display: false }, ticks: { color: '#b2fefa', font: { weight: 'bold' } } }, y: { beginAtZero: true, grid: { color: 'rgba(255,106,0,0.1)' }, ticks: { color: '#b2fefa', font: { weight: 'bold' } } } } }, plugins: [neonShadowPlugin] });
+            data: { 
+                labels, 
+                datasets: [{ 
+                    label: 'Debt', 
+                    data: values, 
+                    borderColor: '#ff6a00', 
+                    backgroundColor: gradient, 
+                    borderWidth: 3, 
+                    pointBackgroundColor: '#fff', 
+                    pointBorderColor: '#ff6a00', 
+                    pointRadius: 6, 
+                    fill: true, 
+                    tension: 0.4 
+                }] 
+            },
+            options: { 
+                responsive: true, 
+                maintainAspectRatio: false, 
+                resizeDelay: 200,
+                plugins: { 
+                    legend: { display: false }, 
+                    tooltip: { 
+                        backgroundColor: 'rgba(30,30,60,0.95)', 
+                        titleColor: '#ff6a00', 
+                        bodyColor: '#fff', 
+                        borderColor: '#ff6a00', 
+                        borderWidth: 2, 
+                        padding: 12, 
+                        cornerRadius: 8 
+                    } 
+                }, 
+                scales: { 
+                    x: { 
+                        type: 'category',
+                        grid: { display: false }, 
+                        ticks: { 
+                            color: '#b2fefa', 
+                            font: { weight: 'bold' },
+                            maxTicksLimit: window.innerWidth < 768 ? 6 : 12,
+                            maxRotation: window.innerWidth < 768 ? 45 : 0
+                        } 
+                    }, 
+                    y: { 
+                        beginAtZero: true, 
+                        grid: { color: 'rgba(255,106,0,0.1)' }, 
+                        ticks: { 
+                            color: '#b2fefa', 
+                            font: { weight: 'bold' },
+                            maxTicksLimit: window.innerWidth < 768 ? 5 : 8
+                        } 
+                    } 
+                } 
+            }, 
+            plugins: [neonShadowPlugin] 
+        });
     }
 
     async function fetchAndRenderTotalSpentChart() {
@@ -514,22 +811,66 @@
         totalSpentChartInstance = new Chart(ctx, {
             type: 'bar',
             data: { labels, datasets: [{ label: 'Total Spent', data: values, backgroundColor: gradient, borderColor: '#b993d6', borderWidth: 3 }] },
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { backgroundColor: 'rgba(30,30,60,0.95)', titleColor: '#b993d6', bodyColor: '#fff', borderColor: '#b993d6', borderWidth: 2, padding: 12, cornerRadius: 8 } }, scales: { x: { grid: { display: false }, ticks: { color: '#b2fefa', font: { weight: 'bold' } } }, y: { beginAtZero: true, grid: { color: 'rgba(185,147,214,0.1)' }, ticks: { color: '#b2fefa', font: { weight: 'bold' } } } } }, plugins: [neonShadowPlugin] });
+            options: { 
+                responsive: true, 
+                maintainAspectRatio: false, 
+                resizeDelay: 200,
+                plugins: { 
+                    legend: { display: false }, 
+                    tooltip: { 
+                        backgroundColor: 'rgba(30,30,60,0.95)', 
+                        titleColor: '#b993d6', 
+                        bodyColor: '#fff', 
+                        borderColor: '#b993d6', 
+                        borderWidth: 2, 
+                        padding: 12, 
+                        cornerRadius: 8 
+                    } 
+                }, 
+                scales: { 
+                    x: { 
+                        grid: { display: false }, 
+                        ticks: { 
+                            color: '#b2fefa', 
+                            font: { weight: 'bold' },
+                            maxTicksLimit: window.innerWidth < 768 ? 6 : 12,
+                            maxRotation: window.innerWidth < 768 ? 45 : 0
+                        } 
+                    }, 
+                    y: { 
+                        beginAtZero: true, 
+                        grid: { color: 'rgba(185,147,214,0.1)' }, 
+                        ticks: { 
+                            color: '#b2fefa', 
+                            font: { weight: 'bold' },
+                            maxTicksLimit: window.innerWidth < 768 ? 5 : 8
+                        } 
+                    } 
+                } 
+            }, plugins: [neonShadowPlugin] });
     }
 
     // Fetch on mount and whenever filters change
     onMount(() => {
-        fetchAndRenderCashPaidChart();
         fetchAndRenderCreditChart();
         fetchAndRenderDebtChart();
         fetchAndRenderTotalSpentChart();
     });
 
-    // Update on change
-    $: cashPaidPeriod, cashPaidStartDate, cashPaidEndDate, fetchAndRenderCashPaidChart();
-    $: creditPeriod, creditStartDate, creditEndDate, fetchAndRenderCreditChart();
-    $: debtPeriod, debtStartDate, debtEndDate, fetchAndRenderDebtChart();
-    $: totalSpentStartDate, totalSpentEndDate, totalSpentLimit, fetchAndRenderTotalSpentChart();
+    // Update on change with debounced functions - period changes auto-adjust date ranges
+    $: {
+        if (creditPeriod) {
+            updateDateRangeForPeriod('credit', creditPeriod);
+            debouncedCreditUpdate();
+        }
+    }
+    $: {
+        if (debtPeriod) {
+            updateDateRangeForPeriod('debt', debtPeriod);
+            debouncedDebtUpdate();
+        }
+    }
+    $: totalSpentLimit, debouncedTotalSpentUpdate();
 
     // Utility: debounce
     function debounce<T extends (...args: any[]) => void>(fn: T, delay: number): T {
@@ -698,10 +1039,18 @@
                 </select>
               </label>
               <label class="form-label">Start Date:
-                <input type="date" bind:value={cashCollectedStartDate} on:change={onCashCollectedFilterChange} class="form-control" />
+                <DatePicker 
+                  bind:value={cashCollectedStartDateStr} 
+                  placeholder="Start date"
+                  on:change={(e) => handleDateStringChange('cashCollected', true, e.detail.value)}
+                />
               </label>
               <label class="form-label">End Date:
-                <input type="date" bind:value={cashCollectedEndDate} on:change={onCashCollectedFilterChange} class="form-control" />
+                <DatePicker 
+                  bind:value={cashCollectedEndDateStr} 
+                  placeholder="End date"
+                  on:change={(e) => handleDateStringChange('cashCollected', false, e.detail.value)}
+                />
               </label>
             </div>
             <div class="chart-wrapper">
@@ -712,37 +1061,6 @@
       </section>
 
       <section class="grid grid-2 gap-4">
-        <div class="glass">
-          <div class="card-header">
-            <h2 class="neon-text-cyan">Cash Paid Over Time</h2>
-          </div>
-          <div class="card-body">
-            <div class="filters">
-              <label class="form-label">Period:
-                <select id="cashPaidPeriod" bind:value={cashPaidPeriod} on:change={debouncedFetchAndRenderCashPaidChart} class="form-control form-select">
-                  <option value="day">Day</option>
-                  <option value="week">Week</option>
-                  <option value="month">Month</option>
-                </select>
-              </label>
-              <label class="form-label">Start Date:
-                <input id="cashPaidStartDate" type="date" bind:value={cashPaidStartDate} on:change={debouncedFetchAndRenderCashPaidChart} class="form-control" />
-              </label>
-              <label class="form-label">End Date:
-                <input id="cashPaidEndDate" type="date" bind:value={cashPaidEndDate} on:change={debouncedFetchAndRenderCashPaidChart} class="form-control" />
-              </label>
-              <button type="button" class="btn btn-secondary" on:click={() => exportToCSV('cash_paid.csv', cashPaidData, ['period','cash_paid'])}>Export CSV</button>
-            </div>
-            {#if cashPaidLoading}
-              <div class="text-center"><div class="spinner-large"></div></div>
-            {:else if cashPaidError}
-              <div class="alert alert-danger">{cashPaidError}</div>
-            {:else}
-              <canvas id="cashPaidChart" width="600" height="300"></canvas>
-            {/if}
-          </div>
-        </div>
-
         <div class="glass">
           <div class="card-header">
             <h2 class="neon-text-cyan">Credit Over Time</h2>
@@ -757,10 +1075,18 @@
                 </select>
               </label>
               <label class="form-label">Start Date:
-                <input type="date" bind:value={creditStartDate} class="form-control" />
+                <DatePicker 
+                  bind:value={creditStartDateStr} 
+                  placeholder="Start date"
+                  on:change={(e) => handleDateStringChange('credit', true, e.detail.value)}
+                />
               </label>
               <label class="form-label">End Date:
-                <input type="date" bind:value={creditEndDate} class="form-control" />
+                <DatePicker 
+                  bind:value={creditEndDateStr} 
+                  placeholder="End date"
+                  on:change={(e) => handleDateStringChange('credit', false, e.detail.value)}
+                />
               </label>
             </div>
             <div class="chart-wrapper">
@@ -783,10 +1109,18 @@
                 </select>
               </label>
               <label class="form-label">Start Date:
-                <input type="date" bind:value={debtStartDate} class="form-control" />
+                <DatePicker 
+                  bind:value={debtStartDateStr} 
+                  placeholder="Start date"
+                  on:change={(e) => handleDateStringChange('debt', true, e.detail.value)}
+                />
               </label>
               <label class="form-label">End Date:
-                <input type="date" bind:value={debtEndDate} class="form-control" />
+                <DatePicker 
+                  bind:value={debtEndDateStr} 
+                  placeholder="End date"
+                  on:change={(e) => handleDateStringChange('debt', false, e.detail.value)}
+                />
               </label>
             </div>
             <div class="chart-wrapper">
@@ -802,10 +1136,18 @@
           <div class="card-body">
             <div class="filters">
               <label class="form-label">Start Date:
-                <input type="date" bind:value={totalSpentStartDate} class="form-control" />
+                <DatePicker 
+                  bind:value={totalSpentStartDateStr} 
+                  placeholder="Start date"
+                  on:change={(e) => handleDateStringChange('totalSpent', true, e.detail.value)}
+                />
               </label>
               <label class="form-label">End Date:
-                <input type="date" bind:value={totalSpentEndDate} class="form-control" />
+                <DatePicker 
+                  bind:value={totalSpentEndDateStr} 
+                  placeholder="End date"
+                  on:change={(e) => handleDateStringChange('totalSpent', false, e.detail.value)}
+                />
               </label>
               <label class="form-label">Limit:
                 <input type="number" min="1" max="50" bind:value={totalSpentLimit} class="form-control" />
@@ -829,7 +1171,6 @@
   }
 
   .admin-container {
-    max-width: 1400px;
     margin: 0 auto;
     padding: 2rem;
   }
@@ -919,12 +1260,20 @@
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
+    min-width: 120px;
   }
 
   .chart-wrapper {
     position: relative;
     height: 300px;
     width: 100%;
+    min-height: 250px;
+    overflow: hidden;
+  }
+
+  .chart-wrapper canvas {
+    max-width: 100% !important;
+    height: auto !important;
   }
 
   .user-list {
@@ -952,6 +1301,7 @@
     font-size: 1.5rem;
   }
 
+  /* Enhanced mobile responsiveness */
   @media (max-width: 1200px) {
     .admin-container {
       padding: 1rem;
@@ -960,9 +1310,17 @@
     .grid-3 {
       grid-template-columns: repeat(2, 1fr);
     }
+
+    .chart-wrapper {
+      height: 280px;
+    }
   }
 
   @media (max-width: 768px) {
+    .admin-container {
+      padding: 0.75rem;
+    }
+
     .starry-toggle-row {
       flex-direction: column;
       gap: 1rem;
@@ -977,10 +1335,114 @@
     .filters {
       flex-direction: column;
       align-items: stretch;
+      gap: 0.75rem;
+    }
+
+    .filters label {
+      min-width: auto;
+      width: 100%;
     }
     
     .filter-btns {
       flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .filter-btns .btn {
+      width: 100%;
+      text-align: center;
+    }
+
+    .chart-wrapper {
+      height: 250px;
+      min-height: 200px;
+    }
+
+    /* Make cards more mobile-friendly */
+    .glass {
+      margin-bottom: 1rem;
+    }
+
+    .card-body {
+      padding: 1rem;
+    }
+
+    .card-header {
+      padding: 0.75rem 1rem;
+    }
+
+    .card-header h2 {
+      font-size: 1.1rem;
+    }
+
+    /* Improve stats grid for mobile */
+    .glass-light {
+      padding: 1rem !important;
+    }
+
+    .glass-light h3 {
+      font-size: 0.9rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .glass-light p {
+      font-size: 1.2rem !important;
+    }
+
+    .user-list {
+      font-size: 0.85rem;
+    }
+  }
+
+  @media (max-width: 480px) {
+    .admin-container {
+      padding: 0.5rem;
+    }
+
+    .chart-wrapper {
+      height: 220px;
+      min-height: 180px;
+    }
+
+    .text-2xl {
+      font-size: 1.2rem;
+    }
+
+    .starry-toggle {
+      padding: 0.4rem 1rem;
+      font-size: 1rem;
+    }
+
+    .glass-light p {
+      font-size: 1.1rem !important;
+    }
+
+    .filters label {
+      font-size: 0.9rem;
+    }
+
+    .form-control,
+    .form-select {
+      font-size: 0.9rem;
+      padding: 0.5rem;
+    }
+  }
+
+  /* Ensure charts scale properly */
+  @media (max-width: 600px) {
+    .chart-wrapper {
+      position: relative;
+      width: 100%;
+      height: 0;
+      padding-bottom: 60%; /* 16:10 aspect ratio for mobile */
+    }
+
+    .chart-wrapper canvas {
+      position: absolute !important;
+      top: 0;
+      left: 0;
+      width: 100% !important;
+      height: 100% !important;
     }
   }
 </style>

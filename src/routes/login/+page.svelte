@@ -140,7 +140,7 @@ input {
     padding: 1.5rem;
     border-radius: 16px;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-    max-width: 400px;
+    max-width: 700px;
     border: 1px solid rgba(255, 255, 255, 0.2);
   }
 

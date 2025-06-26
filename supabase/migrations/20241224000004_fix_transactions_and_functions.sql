@@ -112,7 +112,7 @@ BEGIN
             date_trunc(
                 CASE WHEN filter_option = 'today' THEN 'hour' ELSE 'day' END,
                 (CASE
-                    WHEN filter_option = 'today' THEN now()
+                    WHEN filter_option = 'today' THEN date_trunc('day', now())
                     WHEN filter_option = 'week' THEN date_trunc('week', now())
                     WHEN filter_option = 'month' THEN date_trunc('month', now())
                     WHEN filter_option = 'year' THEN date_trunc('year', now())

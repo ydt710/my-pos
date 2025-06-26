@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy, afterUpdate } from 'svelte';
   import { fly, fade } from 'svelte/transition';
-  import { cartStore } from '$lib/stores/cartStore';
+  import { cartStore, cartVisible as globalCartVisible, toggleCart as globalToggleCart } from '$lib/stores/cartStore';
   import { loadAllProductsCached } from '$lib/services/productService';
   import { supabase } from '$lib/supabase';
   import type { Product } from '$lib/types/index';
@@ -19,6 +19,7 @@
   import { clearProductCache } from '$lib/services/cacheService';
   import Footer from '$lib/components/Footer.svelte';
   import { debounce } from '$lib/utils';
+  import { CATEGORY_ICONS, CATEGORY_BACKGROUNDS } from '$lib/constants';
 
   // Landing page data
   let landingHero: any = null;
@@ -30,7 +31,6 @@
 
   let allProducts: Product[] = [];
   let products: Product[] = [];
-  let cartVisible = false;
   let menuVisible = false;
   let loading = false;
   let error: string | null = null;
@@ -67,19 +67,28 @@
     'headshop': 'Headshop'
   };
 
-  // Icon mapping for categories
-  const categoryIcons: Record<string, string> = {
-    joints: 'fa-joint',
-    concentrate: 'fa-vial',
-    flower: 'fa-cannabis',
-    edibles: 'fa-cookie',
-    headshop: 'fa-store'
-  };
-
   let unsubscribe: (() => void) | undefined;
 
   let loadMoreTrigger: HTMLDivElement | null = null;
   let observer: IntersectionObserver | null = null;
+
+  let showFountain = true;
+  let showMap = false;
+  let storesSection: HTMLElement | null = null;
+  let googleMapsUrl = '';
+
+  function handleScroll() {
+    if (!storesSection) return;
+    const rect = storesSection.getBoundingClientRect();
+    // Show map when section is at least halfway into view
+    if (rect.top < window.innerHeight * 0.5) {
+      showFountain = false;
+      showMap = true;
+    } else {
+      showFountain = true;
+      showMap = false;
+    }
+  }
 
   // Function to load landing page data
   async function loadLandingPageData() {
@@ -123,6 +132,14 @@
         .limit(1)
         .maybeSingle();
       landingTestimonials = testimonialsData;
+
+      // Load Google Maps URL from settings
+      const { data: settingsData } = await supabase
+        .from('settings')
+        .select('google_maps_embed_url')
+        .limit(1)
+        .maybeSingle();
+      googleMapsUrl = settingsData?.google_maps_embed_url || 'https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3318.3044078274843!2d18.96933201180263!3d-33.72694127316965!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x1dcda8218f2d8a8b%3A0x65417bfb9430d0bf!2s7%20Mernoleon%20St%2C%20Lemoenkloof%2C%20Paarl%2C%207646!5e0!3m2!1sen!2sza!4v1750808736378!5m2!1sen!2sza';
 
       // Load featured products if product IDs are specified
       if (landingFeaturedProducts?.product_ids?.length > 0) {
@@ -284,6 +301,7 @@
 
     if (typeof window !== 'undefined') {
       window.addEventListener('resize', handleResize);
+      window.addEventListener('scroll', handleScroll);
     }
   });
 
@@ -293,34 +311,31 @@
         clearTimeout(resizeTimeout);
       }
       window.removeEventListener('resize', handleResize);
+      window.removeEventListener('scroll', handleScroll);
     }
     if (observer) observer.disconnect();
   });
 
   $: categoryBackgroundStyle = '';
 
-  function addToCart(e: CustomEvent) {
-    const product = e.detail;
-    
-    cartVisible = true;
-  }
+
 
   function toggleCart() {
-    cartVisible = !cartVisible;
+    globalToggleCart();
     if (menuVisible) menuVisible = false;
   }
 
   function toggleMenu() {
     menuVisible = !menuVisible;
-    if (cartVisible) cartVisible = false;
+    if ($globalCartVisible) globalCartVisible.set(false);
   }
 
   function handleLogoClick() {
     activeCategory = '';
   }
 
-  function handleShowDetails(event: CustomEvent<{product: Product}>) {
-    selectedProduct = event.detail.product;
+  function handleShowDetails(product: Product) {
+    selectedProduct = product;
   }
 
   function closeProductModal() {
@@ -425,6 +440,7 @@
     } else {
       activeCategory = categoryId;
     }
+    filterProducts(); // Ensure products are filtered by the selected category
     // Scroll to products section
     const productsSection = document.getElementById('products-section');
     if (productsSection) {
@@ -483,7 +499,14 @@
             {#if featuredProducts.length > 0}
               <div class="hero-product-showcase">
                 {#each featuredProducts.slice(0, 3) as product}
-                  <div class="hero-product glass-light hover-glow">
+                  <div
+                    class="hero-product glass-light hover-glow"
+                    role="button"
+                    tabindex="0"
+                    on:click={() => handleShowDetails(product)}
+                    on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && handleShowDetails(product)}
+                    aria-label="View details for {product.name}"
+                  >
                     <img src={product.image_url} alt={product.name} class="hero-product-image" />
                     <h4 class="neon-text-cyan">{product.name}</h4>
                     <p class="neon-text-white">R{product.price}</p>
@@ -506,19 +529,23 @@
           </div>
           <div class="categories-grid">
             {#each landingCategories.categories as category}
+              {@const backgroundImage = category.background_image || CATEGORY_BACKGROUNDS[category.id]}
               <div 
                 class="category-card glass hover-glow" 
-                style="--category-color: {category.color}"
+                style="--category-color: {category.color}; {backgroundImage ? `background-image: url('${backgroundImage}'); background-size: cover; background-position: center;` : ''}"
                 on:click={() => handleLandingCategoryClick(category.id)}
                 on:keydown={(e) => e.key === 'Enter' && handleLandingCategoryClick(category.id)}
                 tabindex="0"
                 role="button"
               >
-                <div class="category-icon" style="color: {category.color};">
-                  <i class="fa-solid {categoryIcons[category.id] || 'fa-cannabis'}"></i>
+                <div class="category-overlay"></div>
+                <div class="category-content">
+                  <div class="category-icon" style="color: {category.color};">
+                    <i class="fa-solid {CATEGORY_ICONS[category.id] || 'fa-cannabis'}"></i>
+                  </div>
+                  <h3 class="neon-text-white">{category.name}</h3>
+                  <p class="neon-text-secondary">{category.description}</p>
                 </div>
-                <h3 class="neon-text-white">{category.name}</h3>
-                <p class="neon-text-secondary">{category.description}</p>
               </div>
             {/each}
           </div>
@@ -529,15 +556,32 @@
     <!-- Multiple Stores Section -->
     {#if landingStores}
       <section class="stores-section">
-        <div class="stores-content">
-          <h2 class="neon-text-cyan">{landingStores.title}</h2>
-          <p class="neon-text-white">{landingStores.description}</p>
-          <div class="stores-visual">
-            <div class="store-fountain glass">
-              <div class="fountain-base"></div>
-              <div class="fountain-water"></div>
+        <div class="stores-content" bind:this={storesSection}>
+          {#if showFountain}
+            <div class="stores-fadeout-group" transition:fade={{ duration: 6000 }}>
+              <h2 class="neon-text-cyan">{landingStores.title}</h2>
+              <p class="neon-text-white">{landingStores.description}</p>
+              <div class="stores-visual">
+                <div class="store-fountain glass">
+                  <div class="fountain-base"></div>
+                  <div class="fountain-water"></div>
+                </div>
+              </div>
             </div>
-          </div>
+          {/if}
+          {#if showMap}
+            <div class="map-fullscreen" transition:fade={{ duration: 4000 }}>
+              <iframe
+                src={googleMapsUrl}
+                width="100%"
+                height="100%"
+                style="border:0; border-radius: 24px;"
+                allowfullscreen
+                loading="lazy"
+                referrerpolicy="no-referrer-when-downgrade"
+              ></iframe>
+            </div>
+          {/if}
         </div>
       </section>
     {/if}
@@ -555,8 +599,7 @@
               <ProductCard 
                 {product}
                 stock={stockLevels[product.id] ?? 0}
-                on:addToCart={addToCart}
-                on:showDetails={handleShowDetails}
+                on:showDetails={e => handleShowDetails(e.detail.product)}
                 on:showReview={openReviewModal}
               />
             {/each}
@@ -601,8 +644,8 @@
       <div class="category-header">
         {#if productFilters.search}
           <i class="fa-solid fa-magnifying-glass category-header-icon"></i>
-        {:else if activeCategory && categoryIcons[activeCategory]}
-          <i class="fa-solid {categoryIcons[activeCategory]} category-header-icon"></i>
+        {:else if activeCategory && CATEGORY_ICONS[activeCategory]}
+          <i class="fa-solid {CATEGORY_ICONS[activeCategory]} category-header-icon"></i>
         {/if}
         <input
           type="text"
@@ -627,8 +670,7 @@
               <ProductCard 
                 {product}
                 stock={stockLevels[product.id] ?? 0}
-                on:addToCart={addToCart}
-                on:showDetails={handleShowDetails}
+                on:showDetails={e => handleShowDetails(e.detail.product)}
                 on:showReview={openReviewModal}
               />
             </div>
@@ -645,10 +687,10 @@
 </main>
 
 <!-- Cart Sidebar Component -->
-{#if cartVisible}
-  <div class="cart-overlay" role="button" tabindex="0" aria-label="Close cart sidebar" on:click={() => cartVisible = false} on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { cartVisible = false; } }} style="position: fixed; inset: 0; z-index: 1999; background: transparent;"></div>
+{#if $globalCartVisible}
+  <div class="cart-overlay" role="button" tabindex="0" aria-label="Close cart sidebar" on:click={() => globalCartVisible.set(false)} on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { globalCartVisible.set(false); } }} style="position: fixed; inset: 0; z-index: 1999; background: transparent;"></div>
 {/if}
-<CartSidebar visible={cartVisible} toggleVisibility={toggleCart} isPosUser={isPosUser} />
+<CartSidebar visible={$globalCartVisible} toggleVisibility={toggleCart} isPosUser={isPosUser} />
 
 <!-- Side Menu Component -->
 <SideMenu 
@@ -658,7 +700,16 @@
 />
 
 {#if selectedProduct}
-  <ProductDetailsModal product={selectedProduct} show={true} on:close={closeProductModal} />
+  <ProductDetailsModal 
+    product={selectedProduct} 
+    show={true} 
+    stock={stockLevels[selectedProduct.id] ?? 0}
+    on:close={closeProductModal}
+    on:addToCart={e => {
+      cartStore.addItem({ ...e.detail.product, quantity: e.detail.quantity });
+      globalCartVisible.set(true);
+    }}
+  />
 {/if}
 
 {#if showReviewModal && reviewProduct}
@@ -741,7 +792,7 @@
   }
 
   .hero-product {
-    padding: 1.5rem;
+    
     text-align: center;
     border-radius: 12px;
     cursor: pointer;
@@ -779,61 +830,130 @@
 
   .categories-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    gap: 2rem;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1.5rem;
   }
 
   .category-card {
-    padding: 3rem 2rem;
+    padding: 2rem 1.5rem;
     text-align: center;
-    border-radius: 16px;
+    border-radius: 12px;
     cursor: pointer;
     transition: var(--transition-smooth);
     border: 2px solid transparent;
+    position: relative;
+    overflow: hidden;
+    min-height: 200px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .category-card:hover {
     border-color: var(--category-color);
-    box-shadow: 0 0 30px var(--category-color);
+    box-shadow: 0 0 30px var(--category-color), 0 0 60px rgba(255, 255, 255, 0.1);
     transform: translateY(-5px);
   }
 
+  .category-card:hover .category-overlay {
+    background: rgba(0, 0, 0, 0.2);
+    box-shadow: inset 0 0 50px var(--category-color);
+  }
+
+  .category-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    transition: all 0.3s ease;
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .category-content {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: 0.75rem;
+  }
+
   .category-icon {
-    font-size: 3rem;
-    margin-bottom: 1.5rem;
-    opacity: 0.9;
+    font-size: 2.5rem;
+    margin-bottom: 1rem;
+    opacity: 1;
+    text-shadow: 
+      0 0 10px currentColor,
+      0 0 20px currentColor,
+      0 4px 8px rgba(0, 0, 0, 0.8);
+    filter: drop-shadow(0 0 15px currentColor);
+    transition: all 0.3s ease;
+  }
+
+  .category-card:hover .category-icon {
+    transform: scale(1.1);
+    text-shadow: 
+      0 0 15px currentColor,
+      0 0 30px currentColor,
+      0 4px 8px rgba(0, 0, 0, 0.8);
   }
 
   .category-card h3 {
-    font-size: 1.5rem;
+    font-size: 1.3rem;
     font-weight: 600;
-    margin-bottom: 1rem;
+    margin-bottom: 0.75rem;
+    text-shadow: 
+      0 0 10px rgba(255, 255, 255, 0.8),
+      0 2px 4px rgba(0, 0, 0, 0.9);
+    color: white !important;
+  }
+
+  .category-card p {
+    text-shadow: 
+      0 0 8px rgba(255, 255, 255, 0.6),
+      0 2px 4px rgba(0, 0, 0, 0.9);
+    color: rgba(255, 255, 255, 0.9) !important;
   }
 
   /* Stores Section */
   .stores-section {
-    padding: 6rem 2rem;
-    text-align: center;
-    background: var(--bg-secondary);
+    
+ 
+    min-height: 400px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
   }
 
-  .stores-content h2 {
-    font-size: 3rem;
-    font-weight: 700;
-    margin-bottom: 2rem;
+  .stores-content {
+    width: 100%;
+    max-width: 1200px;
+    min-height: 400px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    position: relative;
   }
 
-  .stores-content p {
-    font-size: 1.2rem;
-    max-width: 600px;
-    margin: 0 auto 3rem;
+  .stores-fadeout-group {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
   }
 
   .stores-visual {
+    position: relative;
+    width: 100%;
+    max-width: 600px;
+    height: 220px;
+    margin: 0 auto;
     display: flex;
-    justify-content: center;
     align-items: center;
-    height: 300px;
+    justify-content: center;
   }
 
   .store-fountain {
@@ -845,6 +965,7 @@
     align-items: center;
     justify-content: center;
     overflow: hidden;
+    margin: 0 auto;
   }
 
   .fountain-base {
@@ -868,6 +989,27 @@
   @keyframes fountain-pulse {
     0%, 100% { transform: scale(1); opacity: 0.3; }
     50% { transform: scale(1.2); opacity: 0.6; }
+  }
+
+  .map-fullscreen {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-secondary);
+    border-radius: 24px;
+    overflow: hidden;
+  }
+
+  .map-fullscreen iframe {
+    width: 100%;
+    height: 100%;
+    min-height: 350px;
+    border-radius: 24px;
   }
 
   /* Featured Products Section */
@@ -932,7 +1074,7 @@
 
   /* Products Section */
   .products-section {
-    padding: 2rem;
+    padding: 1rem;
   }
 
   .category-header {
@@ -968,6 +1110,8 @@
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
     gap: 2rem;
     padding-bottom: 2rem;
+    align-items: start;
+    justify-items: normal;
   }
 
   .loading-container,
@@ -1063,15 +1207,19 @@
       font-size: 2rem;
     }
 
-    .categories-grid,
+    .categories-grid {
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 1rem;
+    }
+    
     .featured-products-grid,
     .testimonials-grid {
       grid-template-columns: 1fr;
     }
 
     .products-grid {
-      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-      gap: 1rem;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 1.5rem;
     }
   }
 
@@ -1086,7 +1234,18 @@
 
     .products-grid {
       grid-template-columns: 1fr;
+      gap: 1rem;
+      padding: 0 0.5rem 2rem 0.5rem;
     }
+  }
+
+  .map-container {
+    width: 100%;
+    max-width: 600px;
+    margin: 0 auto;
+    box-shadow: 0 0 30px var(--neon-cyan);
+    border-radius: 12px;
+    overflow: hidden;
   }
 </style>
 

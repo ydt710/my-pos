@@ -17,6 +17,7 @@ export interface Transaction {
   created_at: string;
   user_id: string;
   order_id: string;
+  order_number?: string;
   category: TransactionCategory;
   method: string; // 'cash', 'card', 'system', etc.
   cash_amount: number;

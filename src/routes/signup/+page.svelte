@@ -769,7 +769,7 @@
      
       border-radius: 16px;
       box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-      max-width: 400px;
+      max-width: 700px;
       width: 100%;
       border: 1px solid rgba(255, 255, 255, 0.2);
       box-sizing: border-box;
@@ -815,7 +815,7 @@
     }
 
     input {
-      width: 100%;
+      width: 50%;
       border: 1px solid rgba(0, 0, 0, 0.1);
       border-radius: 8px;
       font-size: 1rem;
@@ -956,7 +956,7 @@
       border-radius: 6px;
       padding: 2rem;
       text-align: center;
-      background: #f8f9fa;
+      
       transition: all 0.2s;
       max-width: 100%;
       box-sizing: border-box;

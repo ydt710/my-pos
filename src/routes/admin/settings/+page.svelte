@@ -29,6 +29,10 @@
     };
     notification_email: string;
     maintenance_mode: boolean;
+    google_maps_embed_url: string;
+    facebook_url: string;
+    instagram_url: string;
+    twitter_url: string;
   }
 
   let settings: Settings = {
@@ -52,7 +56,11 @@
       sunday: 'Closed'
     },
     notification_email: '',
-    maintenance_mode: false
+    maintenance_mode: false,
+    google_maps_embed_url: '',
+    facebook_url: '',
+    instagram_url: '',
+    twitter_url: ''
   };
 
   let loading = true;
@@ -305,6 +313,67 @@
                 required
                 class="form-control"
               />
+            </div>
+          </div>
+        </section>
+
+        <section class="glass mb-4">
+          <div class="card-header">
+            <h2 class="neon-text-cyan">Google Maps Integration</h2>
+          </div>
+          <div class="card-body">
+            <div class="form-group">
+              <label for="google_maps_embed_url" class="form-label">Google Maps Embed URL</label>
+              <textarea 
+                id="google_maps_embed_url" 
+                bind:value={settings.google_maps_embed_url}
+                rows="3"
+                placeholder="https://www.google.com/maps/embed?pb=..."
+                class="form-control"
+              ></textarea>
+              <p class="help-text">Paste the Google Maps embed URL from Google Maps. Go to Google Maps → Share → Embed a map → Copy HTML → Paste only the src URL part.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="glass mb-4">
+          <div class="card-header">
+            <h2 class="neon-text-cyan">Social Media Links</h2>
+          </div>
+          <div class="card-body">
+            <div class="grid grid-1 gap-3">
+              <div class="form-group">
+                <label for="facebook_url" class="form-label">Facebook Page URL</label>
+                <input 
+                  type="url" 
+                  id="facebook_url" 
+                  bind:value={settings.facebook_url}
+                  placeholder="https://facebook.com/yourpage"
+                  class="form-control"
+                />
+              </div>
+
+              <div class="form-group">
+                <label for="instagram_url" class="form-label">Instagram Profile URL</label>
+                <input 
+                  type="url" 
+                  id="instagram_url" 
+                  bind:value={settings.instagram_url}
+                  placeholder="https://instagram.com/youraccount"
+                  class="form-control"
+                />
+              </div>
+
+              <div class="form-group">
+                <label for="twitter_url" class="form-label">Twitter Profile URL</label>
+                <input 
+                  type="url" 
+                  id="twitter_url" 
+                  bind:value={settings.twitter_url}
+                  placeholder="https://twitter.com/youraccount"
+                  class="form-control"
+                />
+              </div>
             </div>
           </div>
         </section>

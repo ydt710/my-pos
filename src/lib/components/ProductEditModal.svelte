@@ -179,6 +179,30 @@
             <input type="checkbox" bind:checked={localProduct.is_special} />
             <span class="neon-text-cyan">On Special</span>
           </label>
+          <label class="form-checkbox">
+            <input type="checkbox" bind:checked={localProduct.is_out_of_stock} />
+            <span class="neon-text-cyan">Out of Stock</span>
+          </label>
+        </div>
+
+        <div class="stock-management-section glass-light">
+          <h4 class="stock-section-title neon-text-cyan">Stock Management</h4>
+          <div class="form-group">
+            <label for="edit-low-stock-buffer" class="form-label">Low Stock Buffer Amount</label>
+            <input 
+              id="edit-low-stock-buffer" 
+              type="number" 
+              min="0" 
+              step="1" 
+              bind:value={localProduct.low_stock_buffer} 
+              placeholder="1000" 
+              class="form-control"
+            />
+            <small class="form-help neon-text-muted">
+              Minimum stock level before showing low stock notifications. 
+              Set to 0 to disable notifications for this product.
+            </small>
+          </div>
         </div>
         
         {#if localProduct.is_special}
@@ -383,6 +407,25 @@
     border-radius: 8px;
     border: 1px solid var(--neon-yellow);
     background: rgba(252, 221, 67, 0.1);
+  }
+
+  .stock-management-section {
+    padding: 1rem;
+    border-radius: 8px;
+    margin-top: 1rem;
+  }
+
+  .stock-section-title {
+    margin: 0 0 1rem 0;
+    font-size: 1rem;
+    font-weight: 600;
+  }
+
+  .form-help {
+    display: block;
+    margin-top: 0.25rem;
+    font-size: 0.8rem;
+    line-height: 1.4;
   }
 
   .advanced-pricing {

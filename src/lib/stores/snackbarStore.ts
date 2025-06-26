@@ -4,6 +4,8 @@ interface Snackbar {
   show: boolean;
   message: string;
   duration: number;
+  clickable?: boolean;
+  onClick?: () => void;
 }
 
 const queue: Snackbar[] = [];
@@ -23,8 +25,14 @@ function showNext() {
   }, next.duration);
 }
 
-export function showSnackbar(message: string, duration = 3000) {
-  queue.push({ show: true, message, duration });
+export function showSnackbar(message: string, duration = 3000, onClick?: () => void) {
+  queue.push({ 
+    show: true, 
+    message, 
+    duration,
+    clickable: !!onClick,
+    onClick 
+  });
   if (get(snackbarStore).show === false) {
     showNext();
   }

@@ -33,7 +33,7 @@
 							filter: 'status=eq.pending'  // Only track pending orders
 						},
 						(payload) => {
-							showSnackbar('New order placed! Order ID: ' + payload.new.id);
+							showSnackbar('New order placed! Order #: ' + (payload.new.order_number || payload.new.id));
 						}
 					)
 					.subscribe();

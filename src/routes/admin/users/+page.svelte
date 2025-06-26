@@ -445,7 +445,7 @@
                       <td class="{entry.total_amount < 0 ? 'text-red-400' : entry.total_amount > 0 ? 'text-green-400' : 'neon-text-cyan'}">
                         {entry.total_amount < 0 ? `-R${Math.abs(entry.total_amount).toFixed(2)}` : `R${entry.total_amount.toFixed(2)}`}
                       </td>
-                      <td class="neon-text-cyan">{entry.order_id || '-'}</td>
+                      <td class="neon-text-cyan">{entry.order_number || entry.order_id || '-'}</td>
                     </tr>
                   {/each}
                 </tbody>
@@ -606,7 +606,7 @@
                           <td class="{entry.total_amount < 0 ? 'text-red-400' : entry.total_amount > 0 ? 'text-green-400' : 'neon-text-cyan'}">
                             {entry.total_amount < 0 ? `-R${Math.abs(entry.total_amount).toFixed(2)}` : `R${entry.total_amount.toFixed(2)}`}
                           </td>
-                          <td class="neon-text-cyan">{entry.order_id || '-'}</td>
+                          <td class="neon-text-cyan">{entry.order_number || entry.order_id || '-'}</td>
                         </tr>
                       {/each}
                     </tbody>

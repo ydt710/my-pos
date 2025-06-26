@@ -56,9 +56,8 @@ BEGIN
         COALESCE(SUM(CASE WHEN t.category IN ('pos_sale', 'online_sale', 'debit_adjustment') 
                           AND t.balance_amount < 0
                           AND EXISTS (
-                              -- Check if user still has negative balance after this transaction
-                              SELECT 1 FROM public.profiles p 
-                              WHERE p.id = t.user_id AND p.balance < 0
+                              SELECT 1 FROM public.user_balances p 
+                              WHERE p.user_id = t.user_id AND p.balance < 0
                           )
                           THEN ABS(t.balance_amount) ELSE 0 END), 0) AS debt_created,
         COALESCE(SUM(CASE WHEN t.category = 'debt_payment' THEN t.balance_amount ELSE 0 END), 0) AS debt_paid
@@ -67,7 +66,7 @@ BEGIN
             date_trunc(
                 CASE WHEN filter_option = 'today' THEN 'hour' ELSE 'day' END,
                 (CASE
-                    WHEN filter_option = 'today' THEN now()
+                    WHEN filter_option = 'today' THEN date_trunc('day', now())
                     WHEN filter_option = 'week' THEN date_trunc('week', now())
                     WHEN filter_option = 'month' THEN date_trunc('month', now())
                     WHEN filter_option = 'year' THEN date_trunc('year', now())
@@ -96,12 +95,12 @@ BEGIN
         COALESCE(SUM(t.cash_amount), 0) AS cash_collected
     FROM
         generate_series(
-            date_trunc(p_period, p_start_date),
+            date_trunc(CASE WHEN p_period = 'day' THEN 'hour' ELSE p_period END, p_start_date),
             p_end_date,
-            ('1 ' || p_period)::interval
+            (CASE WHEN p_period = 'day' THEN '1 hour' ELSE '1 ' || p_period END)::interval
         ) AS gs(period_start)
     LEFT JOIN
-        public.transactions t ON date_trunc(p_period, t.created_at) = gs.period_start
+        public.transactions t ON date_trunc(CASE WHEN p_period = 'day' THEN 'hour' ELSE p_period END, t.created_at) = gs.period_start
                              AND t.category IN ('debt_payment', 'cash_payment', 'overpayment_credit')
     GROUP BY
         gs.period_start
@@ -168,12 +167,12 @@ BEGIN
         COALESCE(SUM(t.balance_amount), 0) AS credit
     FROM
         generate_series(
-            date_trunc(p_period, p_start_date),
+            date_trunc(CASE WHEN p_period = 'day' THEN 'hour' ELSE p_period END, p_start_date),
             p_end_date,
-            ('1 ' || p_period)::interval
+            (CASE WHEN p_period = 'day' THEN '1 hour' ELSE '1 ' || p_period END)::interval
         ) AS gs(period_start)
     LEFT JOIN
-        public.transactions t ON date_trunc(p_period, t.created_at) = gs.period_start
+        public.transactions t ON date_trunc(CASE WHEN p_period = 'day' THEN 'hour' ELSE p_period END, t.created_at) = gs.period_start
                              AND t.category = 'overpayment_credit'
     GROUP BY
         gs.period_start
@@ -192,18 +191,17 @@ BEGIN
         COALESCE(SUM(ABS(t.balance_amount)), 0) AS debt
     FROM
         generate_series(
-            date_trunc(p_period, p_start_date),
+            date_trunc(CASE WHEN p_period = 'day' THEN 'hour' ELSE p_period END, p_start_date),
             p_end_date,
-            ('1 ' || p_period)::interval
+            (CASE WHEN p_period = 'day' THEN '1 hour' ELSE '1 ' || p_period END)::interval
         ) AS gs(period_start)
     LEFT JOIN
-        public.transactions t ON date_trunc(p_period, t.created_at) = gs.period_start
+        public.transactions t ON date_trunc(CASE WHEN p_period = 'day' THEN 'hour' ELSE p_period END, t.created_at) = gs.period_start
                              AND t.category IN ('pos_sale', 'online_sale', 'debit_adjustment')
                              AND t.balance_amount < 0
                              AND EXISTS (
-                                 -- Check if user still has negative balance after this transaction
-                                 SELECT 1 FROM public.profiles p 
-                                 WHERE p.id = t.user_id AND p.balance < 0
+                                 SELECT 1 FROM public.user_balances p 
+                                 WHERE p.user_id = t.user_id AND p.balance < 0
                              )
     GROUP BY
         gs.period_start

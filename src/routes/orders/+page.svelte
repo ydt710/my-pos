@@ -166,7 +166,7 @@
         <div class="order-card" out:fade>
           <div class="order-header">
             <div class="order-info">
-              <h3>Order #{order.id}</h3>
+              <h3>Order #{order.order_number || order.id}</h3>
               <p class="order-date">{formatDate(order.created_at)}</p>
             </div>
           </div>

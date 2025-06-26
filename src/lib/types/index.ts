@@ -12,7 +12,9 @@ export interface Product {
   indica?: number;  // 0-100, represents indica percentage. Sativa percentage is (100 - indica)
   is_special?: boolean;
   is_new?: boolean;
+  is_out_of_stock?: boolean;  // Manual flag to mark product as out of stock
   special_price?: number;
+  low_stock_buffer?: number;  // Minimum stock level before showing low stock notifications
   reviews?: Review[];
   average_rating?: number;
   review_count?: number;

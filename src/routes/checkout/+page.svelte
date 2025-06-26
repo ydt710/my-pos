@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { cartStore, selectedPosUser, getTotal, getItemCount } from '$lib/stores/cartStore';
+  import { cartStore, selectedPosUser, getTotal, getItemCount, pricedCart } from '$lib/stores/cartStore';
   import { createOrder, getUserBalance, updateOrderStatus } from '$lib/services/orderService';
   import { goto } from '$app/navigation';
   import type { CartItem } from '$lib/types/index';
@@ -11,6 +11,7 @@
   import { get } from 'svelte/store';
   import StarryBackground from '$lib/components/StarryBackground.svelte';
   import { getStock } from '$lib/services/stockService';
+  import { derived } from 'svelte/store';
   
   let loading = false;
   let error = '';
@@ -70,11 +71,12 @@
       userAvailableCredit = await getUserBalance(posUser.id);
     }
 
-
+    // Always keep selectedCustomer in sync with selectedPosUser for POS
+    selectedCustomer = posUser;
   });
   
   // Redirect if cart is empty
-  $: if ($cartStore.length === 0 && !success) {
+  $: if ($pricedCart.length === 0 && !success) {
     goto('/');
   }
   
@@ -117,7 +119,7 @@
   }
   
   async function processPayment() {
-    if ($cartStore.length === 0) return;
+    if ($pricedCart.length === 0) return;
     error = '';
 
     // Validate guest info if user is not logged in
@@ -145,7 +147,7 @@
     loading = true;
     success = '';
 
-    const total = getTotal($cartStore);
+    const total = getTotal($pricedCart);
     let paymentUserId = null;
     if (!isGuest && posUser && posUser.id) {
       paymentUserId = posUser.id;
@@ -176,7 +178,7 @@
       // Ensure cashGiven is always a valid number
       let cash = Number(cashGiven);
       if (isNaN(cash) || cash < 0) cash = 0;
-      const items = $cartStore.map(item => ({
+      const items = $pricedCart.map(item => ({
         product_id: item.id,
         quantity: item.quantity,
         price: item.price
@@ -185,7 +187,7 @@
       // This call now matches the simpler, refactored RPC function
       const result = await createOrder(
         total,
-        $cartStore,
+        $pricedCart,
         isGuest ? guestInfo : undefined,
         paymentUserId,
         paymentMethod,
@@ -255,15 +257,17 @@
   // Set cashGiven to total by default when payment section is shown
   $: if (!isGuest && (!selectedCustomer || !selectedCustomer.id)) {
     // POS guest mode
-    if ($cartStore.length > 0) {
-      const total = getTotal($cartStore);
+    if ($pricedCart.length > 0) {
+      const total = getTotal($pricedCart);
       if (cashGiven === '' || cashGiven === 0) {
         cashGiven = total;
       }
     }
   }
 
-  $: orderTotal = getTotal($cartStore);
+  $: cartItems = $pricedCart;
+  $: orderTotal = getTotal(cartItems);
+  $: cartCount = getItemCount(cartItems);
   $: floatChange = !isGuest && cashGiven !== '' ? Number(cashGiven) - orderTotal : 0;
 
   // Calculate totalPaid, overpayment, and update summary logic
@@ -360,7 +364,7 @@
     <div class="order-review">
       <h2>Order Review</h2>
       <div class="cart-items">
-        {#each $cartStore as item (item.id)}
+        {#each $pricedCart as item (item.id)}
           <div class="cart-item">
             <img src={item.image_url} alt={item.name} />
             <div class="item-details">
@@ -475,7 +479,7 @@
         </div>
         <div class="summary-row">
           <span>Items:</span>
-          <span>{getItemCount($cartStore)}</span>
+          <span>{cartCount}</span>
         </div>
         {#if isPosUser}
           {#if selectedCustomer && selectedCustomer.id}
@@ -600,7 +604,7 @@
       <button 
         class="pay-button"
         on:click={processPayment}
-        disabled={loading || $cartStore.length === 0}
+        disabled={loading || $pricedCart.length === 0}
       >
         {#if loading}
           <span class="loading-spinner"></span>
@@ -625,7 +629,7 @@
   h1 {
     text-align: center;
     margin-bottom: 2rem;
-    color: #333;
+    
   }
   
   .checkout-content {
@@ -635,7 +639,7 @@
   }
   
   .order-review, .payment-section {
-    background: rgba(255, 255, 255, 0.9);
+    
     backdrop-filter: blur(10px);
     border-radius: 16px;
     padding: 1.5rem;
@@ -736,7 +740,7 @@
   }
   
   .price {
-    color: #666;
+    color: #66ff00;
     margin: 0.5rem 0;
   }
   

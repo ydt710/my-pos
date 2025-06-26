@@ -4,6 +4,7 @@
   import { fade } from 'svelte/transition';
   import StarryBackground from '$lib/components/StarryBackground.svelte';
   import type { Product } from '$lib/types/index';
+  import { CATEGORY_BACKGROUNDS } from '$lib/constants';
 
   interface LandingHero {
     id: number;
@@ -25,6 +26,7 @@
       name: string;
       description: string;
       color: string;
+      background_image?: string;
     }>;
   }
 
@@ -71,7 +73,10 @@
 
   // Temporary form data
   let newTestimonial = { name: '', rating: 5, comment: '', verified: true };
-  let newCategory = { id: '', name: '', description: '', color: '#00f0ff' };
+  let newCategory = { id: '', name: '', description: '', color: '#00f0ff', background_image: '' };
+
+  // Default category background images (matching CategoryNav)
+  const defaultCategoryBackgrounds = CATEGORY_BACKGROUNDS;
 
   const predefinedColors = [
     '#00f0ff', '#ff6a00', '#43e97b', '#b993d6', '#fcdd43', '#ff00de',
@@ -101,6 +106,14 @@
         .limit(1)
         .maybeSingle();
       categoriesData = categories;
+      
+      // Ensure background_image property exists for all categories
+      if (categoriesData?.categories) {
+        categoriesData.categories = categoriesData.categories.map(cat => ({
+          ...cat,
+          background_image: cat.background_image || defaultCategoryBackgrounds[cat.id] || ''
+        }));
+      }
 
       // Load stores data
       const { data: stores } = await supabase
@@ -129,7 +142,7 @@
       // Load all products for selection
       const { data: products } = await supabase
         .from('products')
-        .select('id, name, price, image_url')
+        .select('id, name, price, image_url, category, description')
         .order('name');
       allProducts = products || [];
 
@@ -208,8 +221,13 @@
     if (!newCategory.id || !newCategory.name) return;
     if (!categoriesData) return;
     
+    // Set default background image if one wasn't provided
+    if (!newCategory.background_image && defaultCategoryBackgrounds[newCategory.id]) {
+      newCategory.background_image = defaultCategoryBackgrounds[newCategory.id];
+    }
+    
     categoriesData.categories = [...categoriesData.categories, { ...newCategory }];
-    newCategory = { id: '', name: '', description: '', color: '#00f0ff' };
+    newCategory = { id: '', name: '', description: '', color: '#00f0ff', background_image: '' };
   }
 
   function removeCategory(index: number) {
@@ -355,7 +373,7 @@
             <!-- Add New Category -->
             <div class="glass-light p-3 mb-4">
               <h3 class="neon-text-cyan mb-3">Add New Category</h3>
-              <div class="grid grid-4 gap-2 mb-3">
+              <div class="grid grid-3 gap-2 mb-3">
                 <div class="form-group">
                   <label for="new-cat-id" class="form-label">Category ID</label>
                   <input id="new-cat-id" type="text" bind:value={newCategory.id} placeholder="e.g., flower" class="form-control" />
@@ -367,11 +385,6 @@
                 </div>
                 
                 <div class="form-group">
-                  <label for="new-cat-desc" class="form-label">Description</label>
-                  <input id="new-cat-desc" type="text" bind:value={newCategory.description} placeholder="e.g., Premium products" class="form-control" />
-                </div>
-                
-                <div class="form-group">
                   <label for="new-cat-color" class="form-label">Color</label>
                   <select id="new-cat-color" bind:value={newCategory.color} class="form-control form-select">
                     {#each predefinedColors as color}
@@ -380,6 +393,35 @@
                   </select>
                 </div>
               </div>
+              
+              <div class="grid grid-2 gap-2 mb-3">
+                <div class="form-group">
+                  <label for="new-cat-desc" class="form-label">Description</label>
+                  <input id="new-cat-desc" type="text" bind:value={newCategory.description} placeholder="e.g., Premium products" class="form-control" />
+                </div>
+                
+                <div class="form-group">
+                  <label for="new-cat-bg" class="form-label">Background Image URL</label>
+                  <input id="new-cat-bg" type="url" bind:value={newCategory.background_image} placeholder="https://..." class="form-control" />
+                </div>
+              </div>
+              
+              {#if newCategory.background_image}
+                <div class="form-group mb-3">
+                  <label class="form-label">Preview</label>
+                  <div class="category-preview" style="background-image: url('{newCategory.background_image}');">
+                    <div class="category-overlay"></div>
+                    <div class="category-content">
+                      <div class="category-icon" style="color: {newCategory.color};">
+                        <i class="fa-solid fa-cannabis"></i>
+                      </div>
+                      <h4 class="neon-text-white">{newCategory.name || 'Category Name'}</h4>
+                      <p class="neon-text-secondary">{newCategory.description || 'Description'}</p>
+                    </div>
+                  </div>
+                </div>
+              {/if}
+              
               <button class="btn btn-secondary" on:click={addCategory}>Add Category</button>
             </div>
 
@@ -388,7 +430,7 @@
               <h3 class="neon-text-cyan mb-3">Current Categories</h3>
               {#each categoriesData.categories as category, index}
                 <div class="category-item glass-light p-3 mb-2">
-                  <div class="grid grid-4 gap-2">
+                  <div class="grid grid-3 gap-2 mb-3">
                     <div class="form-group">
                       <label class="form-label">Category ID</label>
                       <input type="text" bind:value={category.id} class="form-control" />
@@ -400,11 +442,6 @@
                     </div>
                     
                     <div class="form-group">
-                      <label class="form-label">Description</label>
-                      <input type="text" bind:value={category.description} class="form-control" />
-                    </div>
-                    
-                    <div class="form-group">
                       <label class="form-label">Color</label>
                       <div class="flex gap-2 align-center">
                         <select bind:value={category.color} class="form-control form-select">
@@ -413,9 +450,45 @@
                           {/each}
                         </select>
                         <div class="color-preview" style="background-color: {category.color};"></div>
-                        <button class="btn btn-danger btn-sm" on:click={() => removeCategory(index)}>Remove</button>
                       </div>
                     </div>
+                  </div>
+                  
+                  <div class="grid grid-2 gap-2 mb-3">
+                    <div class="form-group">
+                      <label class="form-label">Description</label>
+                      <input type="text" bind:value={category.description} class="form-control" />
+                    </div>
+                    
+                    <div class="form-group">
+                      <label class="form-label">Background Image URL</label>
+                      <input type="url" bind:value={category.background_image} placeholder="https://..." class="form-control" />
+                    </div>
+                  </div>
+                  
+                  {#if category.background_image}
+                    <div class="form-group mb-3">
+                      <label class="form-label">Preview</label>
+                      <div class="category-preview" style="background-image: url('{category.background_image}');">
+                        <div class="category-overlay"></div>
+                        <div class="category-content">
+                          <div class="category-icon" style="color: {category.color};">
+                            <i class="fa-solid fa-cannabis"></i>
+                          </div>
+                          <h4 class="neon-text-white">{category.name}</h4>
+                          <p class="neon-text-secondary">{category.description}</p>
+                        </div>
+                      </div>
+                    </div>
+                  {/if}
+                  
+                  <div class="flex gap-2 align-center">
+                    <button class="btn btn-danger btn-sm" on:click={() => removeCategory(index)}>Remove Category</button>
+                    {#if defaultCategoryBackgrounds[category.id] && category.background_image !== defaultCategoryBackgrounds[category.id]}
+                      <button class="btn btn-secondary btn-sm" on:click={() => category.background_image = defaultCategoryBackgrounds[category.id]}>
+                        Use Default Image
+                      </button>
+                    {/if}
                   </div>
                 </div>
               {/each}
@@ -759,6 +832,51 @@
     align-items: center;
   }
 
+  .category-preview {
+    width: 100%;
+    height: 200px;
+    border-radius: 12px;
+    background-size: cover;
+    background-position: center;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid var(--border-primary);
+  }
+
+  .category-preview .category-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    border-radius: 12px;
+  }
+
+  .category-preview .category-content {
+    position: relative;
+    z-index: 1;
+    text-align: center;
+  }
+
+  .category-preview .category-icon {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.7);
+  }
+
+  .category-preview h4 {
+    font-size: 1.2rem;
+    margin: 0 0 0.5rem;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.7);
+  }
+
+  .category-preview p {
+    font-size: 0.9rem;
+    margin: 0;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.7);
+  }
+
   @media (max-width: 768px) {
     .admin-container {
       padding: 1rem;
@@ -775,6 +893,10 @@
     
     .product-grid {
       grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    }
+    
+    .category-preview {
+      height: 150px;
     }
   }
 </style> 

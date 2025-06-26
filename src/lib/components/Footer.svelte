@@ -20,6 +20,9 @@
     store_phone?: string;
     store_address?: string;
     business_hours?: BusinessHours | string;
+    facebook_url?: string;
+    instagram_url?: string;
+    twitter_url?: string;
   }
 
   let settings: Settings | null = null;
@@ -34,7 +37,7 @@
       } else {
         const { data, error } = await supabase
           .from('settings')
-          .select('store_name, store_email, store_phone, store_address, business_hours')
+          .select('store_name, store_email, store_phone, store_address, business_hours, facebook_url, instagram_url, twitter_url')
           .limit(1)
           .maybeSingle();
 
@@ -94,6 +97,26 @@
           {/each}
         </ul>
       </div>
+      <div class="social-media">
+        <h3>Follow Us</h3>
+        <div class="social-links">
+          {#if settings.facebook_url}
+            <a href={settings.facebook_url} target="_blank" rel="noopener noreferrer" aria-label="Follow us on Facebook">
+              <i class="fab fa-facebook-f"></i>
+            </a>
+          {/if}
+          {#if settings.instagram_url}
+            <a href={settings.instagram_url} target="_blank" rel="noopener noreferrer" aria-label="Follow us on Instagram">
+              <i class="fab fa-instagram"></i>
+            </a>
+          {/if}
+          {#if settings.twitter_url}
+            <a href={settings.twitter_url} target="_blank" rel="noopener noreferrer" aria-label="Follow us on Twitter">
+              <i class="fab fa-twitter"></i>
+            </a>
+          {/if}
+        </div>
+      </div>
     </div>
     <div class="footer-bottom">
       &copy; {new Date().getFullYear()} {settings.store_name || 'Route 420'}. All Rights Reserved.
@@ -122,7 +145,7 @@
     margin: 0 auto 2rem;
 }
 
-.store-details, .business-hours {
+.store-details, .business-hours, .social-media {
     flex: 1;
     min-width: 280px;
     text-align: center;
@@ -183,10 +206,60 @@ h3 {
     font-size: 0.8rem;
 }
 
+.social-media {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.social-links {
+  display: flex;
+  gap: 1.5rem;
+  justify-content: center;
+  margin-top: 0.5rem;
+}
+
+.social-links a {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 45px;
+  height: 45px;
+  background: linear-gradient(135deg, #00f2fe, #4facfe);
+  color: white;
+  border-radius: 50%;
+  text-decoration: none;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba(0, 242, 254, 0.2);
+}
+
+.social-links a:hover {
+  transform: translateY(-3px) scale(1.1);
+  box-shadow: 0 8px 20px rgba(0, 242, 254, 0.4);
+  background: linear-gradient(135deg, #00deff, #39a9fe);
+}
+
+.social-links a i {
+  font-size: 1.2rem;
+}
+
 @media (max-width: 768px) {
   .footer-content {
     flex-direction: column;
     align-items: center;
+  }
+  
+  .social-links {
+    gap: 1rem;
+  }
+  
+  .social-links a {
+    width: 40px;
+    height: 40px;
+  }
+  
+  .social-links a i {
+    font-size: 1rem;
   }
 }
 </style> 

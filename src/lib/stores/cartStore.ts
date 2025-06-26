@@ -1,9 +1,8 @@
-import { writable, derived } from 'svelte/store';
+import { writable, derived, get } from 'svelte/store';
 import type { CartItem, Product, User } from '$lib/types/index';
 import { supabase } from '$lib/supabase';
 import { writable as writableStore, get as getStore } from 'svelte/store';
 import { getStock } from '$lib/services/stockService';
-import { get } from 'svelte/store';
 import { showSnackbar } from './snackbarStore';
 
 // Store for user-specific custom prices: { [productId]: customPrice }
@@ -144,9 +143,10 @@ function createCartStore() {
           return [...items, { ...product, quantity: requestedQuantity, price }];
         }
       });
-      if (success) {
-        showSnackbar('Item added to cart.');
-      }
+      // Don't show snackbar here anymore - ProductCard handles it
+      // if (success) {
+      //   showSnackbar('Item added to cart.');
+      // }
       return success;
     } catch (err) {
       showSnackbar('Error checking stock. Please try again.');
@@ -316,3 +316,15 @@ export function getItemCount(items: CartItem[]) {
 }
 
 // ...return and other methods...
+
+export const cartVisible = writable<boolean>(false);
+
+// Global cart toggle function
+export function toggleCart() {
+  cartVisible.update(visible => !visible);
+}
+
+// Global function to open cart
+export function openCart() {
+  cartVisible.set(true);
+}

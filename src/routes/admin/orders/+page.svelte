@@ -25,6 +25,7 @@
 
   // Financial summary
   let financialSummary = {
+    totalOrders: 0,
     totalRevenue: 0,
     averageOrder: 0,
     completedOrders: 0,
@@ -38,29 +39,49 @@
   async function loadOrders() {
     loading = true;
     try {
-      const { data, error: fetchError } = await supabase
-        .from('orders')
-        .select(`
-          *,
-          order_items (
-            id,
-            quantity,
-            price,
-            products (id, name, image_url)
-          ),
-          user:profiles!orders_user_id_fkey (
-            auth_user_id,
-            display_name,
-            email,
-            phone_number,
-            address
-          )
-        `)
-        .order('created_at', { ascending: false });
+      let query = supabase.from('orders').select(`
+        *,
+        order_items (
+          id,
+          quantity,
+          price,
+          products (id, name, image_url)
+        ),
+        user:profiles!orders_user_id_fkey (
+          auth_user_id,
+          display_name,
+          email,
+          phone_number,
+          address
+        )
+      `).order('created_at', { ascending: false });
 
+      if (statusFilter !== 'all') {
+        query = query.eq('status', statusFilter);
+      }
+      if (dateFrom) {
+        query = query.gte('created_at', new Date(dateFrom).toISOString());
+      }
+      if (dateTo) {
+        query = query.lte('created_at', new Date(dateTo + 'T23:59:59').toISOString());
+      }
+
+      const { data, error: fetchError } = await query;
       if (fetchError) throw fetchError;
       orders = data || [];
-      applyFilters();
+      // For search, filter client-side for now
+      if (searchTerm) {
+        const term = searchTerm.toLowerCase();
+        filteredOrders = orders.filter(order => 
+          order.id.toLowerCase().includes(term) ||
+          order.user?.email?.toLowerCase().includes(term) ||
+          order.user?.display_name?.toLowerCase().includes(term) ||
+          order.guest_info?.email?.toLowerCase().includes(term) ||
+          order.guest_info?.name?.toLowerCase().includes(term)
+        );
+      } else {
+        filteredOrders = orders;
+      }
     } catch (err: any) {
       console.error('Error loading orders:', err);
       error = err.message;
@@ -69,75 +90,49 @@
     }
   }
 
-  function applyFilters() {
-    let filtered = [...orders];
-
-    // Status filter
-    if (statusFilter !== 'all') {
-      filtered = filtered.filter(order => order.status === statusFilter);
-    }
-
-    // Search filter
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase();
-      filtered = filtered.filter(order => 
-        order.id.toLowerCase().includes(term) ||
-        order.user?.email?.toLowerCase().includes(term) ||
-        order.user?.display_name?.toLowerCase().includes(term) ||
-        order.guest_info?.email?.toLowerCase().includes(term) ||
-        order.guest_info?.name?.toLowerCase().includes(term)
-      );
-    }
-
-    // Date filters
-    if (dateFrom) {
-      const fromDate = new Date(dateFrom);
-      filtered = filtered.filter(order => new Date(order.created_at) >= fromDate);
-    }
-    if (dateTo) {
-      const toDate = new Date(dateTo);
-      toDate.setHours(23, 59, 59, 999);
-      filtered = filtered.filter(order => new Date(order.created_at) <= toDate);
-    }
-
-    filteredOrders = filtered;
-    calculateFinancialSummary();
-  }
-
-  function calculateFinancialSummary() {
-    const summary = {
-      totalRevenue: 0,
-      averageOrder: 0,
-      completedOrders: 0,
-      completedRevenue: 0,
-      pendingOrders: 0,
-      pendingRevenue: 0,
-      guestOrders: 0,
-      registeredOrders: 0
-    };
-
-    filteredOrders.forEach(order => {
-      const total = (order.subtotal || 0) + (order.tax || 0) + (order.shipping_fee || 0);
-      summary.totalRevenue += total;
-
-      if (order.status === 'completed') {
-        summary.completedOrders++;
-        summary.completedRevenue += total;
-      } else if (order.status === 'pending') {
-        summary.pendingOrders++;
-        summary.pendingRevenue += total;
-      }
-
-      if (order.guest_info) {
-        summary.guestOrders++;
+  async function loadFinancialSummary() {
+    try {
+      // Optionally, you can pass dateFrom/dateTo/status filters here
+      const { data, error } = await supabase.rpc('get_order_summary', {
+        p_start_date: dateFrom ? new Date(dateFrom).toISOString() : null,
+        p_end_date: dateTo ? new Date(dateTo + 'T23:59:59').toISOString() : null,
+        p_status: statusFilter !== 'all' ? statusFilter : null
+      });
+      if (error) throw error;
+      const summary = Array.isArray(data) ? data[0] : data;
+      console.log('order summary:', data, summary);
+      if (!summary) {
+        financialSummary = {
+          totalOrders: 0,
+          totalRevenue: 0,
+          averageOrder: 0,
+          completedOrders: 0,
+          completedRevenue: 0,
+          pendingOrders: 0,
+          pendingRevenue: 0,
+          guestOrders: 0,
+          registeredOrders: 0
+        };
       } else {
-        summary.registeredOrders++;
+        financialSummary = {
+          totalOrders: summary.total_orders ?? 0,
+          totalRevenue: summary.total_revenue ?? 0,
+          averageOrder: summary.average_order_value ?? 0,
+          completedOrders: summary.completed_orders ?? 0,
+          completedRevenue: summary.completed_revenue ?? 0,
+          pendingOrders: summary.pending_orders ?? 0,
+          pendingRevenue: summary.pending_revenue ?? 0,
+          guestOrders: summary.guest_orders ?? 0,
+          registeredOrders: summary.registered_orders ?? 0
+        };
       }
-    });
-
-    summary.averageOrder = filteredOrders.length > 0 ? summary.totalRevenue / filteredOrders.length : 0;
-    financialSummary = summary;
+    } catch (err) {
+      console.error('Error loading financial summary:', err);
+    }
   }
+
+  $: [dateFrom, dateTo, statusFilter, searchTerm], loadOrders();
+  $: [dateFrom, dateTo, statusFilter], loadFinancialSummary();
 
   async function handleOrderDelete() {
     if (!orderToDelete) return;
@@ -163,7 +158,7 @@
     const orderIndex = orders.findIndex(o => o.id === orderId);
     if (orderIndex !== -1) {
       orders[orderIndex] = { ...orders[orderIndex], status: newStatus };
-      applyFilters();
+      loadOrders();
     }
     showOrderModal = false;
   }
@@ -187,13 +182,6 @@
       default: return 'badge-primary';
     }
   }
-
-  // Reactive statements
-  $: applyFilters();
-
-  onMount(() => {
-    loadOrders();
-  });
 </script>
 
 <StarryBackground />
@@ -303,7 +291,7 @@
                 </td>
                 <td>{order.payment_method || 'cash'}</td>
                 <td class="neon-text-cyan">
-                  {formatCurrency((order.subtotal || 0) + (order.tax || 0) + (order.shipping_fee || 0))}
+                  {formatCurrency(Number(order.total) || 0)}
                 </td>
                 <td>
                   <span class="badge {getStatusBadgeClass(order.status)}">

@@ -4,6 +4,7 @@
   import { fade, slide } from 'svelte/transition';
   import { supabase } from '$lib/supabase';
   import { goto } from '$app/navigation';
+  import NotificationDropdown from './NotificationDropdown.svelte';
   export let activeCategory: string = '';
   export let logoUrl: string = '';
   export let onMenuToggle: () => void = () => {};
@@ -28,59 +29,69 @@
   const dispatch = createEventDispatcher();
 
   let pendingTransfers = 0;
+  let lowStockCount = 0;
+  let totalNotificationCount = 0;
+  let showNotifications = false;
   let shopId = 'e0ff9565-e490-45e9-991f-298918e4514a'; // Shop location UUID
   let transferChannel: any;
 
   let isPosOrAdmin = false;
 
   async function fetchPendingTransfers() {
-    const { count, error } = await supabase
-      .from('stock_movements')
-      .select('id', { count: 'exact', head: true })
-      .eq('status', 'pending');
-    if (!error && typeof count === 'number') {
-      pendingTransfers = count;
-    } else {
+    try {
+      // Use the database function to get pending shop transfers count
+      const { data, error } = await supabase.rpc('get_pending_shop_transfers_count');
+      if (!error && typeof data === 'number') {
+        pendingTransfers = data;
+      } else {
+        console.error('Error fetching pending transfers:', error);
+        pendingTransfers = 0;
+      }
+    } catch (err) {
+      console.error('Error in fetchPendingTransfers:', err);
       pendingTransfers = 0;
     }
   }
 
-  function handleTransferIconClick() {
-    goto('/admin/stock-management#pending-transfers');
+  async function fetchLowStockCount() {
+    try {
+      const { data, error } = await supabase.rpc('get_low_stock_notifications');
+      if (!error && data) {
+        // Count unique products in low stock
+        const uniqueProducts = new Set(data.map((item: any) => item.product_id));
+        lowStockCount = uniqueProducts.size;
+      } else {
+        console.error('Error fetching low stock count:', error);
+        lowStockCount = 0;
+      }
+    } catch (err) {
+      console.error('Error in fetchLowStockCount:', err);
+      lowStockCount = 0;
+    }
   }
 
-  const categories = [
-    { 
-      id: 'joints', 
-      name: 'Joints', 
-      icon: 'fa-joint',
-      background: 'https://mjbizdaily.com/wp-content/uploads/2024/08/Pre-rolls_-joints-_2_.webp'
-    },
-    { 
-      id: 'concentrate', 
-      name: 'Extracts',
-      icon: 'fa-vial',
-      background: 'https://bulkweedinbox.cc/wp-content/uploads/2024/12/Greasy-Pink.jpg'
-    },
-    { 
-      id: 'flower', 
-      name: 'Flower', 
-      icon: 'fa-cannabis',
-      background: 'https://wglybohfygczpapjxwwz.supabase.co/storage/v1/object/public/route420//dagga%20cat.webp'
-    },
-    { 
-      id: 'edibles', 
-      name: 'Edibles', 
-      icon: 'fa-cookie',
-      background: 'https://longislandinterventions.com/wp-content/uploads/2024/12/Edibles-1.jpg'
-    },
-    { 
-      id: 'headshop', 
-      name: 'Headshop', 
-      icon: 'fa-store',
-      background: 'https://wglybohfygczpapjxwwz.supabase.co/storage/v1/object/public/route420//bongs.webp'
-    }
-  ];
+  async function fetchAllNotifications() {
+    await Promise.all([fetchPendingTransfers(), fetchLowStockCount()]);
+    totalNotificationCount = pendingTransfers + lowStockCount;
+  }
+
+  function toggleNotifications() {
+    showNotifications = !showNotifications;
+  }
+
+  function closeNotifications() {
+    showNotifications = false;
+  }
+
+  function handleNotificationNavigate(event: CustomEvent) {
+    const { path } = event.detail;
+    goto(path);
+    closeNotifications();
+  }
+
+  import { CATEGORY_CONFIG } from '$lib/constants';
+
+  const categories = Object.values(CATEGORY_CONFIG);
 
   function handleCategoryClick(categoryId: string) {
     // Toggle the category if it's already active
@@ -111,22 +122,24 @@
         .maybeSingle();
       isPosOrAdmin = profile?.role === 'pos' || profile?.is_admin === true;
     }
-    await fetchPendingTransfers();
+    await fetchAllNotifications();
     // Subscribe to Realtime changes on stock_movements
     transferChannel = supabase
-      .channel('pending_transfers_nav')
+      .channel('pending_stock_movements_nav')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'stock_movements' }, async (payload) => {
-        // Only update if relevant to this shop
+        // Update for any changes to pending shop transfers
         const rec = payload.new || payload.old;
         if (
           rec &&
           typeof rec === 'object' &&
-          'to_location_id' in rec &&
+          'status' in rec &&
           'type' in rec &&
-          rec.to_location_id === shopId &&
-          rec.type === 'transfer'
+          'to_location_id' in rec &&
+          (rec.status === 'pending' || payload.eventType === 'DELETE' || payload.eventType === 'UPDATE') &&
+          rec.type === 'transfer' &&
+          rec.to_location_id === shopId
         ) {
-          await fetchPendingTransfers();
+          await fetchAllNotifications();
         }
       })
       .subscribe();
@@ -151,14 +164,6 @@
       <button class="logo-btn" on:click={onLogoClick} aria-label="Home" tabindex="0" on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { onLogoClick(); } }}>
         <img class="logo" src={logoUrl} alt="Logo" />
       </button>
-      {#if isPosOrAdmin}
-        <button class="transfer-notification-btn" aria-label="Pending Transfers" on:click={handleTransferIconClick}>
-          <i class="fa-solid fa-bell"></i>
-          {#if pendingTransfers > 0}
-            <span class="transfer-badge">{pendingTransfers}</span>
-          {/if}
-        </button>
-      {/if}
     </div>
 
     <div class="nav-center">
@@ -185,6 +190,21 @@
     </div>
 
     <div class="nav-right">
+      {#if isPosOrAdmin}
+        <div class="notification-wrapper">
+          <button class="notification-btn" aria-label="Notifications" on:click={toggleNotifications}>
+            <i class="fa-solid fa-bell"></i>
+            {#if totalNotificationCount > 0}
+              <span class="notification-badge">{totalNotificationCount}</span>
+            {/if}
+          </button>
+          <NotificationDropdown 
+            visible={showNotifications} 
+            onClose={closeNotifications}
+            on:navigate={handleNotificationNavigate}
+          />
+        </div>
+      {/if}
       <button class="cart-btn" on:click={onCartToggle} aria-label="Open cart" class:cart-animate={isCartAnimating}>
         <i class="fa-solid fa-shopping-cart"></i>
         {#if cartCount > 0}
@@ -198,6 +218,38 @@
   </div>
 </div>
 
+<!-- Mobile floating action buttons -->
+<div class="mobile-fab-container">
+  <button class="mobile-fab" on:click={onCartToggle} aria-label="Open cart">
+    <i class="fa-solid fa-shopping-cart"></i>
+    {#if cartCount > 0}
+      <span class="cart-badge">{cartCount}</span>
+    {/if}
+  </button>
+  {#if isPosOrAdmin}
+    <button class="mobile-fab" on:click={toggleNotifications} aria-label="Notifications">
+      <i class="fa-solid fa-bell"></i>
+      {#if totalNotificationCount > 0}
+        <span class="notification-badge">{totalNotificationCount}</span>
+      {/if}
+    </button>
+  {/if}
+  <button class="mobile-fab" on:click={onMenuToggle} aria-label="Open menu">
+    <i class="fa-solid fa-bars"></i>
+  </button>
+</div>
+
+<!-- Mobile notification dropdown positioning -->
+{#if isPosOrAdmin && showNotifications}
+  <div class="mobile-notification-dropdown">
+    <NotificationDropdown 
+      visible={showNotifications} 
+      onClose={closeNotifications}
+      on:navigate={handleNotificationNavigate}
+    />
+  </div>
+{/if}
+
 <style>
   .category-nav {
     display: flex;
@@ -205,12 +257,11 @@
     padding: 1rem;
     margin-bottom: 0;
     user-select: none;
-    position: fixed;
+    position: relative;
     top: 0;
     left: 0;
     right: 0;
-    z-index: 1;
-    position: relative;
+    z-index: 100; /* Lower z-index than notification dropdown */
     overflow: hidden;
   }
 
@@ -242,7 +293,7 @@
   }
 
   .logo {
-    height: 89px;
+    height: 188px;
     width: auto;
     display: block;
     cursor: pointer;
@@ -294,24 +345,32 @@
 
   .category-button:hover {
     box-shadow: 
-      0 0 10px rgba(0, 240, 255, 0.2),
-      0 2px 8px rgba(0, 0, 0, 0.1);
+      0 0 20px rgba(0, 240, 255, 0.6),
+      0 0 40px rgba(0, 240, 255, 0.4),
+      0 0 60px rgba(0, 240, 255, 0.2),
+      0 2px 8px rgba(0, 0, 0, 0.3);
+    border-color: rgba(0, 240, 255, 0.5);
+    transform: translateY(-2px);
   }
 
   .category-button:focus {
     border-color: #00f0ff;
     box-shadow: 
-      0 0 0 3px rgba(0, 240, 255, 0.3),
-      0 0 15px rgba(0, 240, 255, 0.4);
+      0 0 0 3px rgba(0, 240, 255, 0.5),
+      0 0 25px rgba(0, 240, 255, 0.8),
+      0 0 50px rgba(0, 240, 255, 0.4);
   }
 
   .category-button.active {
     border-color: #00f0ff;
-    transform: translateY(-3px);
+    transform: translateY(-5px);
     box-shadow: 
-      0 0 15px rgba(0, 240, 255, 0.4),
-      0 0 30px rgba(255, 0, 222, 0.2),
-      0 4px 12px rgba(0, 0, 0, 0.3);
+      0 0 25px rgba(0, 240, 255, 0.8),
+      0 0 50px rgba(0, 240, 255, 0.6),
+      0 0 75px rgba(0, 240, 255, 0.4),
+      0 0 100px rgba(255, 0, 222, 0.3),
+      0 6px 20px rgba(0, 0, 0, 0.4);
+    animation: pulse-glow 2s ease-in-out infinite alternate;
   }
 
   .category-button.active .category-overlay {
@@ -330,24 +389,61 @@
 
   .image-container i {
     font-size: 1.5rem;
-    transition: transform 0.2s ease;
+    transition: all 0.3s ease;
     color: #fff;
-    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+    text-shadow: 
+      0 0 10px rgba(0, 240, 255, 0.8),
+      0 0 20px rgba(0, 240, 255, 0.6),
+      0 2px 4px rgba(0, 0, 0, 0.8);
+    filter: drop-shadow(0 0 8px rgba(0, 240, 255, 0.6));
   }
 
   .category-button:hover .image-container i {
-    transform: scale(1.1);
+    transform: scale(1.2);
+    text-shadow: 
+      0 0 15px rgba(0, 240, 255, 1),
+      0 0 30px rgba(0, 240, 255, 0.8),
+      0 2px 4px rgba(0, 0, 0, 0.8);
+    filter: drop-shadow(0 0 12px rgba(0, 240, 255, 0.8));
+  }
+
+  .category-button.active .image-container i {
+    transform: scale(1.3);
+    text-shadow: 
+      0 0 20px rgba(0, 240, 255, 1),
+      0 0 40px rgba(0, 240, 255, 0.8),
+      0 0 60px rgba(255, 255, 255, 0.4),
+      0 2px 4px rgba(0, 0, 0, 0.8);
+    filter: drop-shadow(0 0 15px rgba(0, 240, 255, 1));
   }
 
   .name {
     font-size: 0.8rem;
     font-family: 'Font Awesome 6 Free';
     text-transform: uppercase;
-    transition: color 0.2s ease;
+    transition: all 0.3s ease;
     z-index: 1;
-    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+    text-shadow: 
+      0 0 8px rgba(0, 240, 255, 0.6),
+      0 0 16px rgba(0, 240, 255, 0.4),
+      0 2px 4px rgba(0, 0, 0, 0.8);
     color: #fff;
     margin-top: 0.5rem;
+  }
+
+  .category-button:hover .name {
+    text-shadow: 
+      0 0 12px rgba(0, 240, 255, 0.8),
+      0 0 24px rgba(0, 240, 255, 0.6),
+      0 2px 4px rgba(0, 0, 0, 0.8);
+  }
+
+  .category-button.active .name {
+    text-shadow: 
+      0 0 15px rgba(0, 240, 255, 1),
+      0 0 30px rgba(0, 240, 255, 0.8),
+      0 0 45px rgba(255, 255, 255, 0.3),
+      0 2px 4px rgba(0, 0, 0, 0.8);
   }
 
   .menu-btn, .cart-btn {
@@ -409,6 +505,25 @@
     100% { transform: rotate(360deg); }
   }
 
+  @keyframes pulse-glow {
+    0% { 
+      box-shadow: 
+        0 0 25px rgba(0, 240, 255, 0.8),
+        0 0 50px rgba(0, 240, 255, 0.6),
+        0 0 75px rgba(0, 240, 255, 0.4),
+        0 0 100px rgba(255, 0, 222, 0.3),
+        0 6px 20px rgba(0, 0, 0, 0.4);
+    }
+    100% { 
+      box-shadow: 
+        0 0 30px rgba(0, 240, 255, 1),
+        0 0 60px rgba(0, 240, 255, 0.8),
+        0 0 90px rgba(0, 240, 255, 0.6),
+        0 0 120px rgba(255, 0, 222, 0.4),
+        0 8px 25px rgba(0, 0, 0, 0.5);
+    }
+  }
+
   .spin {
     animation: spin 0.7s cubic-bezier(0.34, 1.56, 0.64, 1);
   }
@@ -422,39 +537,45 @@
     cursor: pointer;
   }
 
-  .transfer-notification-btn {
-    position: relative;
-    background: none;
-    border: none;
-    margin-left: 0.5rem;
-    color: #fff;
-    font-size: 1.5rem;
-    cursor: pointer;
+  .notification-wrapper {
+    position: static;
     display: inline-flex;
     align-items: center;
+  }
+
+  .notification-btn {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    color: #fff;
+    padding: 0.5rem;
+    display: flex;
+    align-items: center;
+    position: relative;
     transition: color 0.2s;
   }
 
-  .transfer-notification-btn:hover {
+  .notification-btn:hover {
     color: #007bff;
   }
 
-  .transfer-badge {
+  .notification-badge {
     position: absolute;
-    top: -6px;
-    right: -6px;
+    top: 0;
+    right: 0;
     background: #dc3545;
     color: white;
     border-radius: 50%;
-    width: 18px;
-    height: 18px;
+    width: 20px;
+    height: 20px;
     font-size: 0.8rem;
     display: flex;
     align-items: center;
     justify-content: center;
     font-weight: bold;
+    transition: transform 0.2s, background-color 0.3s;
     z-index: 2;
-    box-shadow: 0 0 4px #0002;
   }
 
   @media (max-width: 1024px) {
@@ -483,6 +604,10 @@
       padding: 0 0.5rem;
     }
 
+    .nav-right {
+      display: none; /* Hide nav-right on mobile to center categories */
+    }
+
     .image-container {
       width: 24px;
       height: 24px;
@@ -500,27 +625,8 @@
       height: 62px;
     }
 
-    .menu-btn, .cart-btn {
-      font-size: 1.2rem;
-      padding: 0.25rem;
-    }
-
     .category-btn-row {
       gap: 0.5rem;
-      
-    }
-
-    .transfer-notification-btn {
-      font-size: 1.2rem;
-      margin-left: 0.25rem;
-    }
-
-    .transfer-badge {
-      width: 14px;
-      height: 14px;
-      font-size: 0.7rem;
-      top: -4px;
-      right: -4px;
     }
   }
 
@@ -528,6 +634,22 @@
     .nav-container {
       gap: 0.25rem;
       padding: 0 0.25rem;
+      justify-content: center; /* Center everything on mobile */
+    }
+
+    .nav-left {
+      position: absolute;
+      left: 0.5rem;
+      z-index: 10;
+    }
+
+    .nav-center {
+      flex: none; /* Don't stretch to fill space */
+      margin: 0 auto; /* Center the categories */
+    }
+
+    .nav-right {
+      display: none; /* Keep hidden on mobile */
     }
 
     .category-button {
@@ -544,17 +666,85 @@
       font-size: 2rem;
     }
 
-  
-
-    .menu-btn, .cart-btn {
-      font-size: 1rem;
-      padding: 0.2rem;
+    .logo {
+      height: 50px; /* Smaller logo for mobile */
     }
+  }
 
-    .cart-badge {
-      width: 16px;
-      height: 16px;
-      font-size: 0.7rem;
+  /* Mobile floating action buttons */
+  .mobile-fab-container {
+    position: fixed;
+    bottom: 2rem;
+    right: 1rem;
+    display: none;
+    flex-direction: column;
+    gap: 0.75rem;
+    z-index: 1000;
+  }
+
+  .mobile-fab {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: var(--gradient-primary);
+    border: none;
+    color: white;
+    font-size: 1.4rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+  }
+
+  .mobile-fab:hover {
+    transform: scale(1.1);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+  }
+
+  .mobile-fab .notification-badge,
+  .mobile-fab .cart-badge {
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    background: #dc3545;
+    color: white;
+    border-radius: 50%;
+    width: 20px;
+    height: 20px;
+    font-size: 0.8rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    border: 2px solid white;
+  }
+
+  @media (max-width: 800px) {
+    .mobile-fab-container {
+      display: flex;
+    }
+  }
+
+  /* Mobile notification dropdown */
+  .mobile-notification-dropdown {
+    position: fixed;
+    bottom: 2rem;
+    right: 5rem;
+    z-index: 999;
+    display: none;
+  }
+
+  @media (max-width: 800px) {
+    .mobile-notification-dropdown {
+      display: block;
+    }
+    
+    /* Hide the original notification dropdown on mobile */
+    .nav-right .notification-wrapper :global(.notification-dropdown) {
+      display: none !important;
     }
   }
 </style> 

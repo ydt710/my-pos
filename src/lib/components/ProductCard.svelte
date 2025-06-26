@@ -2,13 +2,14 @@
   import { onMount, onDestroy } from 'svelte';
   import { fade } from 'svelte/transition';
   import type { Product } from '$lib/types/index';
-  import { cartStore, cartNotification, isPosOrAdmin, selectedPosUser, getEffectivePrice } from '$lib/stores/cartStore';
+  import { cartStore, cartNotification, isPosOrAdmin, selectedPosUser, getEffectivePrice, customPrices, openCart } from '$lib/stores/cartStore';
   import { supabase } from '$lib/supabase';
   import { createEventDispatcher } from 'svelte';
   import { getProductReviews, addReview, updateProductRating } from '$lib/services/reviewService';
   import { getStock } from '$lib/services/stockService';
   import { get } from 'svelte/store';
   import { debounce, getBalanceColor } from '$lib/utils';
+  import { showSnackbar as showGlobalSnackbar } from '$lib/stores/snackbarStore';
 
   
   interface Review {
@@ -35,7 +36,7 @@
   let displayStock = 0;
   let stockStatus = '';
   let selectedQuantity = 1;
-  let cardElement: HTMLElement;
+  let cardElement: HTMLElement | null = null;
   let reviews: Review[] = [];
   let showSnackbar = false;
   let snackbarMessage = '';
@@ -56,17 +57,27 @@
   // Get selected POS user (for custom pricing)
   $: posUser = $selectedPosUser;
   $: effectivePrice = getEffectivePrice({ ...product, id: String(product.id), description: product.description || '', indica: typeof product.indica === 'number' ? product.indica : 0 }, posUser?.id);
+  $: customPricesValue = $customPrices;
+  $: hasCustomPrice = posUser && customPricesValue[product.id] && customPricesValue[product.id] !== product.price;
 
   // ARIA live region for dynamic feedback
   let liveMessage = '';
   $: if (showSnackbar) liveMessage = snackbarMessage;
 
   function updateStockStatus(stock: number) {
+    // Check if product is manually marked as out of stock
+    if (product.is_out_of_stock) {
+      stockStatus = 'Out of Stock';
+      return;
+    }
+
+    const lowStockBuffer = product.low_stock_buffer ?? 1000;
+    
     if ($isPosOrAdmin) {
       // Show exact quantities for POS/Admin
       if (stock <= 0) {
         stockStatus = 'Out of Stock (0)';
-      } else if (stock <= 1000) {
+      } else if (lowStockBuffer > 0 && stock <= lowStockBuffer) {
         stockStatus = `Low Stock (${stock})`;
       } else {
         stockStatus = `In Stock (${stock})`;
@@ -75,7 +86,7 @@
       // Show general status for regular users
       if (stock <= 0) {
         stockStatus = 'Out of Stock';
-      } else if (stock <= 1000) {
+      } else if (lowStockBuffer > 0 && stock <= lowStockBuffer) {
         stockStatus = 'Low Stock';
       } else {
         stockStatus = 'In Stock';
@@ -112,12 +123,17 @@
     };
     const success = await cartStore.addItem(productToAdd);
     if (success) {
-      cardElement.classList.add('added-to-cart');
+      if (cardElement) cardElement.classList.add('added-to-cart');
       setTimeout(() => {
-        cardElement.classList.remove('added-to-cart');
+        if (cardElement) cardElement.classList.remove('added-to-cart');
       }, 700);
+      
+      // Show global snackbar with cart open option instead of auto-opening cart
+      const quantityText = selectedQuantity === 1 ? '' : ` (${selectedQuantity})`;
+      showGlobalSnackbar(`${product.name}${quantityText} added to cart! Click here to view cart.`, 4000, openCart);
+      
       selectedQuantity = 1;
-      dispatch('addToCart', productToAdd);
+      // Don't dispatch addToCart anymore since we're not auto-opening the cart
     }
     loading = false;
     addToCartInProgress = false;
@@ -306,7 +322,10 @@
           </button>
           <div class="card-product__details product__details product__details--cannabis">
                 <div class="product__price-row">
-              {#if product.is_special && product.special_price}
+              {#if hasCustomPrice}
+                <span class="product__price">R{effectivePrice}</span>
+                <span class="custom-price-label" style="color:#007bff;font-size:0.85em;margin-left:0.5em;">Custom Price</span>
+              {:else if product.is_special && product.special_price}
                 <span class="product__price" style="text-decoration: line-through; color: #888;">R{product.price}</span>
                 <span class="product__price" style="color: #e67e22; font-weight: bold; margin-left: 0.5em;">R{product.special_price}</span>
               {:else}
@@ -471,9 +490,10 @@
   border-radius: 16px;
   display: flex;
   width: 100%;
-  max-width: 280px;
+  max-width: 288px;
   margin: 0 auto;
-  min-height: 300px;
+  
+  
   position: relative;
   overflow: hidden;
 }
@@ -507,7 +527,7 @@
   transition: transform 0.3s ease, box-shadow 0.3s ease;
   cursor: default;
   z-index: 1;
-  
+  height: 100%;
   margin: 0;
 }
 
@@ -531,6 +551,9 @@
 
 .card-product__body {
   padding: 0 0.75rem 0.75rem 0.75rem;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 .card-product__body-container {
@@ -538,6 +561,7 @@
   flex-direction: column;
   align-items: center;
   text-align: center;
+  height: 100%;
 }
 
 .card-product__title {
@@ -546,13 +570,22 @@
   margin-bottom: 0.35rem;
   text-align: center;
   width: 100%;
-  white-space: normal;
-  word-wrap: break-word;
-  overflow-wrap: break-word;
-  hyphens: auto;
-  line-height: 1.2;
+  
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  
+  line-height: 1.3;
+  height: calc(1.4rem * 1.3 * 2);
+  min-height: calc(1.4rem * 1.3 * 2);
+  
   padding: 0 0.35rem;
   color: #ffffff;
+  
+  word-break: keep-all;
+  hyphens: none;
 }
 
 .product__price-row {
@@ -569,6 +602,7 @@
   align-items: center;
   gap: 0.75rem;
   width: 100%;
+  flex: 1;
 }
 
 .card-product__image {
@@ -603,11 +637,13 @@
 
 .card-product__details {
   flex: 1;
-  min-width: 0; /* Prevents flex item from overflowing */
+  min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
+  justify-content: space-between;
+  
 }
 
 .product__price {
@@ -623,6 +659,7 @@
   flex-direction: column;
   align-items: center;
   gap: 0.1rem;
+  
 }
 
 .product__cannabis-potency-title {
@@ -656,11 +693,14 @@
   margin: 0.25rem 0;
   padding: 0.15rem 0.3rem;
   border-radius: 4px;
-  font-size: 1;
+  font-size: 0.9rem;
   background: #e8f5e9;
   color: #2e7d32;
   text-align: center;
-  
+  min-height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .stock-status.out-of-stock {
@@ -680,6 +720,7 @@
   margin-bottom: 0.5rem;
   gap: 0.25rem;
   width: 100%;
+  min-height: 32px;
 }
 
 .quantity-btn {
@@ -731,8 +772,6 @@
 
 .add-to-cart-btn {
   background: linear-gradient(77deg, hsl(195.35deg 67.65% 41.89%), #00deff, #14ffbd);
-  
-  
   color: #fff;
   border: none;
   padding: 0.5rem 1rem;
@@ -748,6 +787,8 @@
   gap: 0.35rem;
   text-shadow: 0 0 8px #00f0ff, 0 0 16px #ff00de;
   letter-spacing: 0.5px;
+  min-height: 44px;
+  margin-top: auto;
 }
 
 /* @keyframes trippy-gradient {
@@ -792,9 +833,11 @@
 
 @media (max-width: 600px) {
   .card-product__border {
-    border-radius: 14px; /* 10px (container) + 4px (border) */
+    border-radius: 14px;
     max-width: 100%;
     padding: 4px;
+    min-height: 380px;
+    height: 380px;
   }
   .card-product__container {
     max-width: 100%;
@@ -814,7 +857,7 @@
   .product__details-row {
     flex-direction: row;
     gap: 0.5rem;
-    align-items: center;
+    align-items: flex-start;
   }
   
   .card-product__image {
@@ -822,7 +865,7 @@
   }
 
   .card-product__image img {
-    height: 200px;
+    height: 180px;
   }
 
   .card-product__details {
@@ -834,6 +877,8 @@
   .card-product__title {
     font-size: 1.2rem;
     padding: 0 0.25rem;
+    height: calc(1.2rem * 1.3 * 2);
+    min-height: calc(1.2rem * 1.3 * 2);
   }
 }
 
@@ -856,7 +901,7 @@
   width: 100%;
   margin-bottom: 0.5rem;
   padding: 0 0.25rem;
-  min-width: 0; /* Prevents flex item from overflowing */
+  min-width: 0;
 }
 
 .strain-type__labels {
@@ -914,6 +959,7 @@
   border: none;
   cursor: pointer;
   width: 100%;
+  min-height: 32px;
 }
 
 .product__rating:hover {
