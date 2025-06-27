@@ -411,151 +411,229 @@
   <StarryBackground />
   
   <div class="auth-container">
-    <div class="auth-card">
+    <div class="auth-card glass">
       {#if logoUrl}
-        <img src={logoUrl} alt="Logo" class="logo" />
+        <div class="logo-container">
+          <img src={logoUrl} alt="Logo" class="logo" />
+        </div>
       {/if}
-      <h1 style="text-align:center;color:wheat">Create Account</h1>
-      <h1 style="text-align:center;color:wheat">Join us today</h1>
+      
+      <div class="auth-header">
+        <h1 class="neon-text-cyan">Create Account</h1>
+        <p class="neon-text-white auth-subtitle">Join us today</p>
+      </div>
+
       {#if signedContractDownloadUrl}
-        <div class="success" transition:fade>
-          <p>Account created successfully!</p>
-          <p>Your contract is ready.</p>
-          <button type="button" class="submit-btn" on:click={handleDownloadClick}>
-            Download Signed Contract
-          </button>
-          <button type="button" class="link-btn" on:click={() => goto('/')} style="margin-top: 1rem;">Go to Home</button>
+        <div class="success-container glass-light" transition:fade>
+          <div class="success-content">
+            <div class="success-icon">✅</div>
+            <h2 class="neon-text-green">Account created successfully!</h2>
+            <p class="neon-text-white">Your contract is ready for download.</p>
+            <button type="button" class="btn btn-success btn-large" on:click={handleDownloadClick}>
+              <span class="btn-icon">📄</span>
+              Download Signed Contract
+            </button>
+            <button type="button" class="btn btn-secondary" on:click={() => goto('/')} style="margin-top: 1rem;">
+              <span class="btn-icon">🏠</span>
+              Go to Home
+            </button>
+          </div>
         </div>
       {:else if success}
-        <div class="success" transition:fade>
-          <p>{success}</p>
-          <p>Redirecting to home...</p>
+        <div class="success-container glass-light" transition:fade>
+          <div class="success-content">
+            <div class="success-icon">🎉</div>
+            <h2 class="neon-text-green">{success}</h2>
+            <p class="neon-text-white">Redirecting to home...</p>
+          </div>
         </div>
       {:else}
-        <form on:submit|preventDefault={signup}>
-          <div class="form-group">
-            <label for="firstName">First Name</label>
-            <input
-              id="firstName"
-              type="text"
-              bind:value={firstName}
-              placeholder="Enter your first name"
-              required
-            />
-          </div>
+        <form on:submit|preventDefault={signup} class="auth-form">
+          <!-- Personal Information Section -->
+          <div class="form-section">
+            <h3 class="section-title neon-text-white">
+              <span class="section-icon">👤</span>
+              Personal Information
+            </h3>
+            
+            <div class="form-row">
+              <div class="form-group">
+                <label for="firstName" class="form-label neon-text-white">
+                  <span class="label-icon">📝</span>
+                  First Name
+                </label>
+                <input
+                  id="firstName"
+                  type="text"
+                  bind:value={firstName}
+                  placeholder="Enter your first name"
+                  required
+                  class="form-control neon-input"
+                />
+              </div>
 
-          <div class="form-group">
-            <label for="lastName">Last Name</label>
-            <input
-              id="lastName"
-              type="text"
-              bind:value={lastName}
-              placeholder="Enter your last name"
-              required
-            />
-          </div>
+              <div class="form-group">
+                <label for="lastName" class="form-label neon-text-white">
+                  <span class="label-icon">📝</span>
+                  Last Name
+                </label>
+                <input
+                  id="lastName"
+                  type="text"
+                  bind:value={lastName}
+                  placeholder="Enter your last name"
+                  required
+                  class="form-control neon-input"
+                />
+              </div>
+            </div>
 
-          <div class="form-group">
-            <label for="displayName">Display Name</label>
-            <input
-              id="displayName"
-              type="text"
-              bind:value={displayName}
-              placeholder="Enter your display name"
-              required
-            />
-          </div>
-
-          <div class="form-group">
-            <label for="phoneNumber">Phone Number</label>
-            <input
-              id="phoneNumber"
-              type="tel"
-              bind:value={phoneNumber}
-              placeholder="Enter your phone number"
-              required
-            />
-          </div>
-
-          <div class="form-group">
-            <label for="email">Email</label>
-            <input
-              id="email"
-              type="email"
-              bind:value={email}
-              placeholder="Enter your email"
-              required
-              autocomplete="username"
-            />
-          </div>
-
-          <div class="form-group">
-            <label for="password">Password</label>
-            <input
-              id="password"
-              type="password"
-              bind:value={password}
-              placeholder="Create a password"
-              required
-              autocomplete="new-password"
-              minlength="6"
-            />
-            <small class="password-hint">Password must be at least 6 characters long</small>
-          </div>
-
-          <div class="form-group">
-            <label for="signature-pad">Signature</label>
-            <div class="signature-container" id="signature-pad">
-              <SignaturePad
-                bind:this={signaturePad}
-                width={320}
-                height={160}
-                on:change={debouncedSignatureChange}
+            <div class="form-group">
+              <label for="displayName" class="form-label neon-text-white">
+                <span class="label-icon">🏷️</span>
+                Display Name
+              </label>
+              <input
+                id="displayName"
+                type="text"
+                bind:value={displayName}
+                placeholder="Enter your display name"
+                required
+                class="form-control neon-input"
               />
-              {#if isSignatureEmpty}
-                <div class="signature-hint">Please sign above</div>
-              {/if}
+            </div>
+
+            <div class="form-group">
+              <label for="phoneNumber" class="form-label neon-text-white">
+                <span class="label-icon">📱</span>
+                Phone Number
+              </label>
+              <input
+                id="phoneNumber"
+                type="tel"
+                bind:value={phoneNumber}
+                placeholder="Enter your phone number"
+                required
+                class="form-control neon-input"
+              />
             </div>
           </div>
 
-          <div class="form-group">
-            <label for="idImage">ID/Driver's License</label>
-            <div class="upload-area" class:active={isCapturingId}>
-              {#if idImagePreview}
-                <div class="preview-container">
-                  <img src={idImagePreview} alt="ID preview" class="preview-image" />
-                  <button type="button" class="remove-btn" on:click={() => {
-                    idImageFile = null;
-                    idImagePreview = '';
-                  }}>×</button>
-                </div>
-              {:else}
-                <div class="upload-options">
-                  <label for="idImage" class="upload-label">
-                    <div class="upload-icon">📁</div>
-                    <span>Upload File</span>
-                    <span class="upload-hint">PNG, JPG up to 5MB</span>
-                    <input
-                      type="file"
-                      id="idImage"
-                      accept="image/*"
-                      on:change={handleIdImageCapture}
-                      class="file-input"
-                    />
-                  </label>
-                  <button type="button" class="camera-btn" on:click={startCamera}>
-                    <div class="upload-icon">📷</div>
-                    <span>Take Photo</span>
-                  </button>
-                </div>
-              {/if}
+          <!-- Account Credentials Section -->
+          <div class="form-section">
+            <h3 class="section-title neon-text-white">
+              <span class="section-icon">🔐</span>
+              Account Credentials
+            </h3>
+
+            <div class="form-group">
+              <label for="email" class="form-label neon-text-white">
+                <span class="label-icon">📧</span>
+                Email Address
+              </label>
+              <input
+                id="email"
+                type="email"
+                bind:value={email}
+                placeholder="Enter your email"
+                required
+                autocomplete="username"
+                class="form-control neon-input"
+              />
+            </div>
+
+            <div class="form-group">
+              <label for="password" class="form-label neon-text-white">
+                <span class="label-icon">🔒</span>
+                Password
+              </label>
+              <input
+                id="password"
+                type="password"
+                bind:value={password}
+                placeholder="Create a password"
+                required
+                autocomplete="new-password"
+                minlength="6"
+                class="form-control neon-input"
+              />
+              <small class="form-hint">Password must be at least 6 characters long</small>
             </div>
           </div>
 
-          <!-- Agreement box moved here, above the Create Account button -->
-          <div class="agreement-content">
-            <h2 style="text-align:center;">Membership Agreement Preview</h2>
-            <div>
+          <!-- Digital Signature Section -->
+          <div class="form-section">
+            <h3 class="section-title neon-text-white">
+              <span class="section-icon">✍️</span>
+              Digital Signature
+            </h3>
+            
+            <div class="form-group">
+              <label for="signature-pad" class="form-label neon-text-white">Signature</label>
+              <div class="signature-container glass-light" id="signature-pad">
+                <SignaturePad
+                  bind:this={signaturePad}
+                  width={320}
+                  height={160}
+                  on:change={debouncedSignatureChange}
+                />
+                {#if isSignatureEmpty}
+                  <div class="signature-hint neon-text-secondary">Please sign above</div>
+                {/if}
+              </div>
+            </div>
+          </div>
+
+          <!-- ID Verification Section -->
+          <div class="form-section">
+            <h3 class="section-title neon-text-white">
+              <span class="section-icon">🆔</span>
+              ID Verification
+            </h3>
+            
+            <div class="form-group">
+              <label for="idImage" class="form-label neon-text-white">ID/Driver's License</label>
+              <div class="upload-area glass-light" class:active={isCapturingId}>
+                {#if idImagePreview}
+                  <div class="preview-container">
+                    <img src={idImagePreview} alt="ID preview" class="preview-image" />
+                    <button type="button" class="remove-btn" on:click={() => {
+                      idImageFile = null;
+                      idImagePreview = '';
+                    }}>×</button>
+                  </div>
+                {:else}
+                  <div class="upload-options">
+                    <label for="idImage" class="upload-option">
+                      <div class="upload-icon">📁</div>
+                      <span class="neon-text-white">Upload File</span>
+                      <span class="upload-hint neon-text-secondary">PNG, JPG up to 5MB</span>
+                      <input
+                        type="file"
+                        id="idImage"
+                        accept="image/*"
+                        on:change={handleIdImageCapture}
+                        class="file-input"
+                      />
+                    </label>
+                    <button type="button" class="upload-option camera-btn" on:click={startCamera}>
+                      <div class="upload-icon">📷</div>
+                      <span class="neon-text-white">Take Photo</span>
+                    </button>
+                  </div>
+                {/if}
+              </div>
+            </div>
+          </div>
+
+          <!-- Agreement Section -->
+          <div class="form-section">
+            <h3 class="section-title neon-text-white">
+              <span class="section-icon">📋</span>
+              Membership Agreement Preview
+            </h3>
+            
+            <div class="agreement-content glass-light">
               <div id="contract-template" style="background-color: white; color: black;">
                 <h2 style="text-align:center; color: black;">MEMBERSHIP AGREEMENT</h2>
                 <p style="color: black;"><strong style="color: black;">Between:</strong><br>
@@ -700,26 +778,32 @@
             </div>
           </div>
 
-          <button type="submit" class="submit-btn" disabled={loading}>
+          <button type="submit" class="btn btn-primary btn-large" disabled={loading}>
             {#if loading}
               <span class="loading-spinner"></span>
               Creating Account...
             {:else}
+              <span class="btn-icon">🚀</span>
               Create Account
             {/if}
           </button>
         </form>
 
-        <p class="auth-footer">
-          Already have an account? <button type="button" class="link-btn" on:click={() => goto('/login')}>Sign in</button>
-        </p>
+        <div class="auth-footer">
+          <p class="neon-text-secondary">
+            Already have an account? 
+            <button type="button" class="link-btn neon-text-cyan" on:click={() => goto('/login')}>
+              Sign in
+            </button>
+          </p>
+        </div>
       {/if}
     </div>
   </div>
 
   {#if showCameraModal}
     <div class="modal-backdrop" role="button" tabindex="0" aria-label="Close camera modal" on:click={stopCamera} on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') stopCamera(); }}></div>
-    <div class="modal camera-modal" role="dialog" aria-modal="true">
+    <div class="camera-modal glass" role="dialog" aria-modal="true">
       <button class="close-btn" on:click={stopCamera} aria-label="Close camera">×</button>
       <div class="camera-container">
         <video
@@ -734,192 +818,274 @@
             Take Photo
           </button>
         {:else}
-          <div class="camera-loading">Initializing camera...</div>
+          <div class="camera-loading neon-text-white">Initializing camera...</div>
         {/if}
       </div>
     </div>
   {/if}
 
   <style>
-    html, body {
-      overflow-x: hidden;
-      max-width: 100vw;
-    }
-
-    body {
-      width: 100vw;
-      box-sizing: border-box;
-    }
-
     .auth-container {
       min-height: 100vh;
       display: flex;
       align-items: center;
       justify-content: center;
-      
+      padding: 2rem;
       position: relative;
       z-index: 1;
-      max-width: 100vw;
-      box-sizing: border-box;
-      overflow-x: hidden;
     }
 
     .auth-card {
-      backdrop-filter: blur(10px);
-     
-      border-radius: 16px;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-      max-width: 700px;
+      max-width: 800px;
       width: 100%;
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      box-sizing: border-box;
-      overflow-x: hidden;
+      padding: 2.5rem;
+      backdrop-filter: blur(20px);
+      border: 1px solid var(--border-neon);
+      box-shadow: var(--shadow-neon), 0 8px 32px rgba(0, 242, 254, 0.1);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .auth-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: var(--gradient-primary);
+      opacity: 0.8;
+    }
+
+    .logo-container {
+      text-align: center;
+      margin-bottom: 2rem;
     }
 
     .logo {
       width: 120px;
       height: auto;
-      margin: 0 auto 2rem;
-      display: block;
-      max-width: 100%;
+      filter: drop-shadow(0 0 10px rgba(0, 242, 254, 0.3));
+      transition: all 0.3s ease;
     }
 
-    h1, .subtitle, .auth-footer, label, .form-group, .agreement-content {
-      max-width: 100%;
-      box-sizing: border-box;
-      word-break: break-word;
-      overflow-wrap: break-word;
+    .logo:hover {
+      filter: drop-shadow(0 0 20px rgba(0, 242, 254, 0.6));
+      transform: scale(1.05);
+    }
+
+    .auth-header {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+
+    .auth-header h1 {
+      font-size: 2.5rem;
+      margin: 0 0 0.5rem;
+      font-weight: 700;
+      text-shadow: var(--text-shadow-neon);
+      letter-spacing: 0.02em;
+    }
+
+    .auth-subtitle {
+      font-size: 1.1rem;
+      margin: 0;
+      opacity: 0.9;
+      letter-spacing: 0.01em;
+    }
+
+    .auth-form {
+      margin-bottom: 2rem;
+    }
+
+    /* Form Sections */
+    .form-section {
+      margin-bottom: 2.5rem;
+      padding: 1.5rem;
+      background: rgba(13, 17, 23, 0.4);
+      border: 1px solid rgba(0, 242, 254, 0.1);
+      border-radius: 12px;
+      backdrop-filter: blur(10px);
+    }
+
+    .section-title {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 1.5rem;
+      font-size: 1.2rem;
+      font-weight: 600;
+      border-bottom: 1px solid rgba(0, 242, 254, 0.2);
+      padding-bottom: 0.75rem;
+    }
+
+    .section-icon {
+      font-size: 1.4rem;
+      opacity: 0.9;
+    }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
     }
 
     .form-group {
-      margin-bottom: 1.5rem;
-      text-align: center;
-      max-width: 100%;
-      box-sizing: border-box;
+      margin-bottom: 1.25rem;
     }
 
-    label {
-      display: block;
+    .form-label {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
       margin-bottom: 0.5rem;
-      color: #e0e0e0;
-      font-weight: 500;
-      max-width: 100%;
-      box-sizing: border-box;
+      font-weight: 600;
+      font-size: 0.95rem;
+      letter-spacing: 0.01em;
     }
 
-    input, button, .submit-btn, .link-btn {
-      max-width: 100%;
-      box-sizing: border-box;
-      word-break: break-word;
-      overflow-wrap: break-word;
+    .label-icon {
+      font-size: 1.1rem;
+      opacity: 0.8;
     }
 
-    input {
-      width: 50%;
-      border: 1px solid rgba(0, 0, 0, 0.1);
-      border-radius: 8px;
+    .neon-input {
+      width: 100%;
+      background: rgba(13, 17, 23, 0.8);
+      border: 1px solid rgba(0, 242, 254, 0.3);
+      color: var(--text-primary);
       font-size: 1rem;
-      transition: all 0.2s;
-      background: rgba(255, 255, 255, 0.9);
+      transition: all 0.3s ease;
       text-align: center;
-      box-sizing: border-box;
     }
 
-    .password-hint {
+    .neon-input:focus {
+      outline: none;
+      border-color: var(--neon-cyan);
+      box-shadow: 0 0 0 2px rgba(0, 242, 254, 0.2), inset 0 0 20px rgba(0, 242, 254, 0.05);
+      background: rgba(0, 242, 254, 0.05);
+    }
+
+    .neon-input::placeholder {
+      color: rgba(255, 255, 255, 0.5);
+      font-style: italic;
+    }
+
+    .form-hint {
       display: block;
       margin-top: 0.5rem;
-      color: #666;
+      color: rgba(255, 255, 255, 0.6);
       font-size: 0.875rem;
-      max-width: 100%;
-      box-sizing: border-box;
-      word-break: break-word;
-      overflow-wrap: break-word;
+      font-style: italic;
     }
 
-    .submit-btn {
+    /* Button Styles */
+    .btn-large {
       width: 100%;
-      padding: 0.75rem;
-      background: linear-gradient(135deg, #2196f3, #1976d2);
-      color: white;
-      border: none;
-      border-radius: 8px;
-      font-size: 1rem;
+      padding: 0.875rem 1.5rem;
+      font-size: 1.1rem;
       font-weight: 600;
-      cursor: pointer;
-      transition: all 0.2s;
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 0.5rem;
-      box-sizing: border-box;
-      max-width: 100%;
-      word-break: break-word;
-      overflow-wrap: break-word;
+      gap: 0.75rem;
+      position: relative;
+      overflow: hidden;
+      margin-top: 1rem;
     }
 
-    .submit-btn:hover:not(:disabled) {
-      background: linear-gradient(135deg, #1976d2, #1565c0);
-      transform: translateY(-1px);
-      box-shadow: 0 4px 8px rgba(33, 150, 243, 0.3);
+    .btn-large::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+      transition: left 0.5s;
     }
 
-    .submit-btn:disabled {
-      background: #e0e0e0;
-      cursor: not-allowed;
+    .btn-large:hover::before {
+      left: 100%;
     }
 
-    .error, .success {
-      max-width: 100%;
-      box-sizing: border-box;
-      word-break: break-word;
-      overflow-wrap: break-word;
+    .btn-icon {
+      font-size: 1.2rem;
     }
 
-    .error {
-      background: rgba(248, 215, 218, 0.9);
-      color: #721c24;
-      padding: 1rem;
-      border-radius: 8px;
-      margin-bottom: 1.5rem;
+    /* Success States */
+    .success-container {
       text-align: center;
-      backdrop-filter: blur(4px);
+      padding: 2rem;
+      border: 1px solid rgba(67, 233, 123, 0.3);
+      border-radius: 12px;
+      backdrop-filter: blur(10px);
     }
 
-    .success {
-      background: rgba(212, 237, 218, 0.9);
-      color: #155724;
-      padding: 1rem;
-      border-radius: 8px;
-      margin-bottom: 1.5rem;
-      text-align: center;
-      backdrop-filter: blur(4px);
+    .success-content {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .success-icon {
+      font-size: 3rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .success-container h2 {
+      margin: 0;
+      font-size: 1.5rem;
+      font-weight: 700;
+    }
+
+    .success-container p {
+      margin: 0;
+      opacity: 0.9;
     }
 
     .auth-footer {
       text-align: center;
-      margin-top: 1.5rem;
-      color: #666;
-      max-width: 100%;
-      box-sizing: border-box;
+      padding-top: 1.5rem;
+      border-top: 1px solid rgba(0, 242, 254, 0.2);
+    }
+
+    .auth-footer p {
+      margin: 0;
+      font-size: 0.95rem;
     }
 
     .link-btn {
       background: none;
       border: none;
-      color: #2196f3;
-      text-decoration: underline;
-      font-weight: 500;
+      font-weight: 600;
       cursor: pointer;
       padding: 0;
       font: inherit;
-      max-width: 100%;
-      box-sizing: border-box;
-      word-break: break-word;
-      overflow-wrap: break-word;
+      text-decoration: none;
+      transition: all 0.3s ease;
+      position: relative;
+    }
+
+    .link-btn::after {
+      content: '';
+      position: absolute;
+      bottom: -2px;
+      left: 0;
+      width: 0;
+      height: 2px;
+      background: var(--gradient-primary);
+      transition: width 0.3s ease;
+    }
+
+    .link-btn:hover::after {
+      width: 100%;
     }
 
     .link-btn:hover {
-      text-decoration: none;
+      text-shadow: 0 0 8px rgba(0, 242, 254, 0.6);
+      transform: translateY(-1px);
     }
 
     .loading-spinner {
@@ -937,58 +1103,223 @@
       }
     }
 
-    @media (max-width: 480px) {
+    .loading-spinner {
+      width: 20px;
+      height: 20px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-radius: 50%;
+      border-top-color: #fff;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    /* Mobile Responsiveness */
+    @media (max-width: 1024px) {
+      .auth-card {
+        max-width: 700px;
+        padding: 2rem;
+      }
+
+      .form-section {
+        padding: 1.25rem;
+      }
+    }
+
+    @media (max-width: 768px) {
       .auth-container {
         padding: 1rem;
       }
+
       .auth-card {
-       
-        max-width: 100vw;
-        width: 100vw;
+        padding: 1.5rem;
+        max-width: 100%;
       }
-      h1 {
-        font-size: 1.75rem;
+
+      .auth-header h1 {
+        font-size: 2rem;
+      }
+
+      .form-row {
+        grid-template-columns: 1fr;
+        gap: 0;
+      }
+
+      .form-section {
+        margin-bottom: 2rem;
+        padding: 1rem;
+      }
+
+      .section-title {
+        font-size: 1.1rem;
+      }
+
+      .upload-options {
+        flex-direction: column;
+        gap: 0.75rem;
+      }
+
+      .upload-option {
+        min-width: auto;
+        width: 100%;
+      }
+
+      .signature-container {
+        max-width: 100%;
+      }
+
+      .logo {
+        width: 100px;
       }
     }
 
+    @media (max-width: 480px) {
+      .auth-container {
+        padding: 0.75rem;
+      }
+
+      .auth-card {
+        padding: 1.25rem;
+      }
+
+      .auth-header h1 {
+        font-size: 1.75rem;
+      }
+
+      .auth-subtitle {
+        font-size: 1rem;
+      }
+
+      .form-section {
+        padding: 0.75rem;
+        margin-bottom: 1.5rem;
+      }
+
+      .section-title {
+        font-size: 1rem;
+        gap: 0.5rem;
+      }
+
+      .section-icon {
+        font-size: 1.2rem;
+      }
+
+      .form-label {
+        font-size: 0.9rem;
+      }
+
+      .neon-input {
+        font-size: 0.95rem;
+      }
+
+      .btn-large {
+        padding: 0.75rem 1.25rem;
+        font-size: 1rem;
+      }
+
+      .logo {
+        width: 80px;
+      }
+
+      .agreement-content {
+        max-height: 250px;
+        
+        font-size: 0.85em;
+      }
+
+      .camera-modal {
+        width: 98vw;
+        max-width: none;
+        padding: 1rem;
+      }
+    }
+
+    /* Enhanced glow effects for premium feel */
+    @media (min-width: 769px) {
+      .auth-card:hover {
+        box-shadow: var(--shadow-neon), 0 12px 40px rgba(0, 242, 254, 0.15);
+        transform: translateY(-2px);
+      }
+
+      .neon-input:hover {
+        border-color: rgba(0, 242, 254, 0.5);
+      }
+
+      .form-section:hover {
+        border-color: rgba(0, 242, 254, 0.2);
+        background: rgba(13, 17, 23, 0.5);
+      }
+    }
+
+    /* Dark mode enhancements */
+    @media (prefers-color-scheme: dark) {
+      .neon-input {
+        background: rgba(0, 0, 0, 0.6);
+      }
+
+      .agreement-content {
+        background: rgba(255, 255, 255, 0.98);
+      }
+    }
+
+    /* Upload Area Styles */
     .upload-area {
-      border: 2px dashed #dee2e6;
-      border-radius: 6px;
+      border: 2px dashed rgba(0, 242, 254, 0.3);
+      border-radius: 12px;
       padding: 2rem;
       text-align: center;
-      
-      transition: all 0.2s;
-      max-width: 100%;
-      box-sizing: border-box;
-      overflow-x: hidden;
+      transition: all 0.3s ease;
+      background: rgba(13, 17, 23, 0.4);
+      backdrop-filter: blur(10px);
     }
 
     .upload-area.active {
-      border-color: #007bff;
-      background: #e7f5ff;
+      border-color: var(--neon-cyan);
+      background: rgba(0, 242, 254, 0.05);
+      box-shadow: 0 0 20px rgba(0, 242, 254, 0.1);
     }
 
-    .upload-label {
+    .upload-options {
+      display: flex;
+      gap: 1rem;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .upload-option {
       display: flex;
       flex-direction: column;
       align-items: center;
       gap: 0.5rem;
+      padding: 1rem;
+      border: 1px solid rgba(0, 242, 254, 0.3);
+      border-radius: 8px;
+      background: rgba(13, 17, 23, 0.6);
       cursor: pointer;
-      max-width: 100%;
-      box-sizing: border-box;
+      transition: all 0.3s ease;
+      min-width: 120px;
+    }
+
+    .upload-option:hover {
+      border-color: var(--neon-cyan);
+      background: rgba(0, 242, 254, 0.05);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0, 242, 254, 0.1);
     }
 
     .upload-icon {
       font-size: 2rem;
+      opacity: 0.8;
     }
 
     .upload-hint {
       font-size: 0.875rem;
-      color: #6c757d;
-      max-width: 100%;
-      box-sizing: border-box;
-      word-break: break-word;
-      overflow-wrap: break-word;
+      opacity: 0.7;
+      font-style: italic;
     }
 
     .file-input {
@@ -1027,95 +1358,45 @@
       font-size: 1rem;
     }
 
+    /* Signature Pad Styles */
     .signature-container {
-      border: 1px solid #dee2e6;
-      border-radius: 6px;
-     
-      background: white;
-      box-sizing: border-box;
+      border: 1px solid rgba(0, 242, 254, 0.3);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.95);
       overflow: hidden;
       display: flex;
       flex-direction: column;
       align-items: center;
-      width: 320px;
-      max-width: 100vw;
+      width: 100%;
+      max-width: 400px;
       aspect-ratio: 4/2;
-      will-change: transform;
-      contain: paint;
       margin: 0 auto;
+      transition: all 0.3s ease;
+      backdrop-filter: blur(5px);
     }
 
-    .upload-options {
-      display: flex;
-      gap: 1rem;
-      justify-content: center;
-      flex-wrap: wrap;
-      max-width: 100%;
-      box-sizing: border-box;
+    .signature-container:hover {
+      border-color: var(--neon-cyan);
+      box-shadow: 0 0 15px rgba(0, 242, 254, 0.1);
     }
 
-    .upload-label, .camera-btn {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 0.5rem;
-      padding: 1rem;
-      border: 1px solid #dee2e6;
-      border-radius: 6px;
-      background: white;
-      cursor: pointer;
-      transition: all 0.2s;
-      min-width: 120px;
-      max-width: 100%;
-      box-sizing: border-box;
-    }
-
-    .upload-label:hover, .camera-btn:hover {
-      border-color: #007bff;
-      background: #f8f9fa;
-    }
-
-    .camera-loading {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      color: white;
-      font-size: 1.2rem;
+    .signature-hint {
       text-align: center;
-      background: rgba(0, 0, 0, 0.7);
-      padding: 1rem 2rem;
-      border-radius: 8px;
-      max-width: 90vw;
-      box-sizing: border-box;
-      word-break: break-word;
-      overflow-wrap: break-word;
+      font-size: 0.875rem;
+      margin-top: 0.5rem;
+      font-style: italic;
+      opacity: 0.7;
     }
 
-    .camera-modal {
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      background: #000;
-      padding: 1rem;
-      border-radius: 12px;
-      z-index: 2001;
-      width: 95vw;
-      max-width: 420px;
-      box-sizing: border-box;
-      overflow-x: hidden;
-    }
+
 
     .camera-container {
       position: relative;
       width: 100%;
       aspect-ratio: 4/3;
       background: #000;
-      border-radius: 8px;
+      border-radius: 12px;
       overflow: hidden;
-      will-change: transform;
-      contain: paint;
       margin: 0 auto;
     }
 
@@ -1126,10 +1407,8 @@
       width: 100%;
       height: 100%;
       object-fit: cover;
-      border-radius: 8px;
+      border-radius: 12px;
       transform: scaleX(-1);
-      box-sizing: border-box;
-      contain: paint;
     }
 
     .capture-btn {
@@ -1140,17 +1419,18 @@
       width: 64px;
       height: 64px;
       border-radius: 50%;
-      background: white;
-      border: 4px solid rgba(255, 255, 255, 0.3);
+      background: rgba(255, 255, 255, 0.9);
+      border: 4px solid rgba(0, 242, 254, 0.5);
       cursor: pointer;
-      transition: all 0.2s;
+      transition: all 0.3s ease;
       z-index: 2;
-      max-width: 100vw;
-      box-sizing: border-box;
     }
 
     .capture-btn:hover {
       transform: translateX(-50%) scale(1.1);
+      background: rgba(255, 255, 255, 1);
+      border-color: var(--neon-cyan);
+      box-shadow: 0 0 20px rgba(0, 242, 254, 0.3);
     }
 
     .capture-btn::after {
@@ -1162,34 +1442,107 @@
       width: 48px;
       height: 48px;
       border-radius: 50%;
-      background: white;
+      background: rgba(0, 242, 254, 0.8);
     }
 
-    .signature-hint {
+    .camera-loading {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 1.2rem;
       text-align: center;
-      color: #6c757d;
-      font-size: 0.875rem;
-      margin-top: 0.5rem;
-      max-width: 100%;
-      box-sizing: border-box;
-      word-break: break-word;
-      overflow-wrap: break-word;
+      background: rgba(0, 0, 0, 0.8);
+      padding: 1rem 2rem;
+      border-radius: 8px;
+      backdrop-filter: blur(5px);
     }
 
+    /* Camera Modal Styles */
+    .modal-backdrop {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.8);
+      backdrop-filter: blur(5px);
+      z-index: 2000;
+    }
+
+    .camera-modal {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      padding: 1.5rem;
+      border-radius: 16px;
+      z-index: 2001;
+      width: 95vw;
+      max-width: 500px;
+      border: 1px solid var(--border-neon);
+      backdrop-filter: blur(20px);
+      box-shadow: var(--shadow-neon), 0 8px 32px rgba(0, 242, 254, 0.2);
+    }
+
+    .close-btn {
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+      width: 32px;
+      height: 32px;
+      border: none;
+      background: rgba(220, 53, 69, 0.8);
+      color: white;
+      border-radius: 50%;
+      cursor: pointer;
+      font-size: 1.2rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 2002;
+      transition: all 0.3s ease;
+    }
+
+    .close-btn:hover {
+      background: rgba(220, 53, 69, 1);
+      transform: scale(1.1);
+    }
+
+
+
+
+
+    /* Agreement Content */
     .agreement-content {
-      max-height: 300px;
+      max-height: 400px;
       overflow-y: auto;
-      background: rgba(255,255,255,0.95);
-      border: 1px solid #ccc;
-      border-radius: 8px;
-      padding: 1rem;
-      margin-top: 1.5rem;
+      background: rgba(255, 255, 255, 0.95);
+      border: 1px solid rgba(0, 242, 254, 0.2);
+      border-radius: 12px;
+     
       color: #222;
-      font-size: 0.95em;
-      max-width: 100vw;
-      box-sizing: border-box;
-      word-break: break-word;
-      overflow-wrap: break-word;
+      font-size: 0.9em;
+      backdrop-filter: blur(5px);
+      box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.05);
+    }
+
+    .agreement-content::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .agreement-content::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.1);
+      border-radius: 3px;
+    }
+
+    .agreement-content::-webkit-scrollbar-thumb {
+      background: rgba(0, 242, 254, 0.3);
+      border-radius: 3px;
+    }
+
+    .agreement-content::-webkit-scrollbar-thumb:hover {
+      background: rgba(0, 242, 254, 0.5);
     }
     
     /* Ensure contract template has black text */

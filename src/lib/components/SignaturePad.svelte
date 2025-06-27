@@ -94,6 +94,7 @@
   }
 
   .controls {
+    top: 10px;
     padding: 0.5rem;
     background: #f8f9fa;
     border-top: 1px solid #ccc;

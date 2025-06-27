@@ -421,31 +421,106 @@
   }
 
   @media (max-width: 800px) {
+    .orders-container {
+      padding: 0 0.5rem;
+      margin: 1rem auto;
+    }
+
+    h1 {
+      font-size: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .order-card {
+      padding: 1rem;
+    }
+
     .order-header {
       flex-direction: column;
       align-items: flex-start;
       gap: 0.5rem;
+      margin-bottom: 0.75rem;
+      padding-bottom: 0.75rem;
     }
 
-  
+    .order-info h3 {
+      font-size: 1rem;
+    }
 
     .order-item {
       flex-direction: column;
       text-align: center;
+      gap: 0.5rem;
+      padding: 0.75rem 0.5rem;
+    }
+
+    .order-item img {
+      width: 50px;
+      height: 50px;
+      align-self: center;
     }
 
     .item-details {
       text-align: center;
     }
 
+    .item-details h4 {
+      font-size: 0.9rem;
+    }
+
+    .item-quantity,
+    .item-price {
+      font-size: 0.8rem;
+    }
+
+    .item-total {
+      font-size: 0.9rem;
+      margin-top: 0.25rem;
+    }
+
     .order-footer {
       flex-direction: column;
       gap: 1rem;
       text-align: center;
+      padding-top: 0.75rem;
     }
 
-    .reorder-btn {
+    .order-total {
+      font-size: 1rem;
+    }
+
+    .order-actions {
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .order-actions button {
       width: 100%;
+      padding: 0.75rem;
+    }
+
+    .delete-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+  }
+
+  @media (max-width: 480px) {
+    .orders-container {
+      margin: 0.5rem auto;
+    }
+
+    .order-card {
+      margin: 0 -0.5rem;
+      border-radius: 8px;
+    }
+
+    .orders-list {
+      gap: 1rem;
+    }
+
+    h1 {
+      font-size: 1.25rem;
     }
   }
 </style> 

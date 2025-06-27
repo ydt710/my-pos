@@ -147,6 +147,7 @@
     {/if}
     {#if !user}
       <a href="/login" class="menu-item">Login</a>
+      <a href="/signup" class="menu-item">Register</a>
     {/if}
   </nav>
 

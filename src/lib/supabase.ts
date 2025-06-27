@@ -1,15 +1,32 @@
 import { createClient } from '@supabase/supabase-js';
 import { browser } from '$app/environment';
+import { PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY } from '$env/static/public';
 
-//const supabaseUrl = 'http://127.0.0.1:54321';
-const supabaseUrl = 'https://wglybohfygczpapjxwwz.supabase.co';
-//const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0';
-const supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndnbHlib2hmeWdjenBhcGp4d3d6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYyMDI2OTYsImV4cCI6MjA2MTc3ODY5Nn0.F9Ja7Npo2aj-1EzgmG275aF_nkm6BvY7MprqQKhpFp0";
+// Use environment variables with fallbacks
+const supabaseUrl = PUBLIC_SUPABASE_URL || 'https://wglybohfygczpapjxwwz.supabase.co';
+const supabaseAnonKey = PUBLIC_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndnbHlib2hmeWdjenBhcGp4d3d6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYyMDI2OTYsImV4cCI6MjA2MTc3ODY5Nn0.F9Ja7Npo2aj-1EzgmG275aF_nkm6BvY7MprqQKhpFp0";
 
-if (browser && (supabaseUrl.includes('127.0.0.1') || supabaseUrl.includes('localhost'))) {
-  console.log('🔧 Supabase: Using LOCAL development database');
-} else if (browser) {
-  console.log('🌐 Supabase: Using PRODUCTION database');
+if (browser) {
+  const isLocal = supabaseUrl.includes('127.0.0.1') || supabaseUrl.includes('localhost');
+  const currentHost = window.location.host;
+  
+  if (isLocal) {
+    console.log('🔧 Supabase: Using LOCAL development database');
+    console.log('📍 Database URL:', supabaseUrl);
+    console.log('🌐 Accessing from:', currentHost);
+    
+    // Warn if accessing from network IP but using localhost database
+    if (!currentHost.includes('localhost') && !currentHost.includes('127.0.0.1')) {
+      console.warn('⚠️  WARNING: You are accessing from a network IP (' + currentHost + ') but using a localhost database.');
+      console.warn('   Other devices cannot access localhost database. Consider:');
+      console.warn('   1. Switch to remote database in .env.local');
+      console.warn('   2. Use ngrok for tunneling');
+    }
+  } else {
+    console.log('🌐 Supabase: Using PRODUCTION database');
+    console.log('📍 Database URL:', supabaseUrl);
+    console.log('✅ Network access: Available from any device');
+  }
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {

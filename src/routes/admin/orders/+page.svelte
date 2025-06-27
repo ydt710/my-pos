@@ -202,7 +202,7 @@
     <!-- Filters Section -->
     <div class="glass mb-4">
       <div class="card-body">
-        <div class="grid grid-4 gap-2">
+        <div class="admin-grid admin-grid-4">
           <div class="form-group">
             <label class="form-label">Status</label>
             <select bind:value={statusFilter} class="form-control form-select">
@@ -245,79 +245,159 @@
     {:else}
       <!-- Orders Table -->
       <div class="glass mb-4">
-        <table class="table-dark">
-          <thead>
-            <tr>
-              <th>Order #</th>
-              <th>Date</th>
-              <th>Customer</th>
-              <th>Email</th>
-              <th>Type</th>
-              <th>Payment</th>
-              <th>Total</th>
-              <th>Status</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {#each filteredOrders as order (order.id)}
-              <tr class="hover-glow">
-                <td class="neon-text-white">
-                  {order.order_number || order.id.substring(0, 8)}
-                </td>
-                <td>{formatDate(order.created_at)}</td>
-                <td>
-                  {#if order.user}
-                    {order.user.display_name || 'N/A'}
-                  {:else if order.guest_info}
-                    {order.guest_info.name || 'Guest'}
-                  {:else}
-                    Unknown
-                  {/if}
-                </td>
-                <td>
-                  {#if order.user}
-                    {order.user.email || 'N/A'}
-                  {:else if order.guest_info}
-                    {order.guest_info.email || 'N/A'}
-                  {:else}
-                    N/A
-                  {/if}
-                </td>
-                <td>
+        <!-- Desktop Table View -->
+        <div class="table-responsive desktop-only">
+          <table class="table-dark">
+            <thead>
+              <tr>
+                <th>Order #</th>
+                <th>Date</th>
+                <th>Customer</th>
+                <th>Email</th>
+                <th>Type</th>
+                <th>Payment</th>
+                <th>Total</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each filteredOrders as order (order.id)}
+                <tr class="hover-glow">
+                  <td class="neon-text-white">
+                    {order.order_number || order.id.substring(0, 8)}
+                  </td>
+                  <td>{formatDate(order.created_at)}</td>
+                  <td>
+                    {#if order.user}
+                      {order.user.display_name || 'N/A'}
+                    {:else if order.guest_info}
+                      {order.guest_info.name || 'Guest'}
+                    {:else}
+                      Unknown
+                    {/if}
+                  </td>
+                  <td>
+                    {#if order.user}
+                      {order.user.email || 'N/A'}
+                    {:else if order.guest_info}
+                      {order.guest_info.email || 'N/A'}
+                    {:else}
+                      N/A
+                    {/if}
+                  </td>
+                  <td>
+                    <span class="badge {order.user ? 'badge-info' : 'badge-warning'}">
+                      {order.user ? 'Registered' : 'Guest'}
+                    </span>
+                  </td>
+                  <td>{order.payment_method || 'cash'}</td>
+                  <td class="neon-text-cyan">
+                    {formatCurrency(Number(order.total) || 0)}
+                  </td>
+                  <td>
+                    <span class="badge {getStatusBadgeClass(order.status)}">
+                      {order.status}
+                    </span>
+                  </td>
+                  <td>
+                    <div class="flex gap-1">
+                      <button 
+                        class="btn btn-secondary btn-sm"
+                        on:click={() => { selectedOrder = order; showOrderModal = true; }}
+                      >
+                        Details
+                      </button>
+                      <button 
+                        class="btn btn-danger btn-sm"
+                        on:click={() => { orderToDelete = order; showDeleteConfirm = true; }}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Mobile Card View -->
+        <div class="admin-grid mobile-only">
+          {#each filteredOrders as order (order.id)}
+            <div class="admin-card">
+              <div class="admin-card-header">
+                <div>
+                  <div class="admin-card-title">Order #{order.order_number || order.id.substring(0, 8)}</div>
+                  <div class="admin-card-subtitle">{formatDate(order.created_at)}</div>
+                </div>
+                <div class="badge-group">
                   <span class="badge {order.user ? 'badge-info' : 'badge-warning'}">
                     {order.user ? 'Registered' : 'Guest'}
                   </span>
-                </td>
-                <td>{order.payment_method || 'cash'}</td>
-                <td class="neon-text-cyan">
-                  {formatCurrency(Number(order.total) || 0)}
-                </td>
-                <td>
                   <span class="badge {getStatusBadgeClass(order.status)}">
                     {order.status}
                   </span>
-                </td>
-                <td>
-                  <div class="flex gap-1">
-                    <button 
-                      class="btn btn-secondary btn-sm"
-                      on:click={() => { selectedOrder = order; showOrderModal = true; }}
-                    >
-                      Details
-                    </button>
-                    <button 
-                      class="btn btn-danger btn-sm"
-                      on:click={() => { orderToDelete = order; showDeleteConfirm = true; }}
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
+                </div>
+              </div>
+              
+              <div class="admin-card-body">
+                <div class="admin-card-row">
+                  <span class="admin-card-label">Customer:</span>
+                  <span class="admin-card-value">
+                    {#if order.user}
+                      {order.user.display_name || 'N/A'}
+                    {:else if order.guest_info}
+                      {order.guest_info.name || 'Guest'}
+                    {:else}
+                      Unknown
+                    {/if}
+                  </span>
+                </div>
+                
+                <div class="admin-card-row">
+                  <span class="admin-card-label">Email:</span>
+                  <span class="admin-card-value">
+                    {#if order.user}
+                      {order.user.email || 'N/A'}
+                    {:else if order.guest_info}
+                      {order.guest_info.email || 'N/A'}
+                    {:else}
+                      N/A
+                    {/if}
+                  </span>
+                </div>
+                
+                <div class="admin-card-row">
+                  <span class="admin-card-label">Payment:</span>
+                  <span class="admin-card-value">{order.payment_method || 'cash'}</span>
+                </div>
+                
+                <div class="admin-card-row">
+                  <span class="admin-card-label">Total:</span>
+                  <span class="admin-card-value neon-text-cyan">
+                    {formatCurrency(Number(order.total) || 0)}
+                  </span>
+                </div>
+              </div>
+              
+              <div class="admin-card-actions">
+                <button 
+                  class="btn btn-secondary btn-sm"
+                  on:click={() => { selectedOrder = order; showOrderModal = true; }}
+                >
+                  Details
+                </button>
+                <button 
+                  class="btn btn-danger btn-sm"
+                  on:click={() => { orderToDelete = order; showDeleteConfirm = true; }}
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          {/each}
+        </div>
 
         {#if filteredOrders.length === 0}
           <div class="text-center p-4">
@@ -332,7 +412,7 @@
           <h3 class="neon-text-cyan">Financial Summary ({filteredOrders.length} orders)</h3>
         </div>
         <div class="card-body">
-          <div class="grid grid-4 gap-3">
+          <div class="admin-grid admin-grid-4">
             <div class="summary-card glass-light">
               <h4 class="neon-text-white">Total Revenue</h4>
               <p class="neon-text-cyan text-2xl font-bold">
@@ -470,6 +550,8 @@
   .text-yellow-400 {
     color: #facc15;
   }
+
+
 
   @media (max-width: 1200px) {
     .admin-container {

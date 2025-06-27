@@ -50,6 +50,7 @@ export interface Order {
   tax: number;
   shipping_fee: number;
   is_pos_order?: boolean;
+  note?: string;
 }
 
 export interface OrderFilters {

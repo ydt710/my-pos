@@ -35,10 +35,10 @@
     let allOrders: (Pick<Order, 'id' | 'created_at' | 'total' | 'status' | 'deleted_at'>)[] = [];
   
     let revenueChartInstance: ChartType | null = null;
-    let revenueFilter = 'year';
+    let revenueFilter = 'today';
   
     let debtCreatedChartInstance: ChartType | null = null;
-    let debtCreatedFilter: 'today' | 'week' | 'month' | 'year' = 'year';
+    let debtCreatedFilter: 'today' | 'week' | 'month' | 'year' = 'today';
 
     let cashCollectedChartInstance: ChartType | null = null;
     let cashCollectedPeriod: 'day' | 'week' | 'month' = 'day';
@@ -55,29 +55,30 @@
     let totalSpentChartInstance: ChartType | null = null;
 
     let cashPaidPeriod: 'day' | 'week' | 'month' = 'day';
-    let cashPaidStartDate = new Date(new Date().setDate(new Date().getDate() - 30));
+    let cashPaidStartDate = new Date();
     let cashPaidEndDate = new Date();
 
     let creditPeriod: 'day' | 'week' | 'month' = 'day';
-    let creditStartDate = new Date(new Date().setDate(new Date().getDate() - 30));
+    let creditStartDate = new Date();
     let creditEndDate = new Date();
     let creditStartDateStr = '';
     let creditEndDateStr = '';
 
     let debtPeriod: 'day' | 'week' | 'month' = 'day';
-    let debtStartDate = new Date(new Date().setDate(new Date().getDate() - 30));
+    let debtStartDate = new Date();
     let debtEndDate = new Date();
     let debtStartDateStr = '';
     let debtEndDateStr = '';
 
-    let totalSpentStartDate = new Date(new Date().setDate(new Date().getDate() - 30));
+    let totalSpentStartDate = new Date();
     let totalSpentEndDate = new Date();
     let totalSpentStartDateStr = '';
     let totalSpentEndDateStr = '';
     let totalSpentLimit = 10;
 
-    // Set default range to last 30 days
-    cashCollectedStartDate.setDate(cashCollectedStartDate.getDate() - 30);
+    // Set default range to today
+    cashCollectedStartDate = new Date();
+    cashCollectedEndDate = new Date();
     
 
     

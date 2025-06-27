@@ -515,10 +515,11 @@
   }
 
   .user-select-btn {
-    color: #00f2fe;
+    
     font-weight: 500;
     border-radius: 6px;
     transition: background 0.15s, color 0.15s;
+    font-size: large;
   }
 
   .user-select-btn:hover, .user-select-btn:focus {

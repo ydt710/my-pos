@@ -10,6 +10,7 @@
   import { supabase } from '$lib/supabase';
   import { get } from 'svelte/store';
   import StarryBackground from '$lib/components/StarryBackground.svelte';
+  import ReceiptModal from '$lib/components/ReceiptModal.svelte';
   import { getStock } from '$lib/services/stockService';
   import { derived } from 'svelte/store';
   
@@ -32,6 +33,9 @@
 
   let extraCashOption: 'change' | 'credit' = 'change'; // default
   let creditUsed = 0; // Ensure creditUsed is always defined and a number
+  let showReceiptModal = false;
+  let completedOrder: any = null;
+  let currentPosUser: any = null;
   
   // Check if user is logged in
   onMount(async () => {
@@ -45,6 +49,7 @@
         .single();
       if (profile && profile.role === 'pos') {
         isPosUser = true;
+        currentPosUser = profile;
       }
       isGuest = false;
       // Only pre-fill guestInfo if NOT POS user
@@ -198,6 +203,42 @@
 
       if (result.success) {
         success = '🎉 Order placed successfully! Thank you for your purchase.';
+        
+        // Fetch the completed order for receipt if we have an orderId
+        if (result.orderId && isPosUser) {
+          // Fetch order details from database
+          const { data: orderData } = await supabase
+            .from('orders')
+            .select(`
+              *,
+              order_items (*, products (*)),
+              profiles!orders_user_id_fkey (display_name, email, phone_number, address)
+            `)
+            .eq('id', result.orderId)
+            .single();
+          
+          if (orderData) {
+            completedOrder = {
+              ...orderData,
+              user: orderData.profiles,
+              pos_user: currentPosUser // Add current POS user info
+            };
+            
+            // Update order note with POS user info if not already set
+            if (currentPosUser && !orderData.note?.includes('POS User:')) {
+              const noteUpdate = `${orderData.note || ''} | POS User: ${currentPosUser.display_name}`.trim();
+              await supabase
+                .from('orders')
+                .update({ note: noteUpdate })
+                .eq('id', result.orderId);
+            }
+            
+            setTimeout(() => {
+              showReceiptModal = true;
+            }, 1000);
+          }
+        }
+        
         // Refresh balance after order
         if (paymentUserId) {
           const refreshedBalance = await getUserBalance(paymentUserId);
@@ -209,10 +250,14 @@
         cashGiven = '';
         selectedPosUser.set(null);
         console.log('[CHECKOUT PATCH] selectedPosUser cleared');
-        setTimeout(() => {
-          success = '';
-          goto('/');
-        }, 2000);
+        
+        // Only auto-redirect if not showing receipt modal
+        if (!isPosUser) {
+          setTimeout(() => {
+            success = '';
+            goto('/');
+          }, 2000);
+        }
       } else {
         error = result.error || 'Payment failed. Please try again.';
         console.log('[CHECKOUT PATCH] Payment failed:', error);
@@ -339,6 +384,16 @@
       orderPaid,
       order: orderTotal
     };
+  }
+
+  function closeReceiptModal() {
+    showReceiptModal = false;
+    completedOrder = null;
+    // Redirect to home after closing receipt
+    setTimeout(() => {
+      success = '';
+      goto('/');
+    }, 500);
   }
 </script>
 
@@ -616,6 +671,13 @@
     </div>
   </div>
 </div>
+
+{#if showReceiptModal && completedOrder}
+  <ReceiptModal 
+    order={completedOrder} 
+    onClose={closeReceiptModal}
+  />
+{/if}
 
 <style>
   .checkout-container {

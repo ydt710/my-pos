@@ -307,7 +307,7 @@
 
     <div class="glass mb-4">
       <div class="card-body">
-        <div class="grid grid-3 gap-2">
+        <div class="admin-grid admin-grid-3">
           <div class="form-group">
             <label for="search" class="form-label">Search</label>
             <input id="search" type="text" placeholder="Search products..." bind:value={productFilters.search} on:input={applyProductFilters} class="form-control"/>
@@ -368,48 +368,104 @@
     {/if}
     
     <div class="glass">
-      <table class="table-dark">
-        <thead>
-          <tr>
-            <th>Image</th><th>Name</th><th>Category</th><th>Price</th><th>Tags</th><th>Stock</th><th>Buffer</th><th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each filteredProducts as product (product.id)}
-            <tr class="hover-glow">
-              <td><img src={product.image_url} alt={product.name} class="product-thumbnail"/></td>
-              <td class="neon-text-white">{product.name}</td>
-              <td>{categories.find(c => String(c.id) === String(product.category))?.name || product.category}</td>
-              <td class="neon-text-cyan">
-                {#if product.is_special && product.special_price}
-                  <span style="text-decoration: line-through; color: #888;">R{product.price}</span>
-                  <span style="color: #e67e22; font-weight: bold; margin-left: 0.5em;">R{product.special_price}</span>
-                {:else}
-                  R{product.price}
-                {/if}
-              </td>
-              <td>
-                {#if product.is_new}<span class="badge badge-info">New</span>{/if}
-                {#if product.is_special}<span class="badge badge-warning">Special</span>{/if}
-                {#if product.is_out_of_stock}<span class="badge badge-danger">Out of Stock</span>{/if}
-              </td>
-              <td class="neon-text-cyan">
-                {stockLevels[product.id] ?? 0}
-                {#if !product.is_out_of_stock && (product.low_stock_buffer ?? 0) > 0 && (stockLevels[product.id] ?? 0) <= (product.low_stock_buffer ?? 0)}
-                  <span class="low-stock-indicator" title="Low stock alert">⚠️</span>
-                {/if}
-              </td>
-              <td class="neon-text-muted">{product.low_stock_buffer ?? 1000}</td>
-              <td>
-                <div class="flex gap-1">
-                  <button class="btn btn-secondary btn-sm" on:click={() => openEditModal(product)}>Edit</button>
-                  <button class="btn btn-danger btn-sm" on:click={() => { showProductConfirmModal = true; productIdToDelete = String(product.id); }}>Delete</button>
-                </div>
-              </td>
+      <!-- Desktop Table View -->
+      <div class="table-responsive desktop-only">
+        <table class="table-dark">
+          <thead>
+            <tr>
+              <th>Image</th><th>Name</th><th>Category</th><th>Price</th><th>Tags</th><th>Stock</th><th>Buffer</th><th>Actions</th>
             </tr>
-          {/each}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {#each filteredProducts as product (product.id)}
+              <tr class="hover-glow">
+                <td><img src={product.image_url} alt={product.name} class="product-thumbnail"/></td>
+                <td class="neon-text-white">{product.name}</td>
+                <td>{categories.find(c => String(c.id) === String(product.category))?.name || product.category}</td>
+                <td class="neon-text-cyan">
+                  {#if product.is_special && product.special_price}
+                    <span style="text-decoration: line-through; color: #888;">R{product.price}</span>
+                    <span style="color: #e67e22; font-weight: bold; margin-left: 0.5em;">R{product.special_price}</span>
+                  {:else}
+                    R{product.price}
+                  {/if}
+                </td>
+                <td>
+                  {#if product.is_new}<span class="badge badge-info">New</span>{/if}
+                  {#if product.is_special}<span class="badge badge-warning">Special</span>{/if}
+                  {#if product.is_out_of_stock}<span class="badge badge-danger">Out of Stock</span>{/if}
+                </td>
+                <td class="neon-text-cyan">
+                  {stockLevels[product.id] ?? 0}
+                  {#if !product.is_out_of_stock && (product.low_stock_buffer ?? 0) > 0 && (stockLevels[product.id] ?? 0) <= (product.low_stock_buffer ?? 0)}
+                    <span class="low-stock-indicator" title="Low stock alert">⚠️</span>
+                  {/if}
+                </td>
+                <td class="neon-text-muted">{product.low_stock_buffer ?? 1000}</td>
+                <td>
+                  <div class="flex gap-1">
+                    <button class="btn btn-secondary btn-sm" on:click={() => openEditModal(product)}>Edit</button>
+                    <button class="btn btn-danger btn-sm" on:click={() => { showProductConfirmModal = true; productIdToDelete = String(product.id); }}>Delete</button>
+                  </div>
+                </td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+
+             <!-- Mobile Card View -->
+       <div class="admin-grid mobile-only">
+         {#each filteredProducts as product (product.id)}
+           <div class="admin-card product-card">
+             <div class="admin-card-header">
+               <img src={product.image_url} alt={product.name} class="product-image"/>
+               <div>
+                 <div class="admin-card-title">{product.name}</div>
+                 <div class="admin-card-subtitle">{categories.find(c => String(c.id) === String(product.category))?.name || product.category}</div>
+               </div>
+             </div>
+             
+             <div class="admin-card-body">
+               <div class="product-price neon-text-cyan">
+                 {#if product.is_special && product.special_price}
+                   <span style="text-decoration: line-through; color: #888;">R{product.price}</span>
+                   <span style="color: #e67e22; font-weight: bold; margin-left: 0.5em;">R{product.special_price}</span>
+                 {:else}
+                   R{product.price}
+                 {/if}
+               </div>
+               
+               <div class="product-tags badge-group-horizontal">
+                 {#if product.is_new}<span class="badge badge-info">New</span>{/if}
+                 {#if product.is_special}<span class="badge badge-warning">Special</span>{/if}
+                 {#if product.is_out_of_stock}<span class="badge badge-danger">Out of Stock</span>{/if}
+               </div>
+               
+               <div class="product-stock-info">
+                 <div class="stock-item">
+                   <span class="stock-label">Stock:</span>
+                   <span class="neon-text-cyan">
+                     {stockLevels[product.id] ?? 0}
+                     {#if !product.is_out_of_stock && (product.low_stock_buffer ?? 0) > 0 && (stockLevels[product.id] ?? 0) <= (product.low_stock_buffer ?? 0)}
+                       <span class="low-stock-indicator" title="Low stock alert">⚠️</span>
+                     {/if}
+                   </span>
+                 </div>
+                 <div class="stock-item">
+                   <span class="stock-label">Buffer:</span>
+                   <span class="neon-text-muted">{product.low_stock_buffer ?? 1000}</span>
+                 </div>
+               </div>
+             </div>
+             
+             <div class="admin-card-actions">
+               <button class="btn btn-secondary btn-sm" on:click={() => openEditModal(product)}>Edit</button>
+               <button class="btn btn-danger btn-sm" on:click={() => { showProductConfirmModal = true; productIdToDelete = String(product.id); }}>Delete</button>
+             </div>
+           </div>
+         {/each}
+       </div>
     </div>
 
     {#if showProductConfirmModal}
@@ -584,6 +640,8 @@
     50% { opacity: 0.5; }
   }
 
+  /* Component-specific styles only */
+
   @media (max-width: 768px) {
     .admin-container {
       padding: 1rem;
@@ -598,6 +656,22 @@
     .custom-prices-modal {
       width: 95vw;
       max-height: 90vh;
+    }
+
+    .grid-3 {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (max-width: 1024px) and (min-width: 769px) {
+    .product-thumbnail {
+      width: 40px;
+      height: 40px;
+    }
+    
+    .btn-sm {
+      padding: 0.25rem 0.5rem;
+      font-size: 0.8rem;
     }
   }
 </style> 

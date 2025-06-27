@@ -193,6 +193,11 @@
               <p><strong>Invoice #:</strong> {order.order_number || order.id}</p>
               <p><strong>Date:</strong> {formatDate(order.created_at)}</p>
               <p><strong>Status:</strong> <span class="status-badge {getStatusBadgeClass(order.status)}">{order.status.toUpperCase()}</span></p>
+              {#if order.note && order.note.includes('POS User:')}
+                <p><strong>Cashier:</strong> {order.note.split('POS User:')[1]?.trim() || 'Unknown'}</p>
+              {:else if order.is_pos_order}
+                <p><strong>Cashier:</strong> POS Terminal</p>
+              {/if}
             </div>
           </div>
         </div>

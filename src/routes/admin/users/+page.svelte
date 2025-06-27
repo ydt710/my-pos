@@ -353,60 +353,125 @@
       </div>
     {:else}
       <div class="glass">
-        <table class="table-dark">
-          <thead>
-            <tr>
-              <th>Email</th>
-              <th>Name</th>
-              <th>Joined</th>
-              <th>Role</th>
-              <th>POS User</th>
-              <th>Balance</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {#each users as user (user.id)}
-              {@const balance = userBalances?.[user.id]}
-              <tr on:click={() => openUserDetail(user)} style="cursor:pointer;" class="hover-glow">
-                <td class="neon-text-white">{user.email}</td>
-                <td>{user.display_name || '-'}</td>
-                <td>{formatDate(user.created_at)}</td>
-                <td>
+        <!-- Desktop Table View -->
+        <div class="table-responsive desktop-only">
+          <table class="table-dark">
+            <thead>
+              <tr>
+                <th>Email</th>
+                <th>Name</th>
+                <th>Joined</th>
+                <th>Role</th>
+                <th>POS User</th>
+                <th>Balance</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each users as user (user.id)}
+                {@const balance = userBalances?.[user.id]}
+                <tr on:click={() => openUserDetail(user)} style="cursor:pointer;" class="hover-glow">
+                  <td class="neon-text-white">{user.email}</td>
+                  <td>{user.display_name || '-'}</td>
+                  <td>{formatDate(user.created_at)}</td>
+                  <td>
+                    <span class="badge {user.is_admin ? 'badge-warning' : 'badge-info'}">
+                      {user.is_admin ? 'Admin' : 'User'}
+                    </span>
+                  </td>
+                  <td>
+                    <span class="badge {user.role === 'pos' ? 'badge-success' : 'badge-secondary'}">
+                      {user.role === 'pos' ? 'Yes' : 'No'}
+                    </span>
+                  </td>
+                  <td>
+                    {#if typeof balance !== 'number'}
+                      <span class="text-muted">Loading...</span>
+                    {:else if balance < 0}
+                      <span class="text-red-400">Debt: R{Math.abs(balance).toFixed(2)}</span>
+                    {:else if balance > 0}
+                      <span class="text-green-400">Credit: R{balance.toFixed(2)}</span>
+                    {:else}
+                      <span class="text-muted">R0.00</span>
+                    {/if}
+                    <button class="btn btn-secondary btn-sm ml-2" on:click|stopPropagation={() => openLedgerModal(user)} title="View Ledger">📄</button>
+                  </td>
+                  <td>
+                    <button 
+                      class="btn btn-danger btn-sm"
+                      on:click|stopPropagation={() => confirmDeleteUser(user)}
+                      aria-label="Delete user {user.email}"
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Mobile Card View -->
+        <div class="admin-grid mobile-only">
+          {#each users as user (user.id)}
+            {@const balance = userBalances?.[user.id]}
+            <div class="admin-card" on:click={() => openUserDetail(user)} on:keydown={(e) => e.key === 'Enter' && openUserDetail(user)} tabindex="0" role="button">
+              <div class="admin-card-header">
+                <div>
+                  <div class="admin-card-title">{user.display_name || user.email}</div>
+                  <div class="admin-card-subtitle">{user.email}</div>
+                </div>
+                <div class="badge-group">
                   <span class="badge {user.is_admin ? 'badge-warning' : 'badge-info'}">
                     {user.is_admin ? 'Admin' : 'User'}
                   </span>
-                </td>
-                <td>
                   <span class="badge {user.role === 'pos' ? 'badge-success' : 'badge-secondary'}">
-                    {user.role === 'pos' ? 'Yes' : 'No'}
+                    {user.role === 'pos' ? 'POS' : 'Regular'}
                   </span>
-                </td>
-                <td>
-                  {#if typeof balance !== 'number'}
-                    <span class="text-muted">Loading...</span>
-                  {:else if balance < 0}
-                    <span class="text-red-400">Debt: R{Math.abs(balance).toFixed(2)}</span>
-                  {:else if balance > 0}
-                    <span class="text-green-400">Credit: R{balance.toFixed(2)}</span>
-                  {:else}
-                    <span class="text-muted">R0.00</span>
-                  {/if}
-                  <button class="btn btn-secondary btn-sm ml-2" on:click|stopPropagation={() => openLedgerModal(user)} title="View Ledger">📄</button>
-                </td>
-                <td>
-                  <button 
-                    class="btn btn-danger btn-sm"
-                    on:click|stopPropagation={() => confirmDeleteUser(user)}
-                    aria-label="Delete user {user.email}"
-                  >
-                    Delete
-                  </button>
-                </td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
+                </div>
+              </div>
+              
+              <div class="admin-card-body">
+                <div class="admin-card-row">
+                  <span class="admin-card-label">Joined:</span>
+                  <span class="admin-card-value">{formatDate(user.created_at)}</span>
+                </div>
+                
+                <div class="admin-card-row">
+                  <span class="admin-card-label">Balance:</span>
+                  <span class="admin-card-value">
+                    {#if typeof balance !== 'number'}
+                      <span class="text-muted">Loading...</span>
+                    {:else if balance < 0}
+                      <span class="text-red-400">Debt: R{Math.abs(balance).toFixed(2)}</span>
+                    {:else if balance > 0}
+                      <span class="text-green-400">Credit: R{balance.toFixed(2)}</span>
+                    {:else}
+                      <span class="text-muted">R0.00</span>
+                    {/if}
+                  </span>
+                </div>
+              </div>
+              
+              <div class="admin-card-actions">
+                <button 
+                  class="btn btn-secondary btn-sm" 
+                  on:click|stopPropagation={() => openLedgerModal(user)} 
+                  title="View Ledger"
+                >
+                  📄 Ledger
+                </button>
+                <button 
+                  class="btn btn-danger btn-sm"
+                  on:click|stopPropagation={() => confirmDeleteUser(user)}
+                  aria-label="Delete user {user.email}"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          {/each}
+        </div>
       </div>
     {/if}
 
@@ -428,28 +493,30 @@
             {:else if ledgerEntries.length === 0}
               <div class="text-center text-muted">No ledger entries for this user.</div>
             {:else}
-              <table class="table-dark">
-                <thead>
-                  <tr>
-                    <th>Date</th>
-                    <th>Type</th>
-                    <th>Amount</th>
-                    <th>Order</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {#each ledgerEntries as entry}
+              <div class="table-responsive">
+                <table class="table-dark">
+                  <thead>
                     <tr>
-                      <td>{new Date(entry.created_at).toLocaleString()}</td>
-                      <td><span class="badge badge-info">{entry.category}</span></td>
-                      <td class="{entry.total_amount < 0 ? 'text-red-400' : entry.total_amount > 0 ? 'text-green-400' : 'neon-text-cyan'}">
-                        {entry.total_amount < 0 ? `-R${Math.abs(entry.total_amount).toFixed(2)}` : `R${entry.total_amount.toFixed(2)}`}
-                      </td>
-                      <td class="neon-text-cyan">{entry.order_number || entry.order_id || '-'}</td>
+                      <th>Date</th>
+                      <th>Type</th>
+                      <th>Amount</th>
+                      <th>Order</th>
                     </tr>
-                  {/each}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {#each ledgerEntries as entry}
+                      <tr>
+                        <td>{new Date(entry.created_at).toLocaleString()}</td>
+                        <td><span class="badge badge-info">{entry.category}</span></td>
+                        <td class="{entry.total_amount < 0 ? 'text-red-400' : entry.total_amount > 0 ? 'text-green-400' : 'neon-text-cyan'}">
+                          {entry.total_amount < 0 ? `-R${Math.abs(entry.total_amount).toFixed(2)}` : `R${entry.total_amount.toFixed(2)}`}
+                        </td>
+                        <td class="neon-text-cyan">{entry.order_number || entry.order_id || '-'}</td>
+                      </tr>
+                    {/each}
+                  </tbody>
+                </table>
+              </div>
             {/if}
           </div>
           <div class="modal-actions">
@@ -548,28 +615,30 @@
                 {:else if userOrders.length === 0}
                   <div class="text-center text-muted">No orders found for this user.</div>
                 {:else}
-                  <table class="table-dark">
-                    <thead>
-                      <tr>
-                        <th>Date</th>
-                        <th>Status</th>
-                        <th>Total</th>
-                        <th>Order #</th>
-                        <th>Note</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {#each userOrders as order}
+                  <div class="table-responsive">
+                    <table class="table-dark">
+                      <thead>
                         <tr>
-                          <td>{formatDate(order.created_at)}</td>
-                          <td><span class="badge badge-info">{order.status}</span></td>
-                          <td class="neon-text-cyan">R{order.total.toFixed(2)}</td>
-                          <td class="neon-text-white">{order.order_number}</td>
-                          <td>{order.note || '-'}</td>
+                          <th>Date</th>
+                          <th>Status</th>
+                          <th>Total</th>
+                          <th>Order #</th>
+                          <th>Note</th>
                         </tr>
-                      {/each}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {#each userOrders as order}
+                          <tr>
+                            <td>{formatDate(order.created_at)}</td>
+                            <td><span class="badge badge-info">{order.status}</span></td>
+                            <td class="neon-text-cyan">R{order.total.toFixed(2)}</td>
+                            <td class="neon-text-white">{order.order_number}</td>
+                            <td>{order.note || '-'}</td>
+                          </tr>
+                        {/each}
+                      </tbody>
+                    </table>
+                  </div>
                 {/if}
               </div>
             </div>
@@ -589,28 +658,30 @@
                 {:else if userLedger.length === 0}
                   <div class="text-center text-muted">No ledger entries for this user.</div>
                 {:else}
-                  <table class="table-dark">
-                    <thead>
-                      <tr>
-                        <th>Date</th>
-                        <th>Type</th>
-                        <th>Amount</th>
-                        <th>Order</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {#each userLedger as entry}
+                  <div class="table-responsive">
+                    <table class="table-dark">
+                      <thead>
                         <tr>
-                          <td>{formatDate(entry.created_at)}</td>
-                          <td><span class="badge badge-info">{entry.category}</span></td>
-                          <td class="{entry.total_amount < 0 ? 'text-red-400' : entry.total_amount > 0 ? 'text-green-400' : 'neon-text-cyan'}">
-                            {entry.total_amount < 0 ? `-R${Math.abs(entry.total_amount).toFixed(2)}` : `R${entry.total_amount.toFixed(2)}`}
-                          </td>
-                          <td class="neon-text-cyan">{entry.order_number || entry.order_id || '-'}</td>
+                          <th>Date</th>
+                          <th>Type</th>
+                          <th>Amount</th>
+                          <th>Order</th>
                         </tr>
-                      {/each}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {#each userLedger as entry}
+                          <tr>
+                            <td>{formatDate(entry.created_at)}</td>
+                            <td><span class="badge badge-info">{entry.category}</span></td>
+                            <td class="{entry.total_amount < 0 ? 'text-red-400' : entry.total_amount > 0 ? 'text-green-400' : 'neon-text-cyan'}">
+                              {entry.total_amount < 0 ? `-R${Math.abs(entry.total_amount).toFixed(2)}` : `R${entry.total_amount.toFixed(2)}`}
+                            </td>
+                            <td class="neon-text-cyan">{entry.order_number || entry.order_id || '-'}</td>
+                          </tr>
+                        {/each}
+                      </tbody>
+                    </table>
+                  </div>
                 {/if}
               </div>
             </div>
@@ -669,6 +740,10 @@
 
   .ml-2 {
     margin-left: 0.5rem;
+  }
+
+  .admin-card {
+    cursor: pointer;
   }
 
   @media (max-width: 768px) {

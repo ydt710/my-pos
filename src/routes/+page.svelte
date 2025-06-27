@@ -19,7 +19,7 @@
   import { clearProductCache } from '$lib/services/cacheService';
   import Footer from '$lib/components/Footer.svelte';
   import { debounce } from '$lib/utils';
-  import { CATEGORY_ICONS, CATEGORY_BACKGROUNDS } from '$lib/constants';
+  import { CATEGORY_ICONS, CATEGORY_BACKGROUNDS, CATEGORY_CONFIG } from '$lib/constants';
 
   // Landing page data
   let landingHero: any = null;
@@ -49,6 +49,7 @@
   let submittingReview = false;
   let stockLevels: { [productId: string]: number } = {};
   let posCheckComplete = false;
+  let activeCategoryIcon: { icon: string; color: string } | null = null;
 
   let productFilters = {
     search: '',
@@ -72,22 +73,11 @@
   let loadMoreTrigger: HTMLDivElement | null = null;
   let observer: IntersectionObserver | null = null;
 
-  let showFountain = true;
   let showMap = false;
-  let storesSection: HTMLElement | null = null;
   let googleMapsUrl = '';
 
-  function handleScroll() {
-    if (!storesSection) return;
-    const rect = storesSection.getBoundingClientRect();
-    // Show map when section is at least halfway into view
-    if (rect.top < window.innerHeight * 0.5) {
-      showFountain = false;
-      showMap = true;
-    } else {
-      showFountain = true;
-      showMap = false;
-    }
+  function toggleMap() {
+    showMap = !showMap;
   }
 
   // Function to load landing page data
@@ -224,6 +214,18 @@
   function handleCategoryChange(category: string) {
     activeCategory = category;
     currentPage = 1;
+    
+    // Set the active category icon for the starry background
+    if (category && CATEGORY_CONFIG[category as keyof typeof CATEGORY_CONFIG]) {
+      const categoryData = CATEGORY_CONFIG[category as keyof typeof CATEGORY_CONFIG];
+      activeCategoryIcon = {
+        icon: categoryData.icon,
+        color: categoryData.color
+      };
+    } else {
+      activeCategoryIcon = null;
+    }
+    
     filterProducts();
   }
 
@@ -301,7 +303,6 @@
 
     if (typeof window !== 'undefined') {
       window.addEventListener('resize', handleResize);
-      window.addEventListener('scroll', handleScroll);
     }
   });
 
@@ -311,7 +312,6 @@
         clearTimeout(resizeTimeout);
       }
       window.removeEventListener('resize', handleResize);
-      window.removeEventListener('scroll', handleScroll);
     }
     if (observer) observer.disconnect();
   });
@@ -332,6 +332,7 @@
 
   function handleLogoClick() {
     activeCategory = '';
+    activeCategoryIcon = null; // Clear floating icons when going to home
   }
 
   function handleShowDetails(product: Product) {
@@ -556,21 +557,34 @@
     <!-- Multiple Stores Section -->
     {#if landingStores}
       <section class="stores-section">
-        <div class="stores-content" bind:this={storesSection}>
-          {#if showFountain}
-            <div class="stores-fadeout-group" transition:fade={{ duration: 6000 }}>
+        <div class="stores-content">
+          {#if !showMap}
+            <div class="stores-main-content">
               <h2 class="neon-text-cyan">{landingStores.title}</h2>
               <p class="neon-text-white">{landingStores.description}</p>
               <div class="stores-visual">
                 <div class="store-fountain glass">
                   <div class="fountain-base"></div>
                   <div class="fountain-water"></div>
+                  <button 
+                    class="map-trigger-dot" 
+                    on:click={toggleMap}
+                    aria-label="View store location"
+                  >
+                    <i class="fa-solid fa-map-marker-alt"></i>
+                  </button>
                 </div>
               </div>
             </div>
-          {/if}
-          {#if showMap}
-            <div class="map-fullscreen" transition:fade={{ duration: 4000 }}>
+          {:else}
+            <div class="map-fullscreen" transition:fade={{ duration: 500 }}>
+              <button 
+                class="map-close-btn" 
+                on:click={toggleMap}
+                aria-label="Close map"
+              >
+                <i class="fa-solid fa-times"></i>
+              </button>
               <iframe
                 src={googleMapsUrl}
                 width="100%"
@@ -938,11 +952,12 @@
     position: relative;
   }
 
-  .stores-fadeout-group {
+  .stores-main-content {
     width: 100%;
     display: flex;
     flex-direction: column;
     align-items: center;
+    text-align: center;
   }
 
   .stores-visual {
@@ -989,6 +1004,150 @@
   @keyframes fountain-pulse {
     0%, 100% { transform: scale(1); opacity: 0.3; }
     50% { transform: scale(1.2); opacity: 0.6; }
+  }
+
+  .map-trigger-dot {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: var(--neon-cyan);
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
+    color: var(--bg-primary);
+    box-shadow: 
+      0 0 20px var(--neon-cyan),
+      0 0 40px var(--neon-cyan);
+    animation: pulse-dot 2s ease-in-out infinite;
+    transition: var(--transition-fast);
+    z-index: 5;
+  }
+
+  .map-trigger-dot:hover {
+    transform: translate(-50%, -50%) scale(1.1);
+    box-shadow: 
+      0 0 30px var(--neon-cyan),
+      0 0 60px var(--neon-cyan);
+  }
+
+  @keyframes pulse-dot {
+    0%, 100% { 
+      box-shadow: 
+        0 0 20px var(--neon-cyan),
+        0 0 40px var(--neon-cyan);
+    }
+    50% { 
+      box-shadow: 
+        0 0 30px var(--neon-cyan),
+        0 0 60px var(--neon-cyan),
+        0 0 80px var(--neon-cyan);
+    }
+  }
+
+  .map-close-btn {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: var(--bg-glass);
+    border: 2px solid var(--neon-cyan);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+    color: var(--neon-cyan);
+    z-index: 20;
+    transition: var(--transition-fast);
+    backdrop-filter: blur(10px);
+  }
+
+  .map-close-btn:hover {
+    background: var(--neon-cyan);
+    color: var(--bg-primary);
+    transform: scale(1.1);
+    box-shadow: var(--shadow-neon-cyan);
+  }
+
+  .map-trigger-dot {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: var(--neon-cyan);
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
+    color: var(--bg-primary);
+    box-shadow: 
+      0 0 20px var(--neon-cyan),
+      0 0 40px var(--neon-cyan);
+    animation: pulse-dot 2s ease-in-out infinite;
+    transition: var(--transition-fast);
+    z-index: 5;
+  }
+
+  .map-trigger-dot:hover {
+    transform: translate(-50%, -50%) scale(1.1);
+    box-shadow: 
+      0 0 30px var(--neon-cyan),
+      0 0 60px var(--neon-cyan);
+  }
+
+  @keyframes pulse-dot {
+    0%, 100% { 
+      box-shadow: 
+        0 0 20px var(--neon-cyan),
+        0 0 40px var(--neon-cyan);
+    }
+    50% { 
+      box-shadow: 
+        0 0 30px var(--neon-cyan),
+        0 0 60px var(--neon-cyan),
+        0 0 80px var(--neon-cyan);
+    }
+  }
+
+  .map-close-btn {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: var(--bg-glass);
+    border: 2px solid var(--neon-cyan);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+    color: var(--neon-cyan);
+    z-index: 20;
+    transition: var(--transition-fast);
+    backdrop-filter: blur(10px);
+  }
+
+  .map-close-btn:hover {
+    background: var(--neon-cyan);
+    color: var(--bg-primary);
+    transform: scale(1.1);
+    box-shadow: var(--shadow-neon-cyan);
   }
 
   .map-fullscreen {

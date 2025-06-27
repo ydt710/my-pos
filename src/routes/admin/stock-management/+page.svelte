@@ -425,7 +425,7 @@
       </div>
     {:else}
       {#if isAdmin || isActualPosUser}
-        <div class="grid grid-3 gap-4 mb-4">
+        <div class="admin-grid admin-grid-3">
           {#if isAdmin}
             <div class="glass">
               <div class="card-header">
@@ -760,7 +760,7 @@
 
   @media (max-width: 768px) {
     .admin-container {
-      padding: 1rem;
+      padding: 10px;
     }
     
     .admin-header {
@@ -782,7 +782,7 @@
     box-shadow: 0 0 24px #00f2fe22;
     border: 1.5px solid #00f2fe44;
     margin-bottom: 2rem;
-    padding: 0.5rem 0.5rem 0.5rem 0.5rem;
+    
   }
 
   .responsive-table table {
