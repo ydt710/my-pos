@@ -2,7 +2,7 @@
   import { onMount, onDestroy, afterUpdate } from 'svelte';
   import { fly, fade } from 'svelte/transition';
   import { cartStore, cartVisible as globalCartVisible, toggleCart as globalToggleCart } from '$lib/stores/cartStore';
-  import { loadAllProductsCached } from '$lib/services/productService';
+  import { loadAllProducts } from '$lib/services/productService';
   import { supabase } from '$lib/supabase';
   import type { Product } from '$lib/types/index';
   
@@ -16,7 +16,7 @@
   import ProductReviewModal from '$lib/components/ProductReviewModal.svelte';
   import { getProductReviews, addReview, updateReview, updateProductRating } from '$lib/services/reviewService';
   import { getShopStockLevels } from '$lib/services/stockService';
-  import { clearProductCache } from '$lib/services/cacheService';
+  import { clearAllProductCache } from '$lib/services/productService';
   import Footer from '$lib/components/Footer.svelte';
   import { debounce } from '$lib/utils';
   import { CATEGORY_ICONS, CATEGORY_BACKGROUNDS, CATEGORY_CONFIG } from '$lib/constants';
@@ -179,8 +179,6 @@
       observer.disconnect();
       observer = null;
     }
-    // Always update page size before filtering
-    updatePageSize();
     // Always search out of allProducts array
     products = allProducts
       .filter(p => {
@@ -256,6 +254,15 @@
   }
 
   onMount(async () => {
+    // Start loading immediately
+    loading = true;
+    
+    // Initialize page size early to prevent layout shifts
+    if (typeof window !== 'undefined') {
+      updatePageSize();
+      window.addEventListener('resize', handleResize);
+    }
+
     try {
       const { data } = supabase.storage.from('route420').getPublicUrl('logo.webp');
       logoUrl = data.publicUrl;
@@ -284,9 +291,8 @@
     await loadLandingPageData();
 
     // Load all products once and manage them locally
-    loading = true;
-    const { products: loadedProducts, error: loadError } = await loadAllProductsCached();
-    loading = false;
+    const { products: loadedProducts, error: loadError } = await loadAllProducts();
+    
     if (loadError) {
       error = loadError;
     } else {
@@ -300,10 +306,9 @@
       // Manually trigger the first filter and pagination
       filterProducts();
     }
-
-    if (typeof window !== 'undefined') {
-      window.addEventListener('resize', handleResize);
-    }
+    
+    // Complete loading only after everything is done
+    loading = false;
   });
 
   onDestroy(() => {
@@ -315,10 +320,6 @@
     }
     if (observer) observer.disconnect();
   });
-
-  $: categoryBackgroundStyle = '';
-
-
 
   function toggleCart() {
     globalToggleCart();
@@ -400,10 +401,10 @@
       }
       await updateProductRating(String(reviewProduct.id));
       closeReviewModal();
-      clearProductCache(); // Clear cache before reloading products
+      clearAllProductCache(); // Clear cache before reloading products
       
       // Refresh products so product card updates
-      const { products: reloadedProducts } = await loadAllProductsCached(); 
+      const { products: reloadedProducts } = await loadAllProducts(); 
       allProducts = reloadedProducts;
       filterProducts();
 
@@ -415,12 +416,8 @@
   }
 
   afterUpdate(() => {
-    // Set up IntersectionObserver for infinite scroll
-    if (observer) {
-      observer.disconnect();
-      observer = null;
-    }
-    if (loadMoreTrigger && currentPage * pageSize < products.length) {
+    // Set up IntersectionObserver for infinite scroll only when needed
+    if (loadMoreTrigger && currentPage * pageSize < products.length && !observer) {
       observer = new IntersectionObserver((entries) => {
         if (entries[0].isIntersecting) {
           loadMoreProducts();
@@ -431,6 +428,9 @@
         threshold: 0.1
       });
       observer.observe(loadMoreTrigger);
+    } else if (observer && (currentPage * pageSize >= products.length || !loadMoreTrigger)) {
+      observer.disconnect();
+      observer = null;
     }
   });
 
@@ -466,7 +466,7 @@
 <!-- Main Content Area -->
 <main class="main-content">
   
-  {#if loading || !posCheckComplete}
+  {#if loading}
     <div class="loading-container">
       <LoadingSpinner size="60px" />
       <p>Loading...</p>

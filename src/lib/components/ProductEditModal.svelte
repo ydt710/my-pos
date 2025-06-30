@@ -48,6 +48,11 @@
     dispatch('imagechange', { file });
     closeImageModal();
   }
+
+  function handleUrlSave() {
+    localProduct.image_url = tempImageUrl;
+    closeImageModal();
+  }
 </script>
 
 <div class="modal-backdrop" on:click={handleCancel}></div>
@@ -300,17 +305,47 @@
         <button class="modal-close" on:click={closeImageModal}>&times;</button>
       </div>
       <div class="modal-body">
-        <p class="neon-text-white mb-3">Select a new image file to upload.</p>
-        <input 
-          type="file" 
-          accept="image/png, image/jpeg, image/webp" 
-          on:change={handleImageChange} 
-          class="form-control"
-        />
+        <div class="image-options">
+          <!-- URL Input Option -->
+          <div class="image-option">
+            <h5 class="neon-text-white mb-2">Image URL</h5>
+            <p class="neon-text-muted mb-3">Enter a direct link to an image:</p>
+            <input 
+              type="url" 
+              bind:value={tempImageUrl}
+              placeholder="https://example.com/image.jpg" 
+              class="form-control mb-3"
+            />
+            {#if tempImageUrl}
+              <div class="url-preview">
+                <img src={tempImageUrl} alt="URL preview" class="preview-thumbnail" on:error={() => tempImageUrl = ''} />
+              </div>
+            {/if}
+          </div>
+
+          <div class="divider">
+            <span class="neon-text-muted">OR</span>
+          </div>
+
+          <!-- File Upload Option -->
+          <div class="image-option">
+            <h5 class="neon-text-white mb-2">Upload File</h5>
+            <p class="neon-text-muted mb-3">Select a new image file to upload:</p>
+            <input 
+              type="file" 
+              accept="image/png, image/jpeg, image/webp" 
+              on:change={handleImageChange} 
+              class="form-control"
+            />
+          </div>
+        </div>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" on:click={closeImageModal}>
           Cancel
+        </button>
+        <button type="button" class="btn btn-primary" on:click={handleUrlSave} disabled={!tempImageUrl}>
+          Save URL
         </button>
       </div>
     </div>
@@ -470,6 +505,63 @@
     z-index: 3001;
     max-width: 500px;
     width: 90%;
+  }
+
+  .image-options {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  .image-option {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .image-option h5 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+  }
+
+  .divider {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    margin: 0.5rem 0;
+  }
+
+  .divider::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: var(--border-primary);
+  }
+
+  .divider span {
+    background: var(--bg-secondary);
+    padding: 0 1rem;
+    font-size: 0.8rem;
+    z-index: 1;
+    position: relative;
+  }
+
+  .url-preview {
+    margin-top: 0.5rem;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid var(--border-primary);
+  }
+
+  .preview-thumbnail {
+    width: 100%;
+    height: 120px;
+    object-fit: cover;
+    display: block;
   }
 
   @media (max-width: 820px) {

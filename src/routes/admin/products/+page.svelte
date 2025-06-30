@@ -6,6 +6,7 @@
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
   import ProductEditModal from '$lib/components/ProductEditModal.svelte';
   import { getShopStockLevels } from '$lib/services/stockService';
+  import { fetchProducts as fetchProductsFromService, clearAllProductCache } from '$lib/services/productService';
   import { PUBLIC_SHOP_LOCATION_ID } from '$env/static/public';
   import StarryBackground from '$lib/components/StarryBackground.svelte';
 
@@ -72,11 +73,16 @@
 
   async function fetchProducts() {
     loading = true;
-    const { data, error: err } = await supabase.from('products').select('*');
+    // Clear all product cache to ensure fresh data
+    clearAllProductCache();
+    
+    const { products: fetchedProducts, error: err } = await fetchProductsFromService();
     loading = false;
-    if (err) error = err.message;
-    else {
-      products = (data ?? []).map(p => ({ ...p, id: String(p.id) })) as Product[];
+    
+    if (err) {
+      error = err;
+    } else {
+      products = fetchedProducts.map(p => ({ ...p, id: String(p.id) })) as Product[];
       stockLevels = await getShopStockLevels(products.map(p => p.id));
       applyProductFilters();
     }
@@ -165,13 +171,34 @@
             if (err) {
               error = err.message;
             } else if (data) {
-              const shopLocationId = PUBLIC_SHOP_LOCATION_ID;
-              await supabase.from('stock_levels').insert([{ product_id: data.id, location_id: shopLocationId, quantity: 0 }]);
+              // Create stock_levels entries for all locations
+              const { data: locations, error: locError } = await supabase
+                .from('stock_locations')
+                .select('id');
+              
+              if (!locError && locations) {
+                const stockLevelEntries = locations.map(location => ({
+                  product_id: data.id,
+                  location_id: location.id,
+                  quantity: 0
+                }));
+                
+                const { error: stockError } = await supabase
+                  .from('stock_levels')
+                  .insert(stockLevelEntries);
+                
+                if (stockError) {
+                  console.error('Error creating stock levels:', stockError);
+                  error = 'Product created but failed to initialize stock levels';
+                }
+              }
             }
         }
         imageFile = null;
         uploadProgress = 0;
         closeEditModal();
+        // Clear cache and refresh data
+        clearAllProductCache();
         await fetchProducts();
         showSnackbar(`Product ${isAddMode ? 'added' : 'updated'} successfully.`);
     } catch (err) {
@@ -206,6 +233,8 @@
     try {
       const { error: err } = await supabase.from('products').delete().eq('id', id);
       if (err) throw err;
+      // Clear cache and refresh data
+      clearAllProductCache();
       products = products.filter(p => String(p.id) !== String(id));
       showSnackbar('Product deleted successfully.');
       await fetchProducts();
@@ -294,6 +323,72 @@
     fetchCustomPricesForProduct(String(editing.id));
   }
 
+  // Fix missing stock levels for existing products
+  async function fixMissingStockLevels() {
+    loading = true;
+    error = '';
+    try {
+      // Get all products
+      const { data: allProducts, error: productsError } = await supabase
+        .from('products')
+        .select('id');
+      
+      if (productsError) throw productsError;
+      
+      // Get all locations
+      const { data: allLocations, error: locationsError } = await supabase
+        .from('stock_locations')
+        .select('id');
+      
+      if (locationsError) throw locationsError;
+      
+      // Get existing stock levels
+      const { data: existingStockLevels, error: stockError } = await supabase
+        .from('stock_levels')
+        .select('product_id, location_id');
+      
+      if (stockError) throw stockError;
+      
+      // Create a set of existing combinations for quick lookup
+      const existingCombinations = new Set(
+        existingStockLevels?.map(sl => `${sl.product_id}-${sl.location_id}`) || []
+      );
+      
+      // Find missing stock level entries
+      const missingEntries = [];
+      for (const product of allProducts || []) {
+        for (const location of allLocations || []) {
+          const combination = `${product.id}-${location.id}`;
+          if (!existingCombinations.has(combination)) {
+            missingEntries.push({
+              product_id: product.id,
+              location_id: location.id,
+              quantity: 0
+            });
+          }
+        }
+      }
+      
+      if (missingEntries.length > 0) {
+        const { error: insertError } = await supabase
+          .from('stock_levels')
+          .insert(missingEntries);
+        
+        if (insertError) throw insertError;
+        
+        showSnackbar(`Fixed ${missingEntries.length} missing stock level entries.`);
+      } else {
+        showSnackbar('No missing stock level entries found.');
+      }
+      
+    } catch (err) {
+      console.error('Error fixing stock levels:', err);
+      error = 'Failed to fix stock levels. Please try again.';
+    } finally {
+      loading = false;
+    }
+  }
+
 </script>
 
 <StarryBackground />
@@ -302,7 +397,12 @@
   <div class="admin-container">
     <div class="admin-header">
       <h2 class="neon-text-cyan">Product Management</h2>
-      <button class="btn btn-primary" on:click={openAddModal}>+ Add Product</button>
+      <div class="flex gap-2">
+        <button class="btn btn-secondary" on:click={fixMissingStockLevels} disabled={loading}>
+          🔧 Fix Stock Levels
+        </button>
+        <button class="btn btn-primary" on:click={openAddModal}>+ Add Product</button>
+      </div>
     </div>
 
     <div class="glass mb-4">
@@ -477,7 +577,7 @@
     {/if}
 
     {#if editing && showCustomPrices}
-      <div class="modal-backdrop" role="button" on:click={() => showCustomPrices = false}></div>
+      <div class="modal-backdrop custom-prices-backdrop" role="button" on:click={() => showCustomPrices = false}></div>
       <div class="modal-content custom-prices-modal" role="dialog" aria-modal="true">
         <div class="modal-header">
           <h3 class="neon-text-cyan">Custom Prices for {editing.name}</h3>
@@ -578,10 +678,27 @@
     border: 1px solid var(--border-primary);
   }
 
+  .custom-prices-backdrop {
+    z-index: 4000;
+  }
+
   .custom-prices-modal {
     max-width: 600px;
     width: 90vw;
     max-height: 80vh;
+    z-index: 4001;
+  }
+
+  :global(.modal-content) {
+    position: fixed !important;
+    top: 50% !important;
+    left: 50% !important;
+    transform: translate(-50%, -50%) !important;
+    margin: 0 !important;
+    z-index: 100000 !important;
+    max-width: 90vw !important;
+    max-height: 90vh !important;
+    overflow-y: auto !important;
   }
 
   .search-wrapper {

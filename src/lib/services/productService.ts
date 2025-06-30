@@ -1,10 +1,6 @@
 import { supabase } from '$lib/supabase';
-import { cacheProduct, getCachedProduct, cleanupProductCache } from './cacheService';
 import type { Product } from '$lib/types/index';
 import type { PostgrestSingleResponse, PostgrestResponse } from '@supabase/supabase-js';
-
-// Centralized products store (REMOVED to prevent memory leaks)
-// export const productsStore = writable<Product[]>([]);
 
 // Retry utility for async functions
 async function retry<T>(fn: () => Promise<T>, retries = 2, delay = 500): Promise<T> {
@@ -20,16 +16,38 @@ async function retry<T>(fn: () => Promise<T>, retries = 2, delay = 500): Promise
   throw lastErr;
 }
 
-const PRODUCT_CACHE_KEY = 'cached_products';
-const PRODUCT_CACHE_TTL = 60 * 60 * 1000; // 1 hour
+// Simple in-memory cache with automatic cleanup
+const productCache = new Map<string, { data: Product; timestamp: number }>();
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+function isExpired(timestamp: number): boolean {
+  return Date.now() - timestamp > CACHE_TTL;
+}
+
+function cleanExpiredCache() {
+  for (const [key, value] of productCache.entries()) {
+    if (isExpired(value.timestamp)) {
+      productCache.delete(key);
+    }
+  }
+}
+
+export function clearAllProductCache() {
+  productCache.clear();
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem('cached_products');
+    localStorage.removeItem('productCache');
+  }
+}
 
 export async function getProduct(id: string): Promise<Product | null> {
-  cleanupProductCache();
-  const cachedProduct = getCachedProduct(id);
-  if (cachedProduct) {
-    return cachedProduct;
+  cleanExpiredCache();
+  
+  const cached = productCache.get(id);
+  if (cached && !isExpired(cached.timestamp)) {
+    return cached.data;
   }
-  // If not in cache, fetch from database with retry
+
   try {
     const { data, error }: PostgrestSingleResponse<Product> = await retry(async () => {
       return await supabase
@@ -38,13 +56,16 @@ export async function getProduct(id: string): Promise<Product | null> {
         .eq('id', id)
         .single();
     });
+    
     if (error) {
       console.error('Error fetching product:', error);
       return null;
     }
+    
     if (data) {
-      cacheProduct(id, data);
+      productCache.set(id, { data, timestamp: Date.now() });
     }
+    
     return data;
   } catch (err) {
     console.error('Error fetching product (retry):', err);
@@ -53,24 +74,32 @@ export async function getProduct(id: string): Promise<Product | null> {
 }
 
 export async function getProducts(category?: string): Promise<Product[]> {
-  cleanupProductCache();
+  cleanExpiredCache();
+  
   let query = supabase
     .from('products')
-    .select('*');
+    .select('*')
+    .order('created_at', { ascending: false });
+    
   if (category) {
     query = query.eq('category', category);
   }
+
   try {
     const { data, error }: PostgrestResponse<Product> = await retry(async () => {
       return await query;
     });
+    
     if (error) {
       console.error('Error fetching products:', error);
       return [];
     }
+    
+    // Cache all fetched products
     (data ?? []).forEach((product: Product) => {
-      cacheProduct(String(product.id), product);
+      productCache.set(String(product.id), { data: product, timestamp: Date.now() });
     });
+    
     return data || [];
   } catch (err) {
     console.error('Error fetching products (retry):', err);
@@ -89,41 +118,20 @@ export async function updateProductQuantity(id: string, quantity: number): Promi
     return false;
   }
 
-  // Update cache
-  const product = await getProduct(id);
-  if (product) {
-    cacheProduct(id, { ...product, quantity });
-  }
-
-  return true;
-}
-
-// Batch update function for multiple products
-export async function batchUpdateProducts(updates: { id: string; quantity: number }[]): Promise<boolean> {
-  const { error } = await supabase
-    .from('products')
-    .upsert(updates.map(update => ({
-      id: update.id,
-      quantity: update.quantity
-    })));
-
-  if (error) {
-    console.error('Error batch updating products:', error);
-    return false;
-  }
-
-  // Update cache for all modified products
-  await Promise.all(updates.map(update => getProduct(update.id)));
-
+  // Invalidate cache for this product
+  productCache.delete(id);
   return true;
 }
 
 export async function fetchProducts(category?: string): Promise<{ products: Product[], error: string | null }> {
   try {
+    // Always fetch fresh data for admin operations
+    clearAllProductCache();
+    
     let query = supabase
       .from('products')
       .select('*')
-      .order('category', { ascending: true });
+      .order('created_at', { ascending: false });
     
     if (category) {
       query = query.eq('category', category);
@@ -136,9 +144,9 @@ export async function fetchProducts(category?: string): Promise<{ products: Prod
       return { products: [], error: error.message };
     }
     
-    const products = data.map((product: Product) => ({
+    const products = (data || []).map((product: Product) => ({
       ...product,
-      category: product.category || 'flower' // Ensure category is never null
+      category: product.category || 'flower'
     }));
     
     return { products, error: null };
@@ -148,6 +156,26 @@ export async function fetchProducts(category?: string): Promise<{ products: Prod
       products: [], 
       error: 'Failed to fetch products. Please try again later.' 
     };
+  }
+}
+
+// Simplified product loading without redundant caching
+export async function loadAllProducts(): Promise<{ products: Product[]; error: string | null }> {
+  try {
+    const { data, error } = await supabase
+      .from('products')
+      .select('*')
+      .order('created_at', { ascending: false });
+      
+    if (error) {
+      console.error('Error fetching products:', error);
+      return { products: [], error: error.message };
+    }
+    
+    return { products: data || [], error: null };
+  } catch (err) {
+    console.error('Unexpected error fetching products:', err);
+    return { products: [], error: 'Failed to fetch products. Please try again later.' };
   }
 }
 
@@ -215,43 +243,4 @@ export async function fetchProductsLazy(
   }
 }
 
-// Fetch all products
-export async function loadAllProducts(): Promise<{ products: Product[]; error: string | null }> {
-  try {
-    const { data, error } = await supabase.from('products').select('*');
-    if (error) {
-      console.error('Error fetching products:', error);
-      return { products: [], error: error.message };
-    }
-    return { products: data || [], error: null };
-  } catch (err) {
-    console.error('Unexpected error fetching products:', err);
-    return { products: [], error: 'Failed to fetch products. Please try again later.' };
-  }
-}
-
-export async function loadAllProductsCached() {
-  if (typeof window !== 'undefined') {
-    const cached = localStorage.getItem(PRODUCT_CACHE_KEY);
-    if (cached) {
-      try {
-        const { products, timestamp } = JSON.parse(cached);
-        if (Array.isArray(products) && Date.now() - timestamp < PRODUCT_CACHE_TTL) {
-          return { products, error: null, fromCache: true };
-        }
-      } catch {}
-    }
-  }
-  // Fallback to Supabase fetch
-  const { products, error } = await loadAllProducts();
-  if (!error && typeof window !== 'undefined') {
-    localStorage.setItem(PRODUCT_CACHE_KEY, JSON.stringify({ products, timestamp: Date.now() }));
-  }
-  return { products, error, fromCache: false };
-}
-
-export function clearProductCache() {
-  if (typeof window !== 'undefined') {
-    localStorage.removeItem(PRODUCT_CACHE_KEY);
-  }
-} 
+ 
