@@ -89,6 +89,8 @@
     const select = event.target as HTMLSelectElement;
     const newStatus = select.value as OrderStatus;
     
+    console.log('Status change triggered:', { newStatus, originalStatus, currentStatus });
+    
     if (newStatus === 'cancelled') {
       showCancelConfirm = true;
       // Reset the select back to original status
@@ -98,6 +100,7 @@
     
     if (newStatus === 'completed' && originalStatus === 'pending') {
       // For pending orders, ask user how they want to complete
+      console.log('Opening complete modal for pending order');
       showCompleteModal = true;
       // Reset the select back to original status until user confirms
       currentStatus = originalStatus;
@@ -105,7 +108,14 @@
     }
     
     // For other status changes, just update directly
+    console.log('Direct status update to:', newStatus);
     update(newStatus);
+  }
+
+  // Alternative function to handle completion directly
+  function openCompleteModal() {
+    console.log('Opening complete modal directly');
+    showCompleteModal = true;
   }
   
   async function confirmCancel() {
@@ -449,6 +459,19 @@
               <option value="cancelled">Cancelled</option>
             </select>
           </div>
+          
+          {#if originalStatus === 'pending'}
+            <div class="completion-actions">
+              <button 
+                class="btn btn-primary btn-sm"
+                on:click={openCompleteModal}
+                disabled={loading}
+              >
+                🎯 Complete Order
+              </button>
+              <p class="helper-text">Click here if the dropdown isn't working</p>
+            </div>
+          {/if}
         </div>
 
         <!-- Transaction Ledger (not printed) -->
@@ -909,6 +932,16 @@
     padding: 0.5rem;
     border-radius: 4px;
     border: 1px solid #ced4da;
+  }
+
+  .completion-actions {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid #e9ecef;
+  }
+
+  .completion-actions button {
+    margin-bottom: 0.5rem;
   }
   
   .ledger-section {
