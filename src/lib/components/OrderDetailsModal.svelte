@@ -299,7 +299,7 @@
 </script>
 
 <div 
-  class="modal-backdrop" 
+  class="modal-backdrop main-modal-backdrop" 
   role="dialog" 
   aria-modal="true" 
   aria-labelledby="order-modal-title"
@@ -520,7 +520,7 @@
 
 <!-- Payment Collection Modal for Completing Pending Orders -->
 {#if showCompleteModal}
-  <div class="modal-overlay" on:click={closeCompleteModal} transition:fade>
+  <div class="modal-overlay complete-modal-overlay" on:click={closeCompleteModal} transition:fade>
     <div class="payment-modal glass" on:click|stopPropagation transition:scale>
       <div class="modal-header">
         <h3 class="neon-text-cyan">Complete Order</h3>
@@ -660,7 +660,7 @@
 {/if}
 
 {#if showCancelConfirm}
-  <div class="modal-overlay" on:click={closeCancelModal} transition:fade>
+  <div class="modal-overlay cancel-modal-overlay" on:click={closeCancelModal} transition:fade>
     <div class="confirm-modal glass" on:click|stopPropagation transition:scale>
       <div class="modal-header">
         <h3 class="neon-text-cyan">Confirm Cancellation</h3>
@@ -1032,6 +1032,41 @@
     padding: 2rem;
     text-align: center;
     border-radius: 12px;
+  }
+
+  /* Modal overlay z-index hierarchy - Global modal-backdrop is z-index: 2000 */
+  .main-modal-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+  }
+
+  .complete-modal-overlay {
+    z-index: 2100 !important;
+  }
+
+  .cancel-modal-overlay {
+    z-index: 2200 !important;
+  }
+
+  .modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2050;
   }
   .confirm-modal-content p {
     margin: 1rem 0;
