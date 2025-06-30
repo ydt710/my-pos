@@ -43,7 +43,8 @@
   $: subtotal = order.subtotal ?? (order.order_items || []).reduce((sum, item) => sum + item.price * item.quantity, 0);
   $: tax = order.tax ?? 0;
   $: shipping_fee = order.shipping_fee ?? 0;
-  $: total = subtotal + tax + shipping_fee;
+  // Use order.total directly if available, otherwise calculate from components
+  $: total = order.total ?? (subtotal + tax + shipping_fee);
 
   // Initialize payment amount to order total when modal opens
   $: if (order && paymentAmount === 0) {
