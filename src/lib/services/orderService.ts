@@ -395,4 +395,34 @@ export async function getOrderWithPaymentSummary(orderId: string) {
     console.error('Error fetching order with payment summary:', err);
     return { data: null, error: err.message || 'An unexpected error occurred.' };
   }
+}
+
+export async function completeOnlineOrder(
+  orderId: string,
+  paymentAmount: number = 0,
+  paymentMethod: string = 'cash',
+  extraCashOption: 'change' | 'credit' = 'change'
+): Promise<{ success: boolean; error: string | null; data?: any }> {
+  try {
+    const { data, error } = await supabase.rpc('complete_online_order', {
+      p_order_id: orderId,
+      p_payment_amount: paymentAmount,
+      p_payment_method: paymentMethod,
+      p_extra_cash_option: extraCashOption
+    });
+
+    if (error) {
+      console.error('Error completing online order:', error);
+      return { success: false, error: error.message };
+    }
+
+    if (data && data.success) {
+      return { success: true, error: null, data };
+    } else {
+      return { success: false, error: data?.error || 'Failed to complete order' };
+    }
+  } catch (err) {
+    console.error('Unexpected error completing online order:', err);
+    return { success: false, error: 'An unexpected error occurred' };
+  }
 } 

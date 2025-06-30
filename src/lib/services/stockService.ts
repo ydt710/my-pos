@@ -91,8 +91,7 @@ export async function confirmProductionDone(stockMovementId: string | number) {
       await supabase
         .from('stock_levels')
         .update({ 
-          quantity: currentStock.quantity + movement.quantity,
-          updated_at: new Date().toISOString()
+          quantity: currentStock.quantity + movement.quantity
         })
         .eq('product_id', movement.product_id)
         .eq('location_id', movement.to_location_id);
@@ -102,8 +101,7 @@ export async function confirmProductionDone(stockMovementId: string | number) {
         .insert({
           product_id: movement.product_id,
           location_id: movement.to_location_id,
-          quantity: movement.quantity,
-          updated_at: new Date().toISOString()
+          quantity: movement.quantity
         });
     }
 
@@ -159,6 +157,8 @@ export async function adjustStock(productId: string, locationName: string, newQu
   const locationId = await getLocationId(locationName);
   if (!locationId) throw new Error('Location not found');
   const created_by = await getCurrentProfileId();
+  
+  // Get current stock level
   const { data } = await supabase
     .from('stock_levels')
     .select('quantity')
@@ -167,7 +167,8 @@ export async function adjustStock(productId: string, locationName: string, newQu
     .single();
   const oldQuantity = data?.quantity ?? 0;
   
-  await supabase.from('stock_movements').insert({
+  // Create the stock movement record
+  const { error: movementError } = await supabase.from('stock_movements').insert({
     product_id: productId,
     from_location_id: locationId,
     to_location_id: locationId,
@@ -176,6 +177,32 @@ export async function adjustStock(productId: string, locationName: string, newQu
     note,
     created_by
   });
+  
+  if (movementError) {
+    throw new Error('Failed to create stock movement record');
+  }
+  
+  // Manually update the stock level since trigger doesn't handle adjustments properly
+  const { error: updateError } = await supabase
+    .from('stock_levels')
+    .update({ quantity: newQuantity })
+    .eq('product_id', productId)
+    .eq('location_id', locationId);
+  
+  if (updateError) {
+    // If there's no existing record, insert a new one
+    const { error: insertError } = await supabase
+      .from('stock_levels')
+      .insert({
+        product_id: productId,
+        location_id: locationId,
+        quantity: newQuantity
+      });
+    
+    if (insertError) {
+      throw new Error('Failed to update stock level');
+    }
+  }
 }
 
 // Decrement shop stock for a sale
@@ -237,8 +264,7 @@ export async function acceptStockTransfer(transferId: string, actualQuantity: nu
       await supabase
         .from('stock_levels')
         .update({ 
-          quantity: fromStock.quantity - transfer.quantity,
-          updated_at: new Date().toISOString()
+          quantity: fromStock.quantity - transfer.quantity
         })
         .eq('product_id', transfer.product_id)
         .eq('location_id', transfer.from_location_id);
@@ -256,8 +282,7 @@ export async function acceptStockTransfer(transferId: string, actualQuantity: nu
       await supabase
         .from('stock_levels')
         .update({ 
-          quantity: toStock.quantity + actualQuantity,
-          updated_at: new Date().toISOString()
+          quantity: toStock.quantity + actualQuantity
         })
         .eq('product_id', transfer.product_id)
         .eq('location_id', transfer.to_location_id);
@@ -267,8 +292,7 @@ export async function acceptStockTransfer(transferId: string, actualQuantity: nu
         .insert({
           product_id: transfer.product_id,
           location_id: transfer.to_location_id,
-          quantity: actualQuantity,
-          updated_at: new Date().toISOString()
+          quantity: actualQuantity
         });
     }
 
@@ -345,8 +369,7 @@ export async function rejectStockTransfer(transferId: string, actualQuantity: nu
       await supabase
         .from('stock_levels')
         .update({ 
-          quantity: fromStock.quantity - transfer.quantity,
-          updated_at: new Date().toISOString()
+          quantity: fromStock.quantity - transfer.quantity
         })
         .eq('product_id', transfer.product_id)
         .eq('location_id', transfer.from_location_id);
@@ -365,8 +388,7 @@ export async function rejectStockTransfer(transferId: string, actualQuantity: nu
         await supabase
           .from('stock_levels')
           .update({ 
-            quantity: toStock.quantity + actualQuantity,
-            updated_at: new Date().toISOString()
+            quantity: toStock.quantity + actualQuantity
           })
           .eq('product_id', transfer.product_id)
           .eq('location_id', transfer.to_location_id);
@@ -376,8 +398,7 @@ export async function rejectStockTransfer(transferId: string, actualQuantity: nu
           .insert({
             product_id: transfer.product_id,
             location_id: transfer.to_location_id,
-            quantity: actualQuantity,
-            updated_at: new Date().toISOString()
+            quantity: actualQuantity
           });
       }
     }

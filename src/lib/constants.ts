@@ -4,6 +4,29 @@ export const BALANCE_COLORS = {
   zero: '#666'
 };
 
+// Default product images for categories when no image is provided
+export const DEFAULT_PRODUCT_IMAGES = {
+  flower: 'https://wglybohfygczpapjxwwz.supabase.co/storage/v1/object/public/route420//canaprop%20(1).webp',
+  joints: 'https://wglybohfygczpapjxwwz.supabase.co/storage/v1/object/public/route420//bluntplace-min.webp',
+  concentrate: 'https://bulkweedinbox.cc/wp-content/uploads/2024/12/Greasy-Pink.jpg',
+  edibles: 'https://longislandinterventions.com/wp-content/uploads/2024/12/Edibles-1.jpg',
+  headshop: 'https://wglybohfygczpapjxwwz.supabase.co/storage/v1/object/public/route420//bongs.webp'
+} as const;
+
+// Function to get default product image for a category
+export function getDefaultProductImage(category: string): string {
+  return DEFAULT_PRODUCT_IMAGES[category as keyof typeof DEFAULT_PRODUCT_IMAGES] || DEFAULT_PRODUCT_IMAGES.flower;
+}
+
+// Function to get product image with fallback to category default
+export function getProductImage(imageUrl: string | null | undefined, category: string): string {
+  // If no image URL provided or it's a placeholder, use category default
+  if (!imageUrl || imageUrl.includes('via.placeholder.com')) {
+    return getDefaultProductImage(category);
+  }
+  return imageUrl;
+}
+
 // Category configurations shared between CategoryNav and Landing Page
 export const CATEGORY_CONFIG = {
   joints: {

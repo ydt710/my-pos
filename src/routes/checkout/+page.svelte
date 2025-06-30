@@ -715,37 +715,10 @@
     border-bottom: 1px solid rgba(0, 0, 0, 0.1);
   }
 
-  .form-group {
-    margin-bottom: 1rem;
-  }
-
-  .form-group label {
-    display: block;
-    margin-bottom: 0.5rem;
-    color: #555;
-    font-weight: 500;
-  }
-
+  /* Checkout-specific form overrides */
   .form-group input,
   .form-group textarea {
-    width: 100%;
-    border: 1px solid rgba(0, 0, 0, 0.1);
-    border-radius: 8px;
-    font-size: 1rem;
-    transition: all 0.2s;
     background: rgba(255, 255, 255, 0.9);
-  }
-
-  .form-group input:focus,
-  .form-group textarea:focus {
-    outline: none;
-    border-color: #2196f3;
-    box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.1);
-  }
-
-  .form-group textarea {
-    min-height: 100px;
-    resize: vertical;
   }
 
   .login-prompt {

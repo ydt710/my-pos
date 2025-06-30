@@ -3,6 +3,7 @@
   import type { Product } from '$lib/types/index';
   import { getProductReviews, addReview, updateReview, updateProductRating } from '$lib/services/reviewService';
   import { supabase } from '$lib/supabase';
+  import { getProductImage } from '$lib/constants';
   
   interface Review {
     id: string;
@@ -198,11 +199,11 @@
       <div class="product-details">
         <div class="product-image">
           <img 
-            src={product.image_url + '?width=400&quality=80'} 
+            src={getProductImage(product.image_url, product.category) + '?width=400&quality=80'} 
             srcset="
-              {product.image_url}?width=400&quality=80 400w,
-              {product.image_url}?width=600&quality=80 600w,
-              {product.image_url}?width=800&quality=80 800w
+              {getProductImage(product.image_url, product.category)}?width=400&quality=80 400w,
+              {getProductImage(product.image_url, product.category)}?width=600&quality=80 600w,
+              {getProductImage(product.image_url, product.category)}?width=800&quality=80 800w
             "
             sizes="
               (max-width: 800px) 400px,
@@ -390,70 +391,62 @@
 <style>
   .modal-backdrop {
     position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.85);
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.8);
+    backdrop-filter: blur(5px);
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: center;
-    z-index: 3000;
-    backdrop-filter: blur(8px);
+    z-index: 2000;
+    animation: fadeIn 0.2s ease;
   }
 
   .modal-backdrop:focus {
     outline: none;
   }
 
-  .modal-backdrop.show {
-    opacity: 1;
-    visibility: visible;
-  }
+
 
   .modal-content {
-    position: fixed;
-    left: 50%;
-    transform: translateX(-50%);
-    margin-top: 1.5rem;
-    max-height: calc(100vh - 90px);
-    overflow-y: auto;
-    width: 90%;
-    max-width: 1200px;
-    z-index: 3001;
-    background: #1a1a1a;
+    background: var(--bg-dark-transparent);
+    border: 1px solid var(--border-neon);
     border-radius: 16px;
-    border: 1px solid rgba(178, 254, 250, 0.3);
-    box-shadow: 
-      0 0 20px rgba(0, 240, 255, 0.2),
-      0 0 40px rgba(255, 0, 222, 0.1),
-      0 8px 32px rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(20px);
+    box-shadow: var(--shadow-neon), 0 8px 32px rgba(0, 242, 254, 0.2);
+    width: 95vw;
+    max-width: 500px;
+    max-height: 90vh;
+    overflow-y: auto;
+    animation: slideIn 0.3s ease;
+    position: relative;
   }
 
   .close-button {
     position: absolute;
-    top: 1rem;
-    right: 1rem;
-    background: none;
-    border: none;
-    font-size: 1.5rem;
-    cursor: pointer;
-    color: #b2fefa;
-    z-index: 2002;
-    padding: 0.5rem;
+    top: 12px;
+    right: 12px;
+    background: rgba(0, 0, 0, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: white;
     border-radius: 50%;
-    width: 32px;
-    height: 32px;
+    width: 36px;
+    height: 36px;
     display: flex;
     align-items: center;
     justify-content: center;
+    cursor: pointer;
+    backdrop-filter: blur(8px);
+    z-index: 15;
     transition: all 0.2s ease;
   }
 
-  .close-button:hover,
-  .close-button:focus {
-    background-color: rgba(178, 254, 250, 0.1);
+  .close-button:hover {
+    background: rgba(255, 69, 69, 0.8);
+    border-color: rgba(255, 69, 69, 0.5);
     transform: scale(1.1);
-    color: #00f0ff;
-    text-shadow: 0 0 8px rgba(0, 240, 255, 0.6);
-    outline: none;
   }
 
   .product-details {
@@ -487,13 +480,7 @@
     padding-right: 1rem;
   }
 
-  .product-title {
-    font-size: 2rem;
-    font-weight: 600;
-    margin: 0;
-    color: #b2fefa;
-    text-shadow: 0 0 10px rgba(178, 254, 250, 0.5);
-  }
+
 
   .product__price-row {
     display: flex;
@@ -847,32 +834,43 @@
     }
   }
 
-  @media (max-width: 800px) {
-    .product-details {
+  @media (max-width: 768px) {
+    .modal-content {
+      width: 95vw;
+      max-width: none;
+      margin: 1rem;
+    }
+    
+    .product-name {
+      font-size: 1.25rem;
+    }
+    
+    .details-grid {
       grid-template-columns: 1fr;
     }
-
-    .product-image {
-      position: relative;
-      top: 0;
+    
+    .cart-section {
+      flex-direction: column;
     }
-
-    .product-image img {
-      max-width: 100%;
-    }
-
-    .product-info {
-      padding-right: 0;
+    
+    .quantity-input {
+      width: 100%;
     }
   }
 
-  @media (max-width: 600px) {
-    .modal-content {
-      max-width: 98vw;
-      margin: 0.5rem;
-      margin-top: 1.5rem;
-      padding: 0.5rem;
-      max-height: calc(100vh - 80px);
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  @keyframes slideIn {
+    from { 
+      opacity: 0; 
+      transform: translate(-50%, -50%) scale(0.8); 
+    }
+    to { 
+      opacity: 1; 
+      transform: translate(-50%, -50%) scale(1); 
     }
   }
 

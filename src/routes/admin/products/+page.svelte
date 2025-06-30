@@ -9,6 +9,7 @@
   import { fetchProducts as fetchProductsFromService, clearAllProductCache } from '$lib/services/productService';
   import { PUBLIC_SHOP_LOCATION_ID } from '$env/static/public';
   import StarryBackground from '$lib/components/StarryBackground.svelte';
+  import { getProductImage } from '$lib/constants';
 
   let products: Product[] = [];
   let filteredProducts: Product[] = [];
@@ -323,71 +324,7 @@
     fetchCustomPricesForProduct(String(editing.id));
   }
 
-  // Fix missing stock levels for existing products
-  async function fixMissingStockLevels() {
-    loading = true;
-    error = '';
-    try {
-      // Get all products
-      const { data: allProducts, error: productsError } = await supabase
-        .from('products')
-        .select('id');
-      
-      if (productsError) throw productsError;
-      
-      // Get all locations
-      const { data: allLocations, error: locationsError } = await supabase
-        .from('stock_locations')
-        .select('id');
-      
-      if (locationsError) throw locationsError;
-      
-      // Get existing stock levels
-      const { data: existingStockLevels, error: stockError } = await supabase
-        .from('stock_levels')
-        .select('product_id, location_id');
-      
-      if (stockError) throw stockError;
-      
-      // Create a set of existing combinations for quick lookup
-      const existingCombinations = new Set(
-        existingStockLevels?.map(sl => `${sl.product_id}-${sl.location_id}`) || []
-      );
-      
-      // Find missing stock level entries
-      const missingEntries = [];
-      for (const product of allProducts || []) {
-        for (const location of allLocations || []) {
-          const combination = `${product.id}-${location.id}`;
-          if (!existingCombinations.has(combination)) {
-            missingEntries.push({
-              product_id: product.id,
-              location_id: location.id,
-              quantity: 0
-            });
-          }
-        }
-      }
-      
-      if (missingEntries.length > 0) {
-        const { error: insertError } = await supabase
-          .from('stock_levels')
-          .insert(missingEntries);
-        
-        if (insertError) throw insertError;
-        
-        showSnackbar(`Fixed ${missingEntries.length} missing stock level entries.`);
-      } else {
-        showSnackbar('No missing stock level entries found.');
-      }
-      
-    } catch (err) {
-      console.error('Error fixing stock levels:', err);
-      error = 'Failed to fix stock levels. Please try again.';
-    } finally {
-      loading = false;
-    }
-  }
+
 
 </script>
 
@@ -398,9 +335,6 @@
     <div class="admin-header">
       <h2 class="neon-text-cyan">Product Management</h2>
       <div class="flex gap-2">
-        <button class="btn btn-secondary" on:click={fixMissingStockLevels} disabled={loading}>
-          🔧 Fix Stock Levels
-        </button>
         <button class="btn btn-primary" on:click={openAddModal}>+ Add Product</button>
       </div>
     </div>
@@ -479,7 +413,7 @@
           <tbody>
             {#each filteredProducts as product (product.id)}
               <tr class="hover-glow">
-                <td><img src={product.image_url} alt={product.name} class="product-thumbnail"/></td>
+                <td><img src={getProductImage(product.image_url, product.category)} alt={product.name} class="product-thumbnail"/></td>
                 <td class="neon-text-white">{product.name}</td>
                 <td>{categories.find(c => String(c.id) === String(product.category))?.name || product.category}</td>
                 <td class="neon-text-cyan">
@@ -519,7 +453,7 @@
          {#each filteredProducts as product (product.id)}
            <div class="admin-card product-card">
              <div class="admin-card-header">
-               <img src={product.image_url} alt={product.name} class="product-image"/>
+               <img src={getProductImage(product.image_url, product.category)} alt={product.name} class="product-image"/>
                <div>
                  <div class="admin-card-title">{product.name}</div>
                  <div class="admin-card-subtitle">{categories.find(c => String(c.id) === String(product.category))?.name || product.category}</div>

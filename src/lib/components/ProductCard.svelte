@@ -10,6 +10,7 @@
   import { get } from 'svelte/store';
   import { debounce, getBalanceColor } from '$lib/utils';
   import { showSnackbar as showGlobalSnackbar } from '$lib/stores/snackbarStore';
+  import { getProductImage } from '$lib/constants';
 
   
   interface Review {
@@ -298,11 +299,11 @@
                 <div class="image-skeleton"></div>
               {/if}
               <img 
-                src={product.image_url + '?width=300&quality=75'} 
+                src={getProductImage(product.image_url, product.category) + '?width=300&quality=75'} 
                 srcset="
-                  {product.image_url}?width=300&quality=75 300w,
-                  {product.image_url}?width=400&quality=75 400w,
-                  {product.image_url}?width=500&quality=75 500w
+                  {getProductImage(product.image_url, product.category)}?width=300&quality=75 300w,
+                  {getProductImage(product.image_url, product.category)}?width=400&quality=75 400w,
+                  {getProductImage(product.image_url, product.category)}?width=500&quality=75 500w
                 "
                 sizes="
                   (max-width: 480px) 300px,

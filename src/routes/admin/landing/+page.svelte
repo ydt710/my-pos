@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { supabase } from '$lib/supabase';
+  import { getProductImage } from '$lib/constants';
   import { fade } from 'svelte/transition';
   import StarryBackground from '$lib/components/StarryBackground.svelte';
   import type { Product } from '$lib/types/index';
@@ -331,7 +332,7 @@
                        on:keydown={(e) => e.key === 'Enter' && toggleProductSelection(product.id, 'hero')}
                        tabindex="0"
                        role="button">
-                    <img src={product.image_url} alt={product.name} class="product-image" />
+                    <img src={getProductImage(product.image_url, product.category)} alt={product.name} class="product-image" />
                     <div class="product-info">
                       <h4 class="neon-text-white">{product.name}</h4>
                       <p class="neon-text-cyan">R{product.price}</p>
@@ -554,7 +555,7 @@
                        on:keydown={(e) => e.key === 'Enter' && toggleProductSelection(product.id, 'featured')}
                        tabindex="0"
                        role="button">
-                    <img src={product.image_url} alt={product.name} class="product-image" />
+                    <img src={getProductImage(product.image_url, product.category)} alt={product.name} class="product-image" />
                     <div class="product-info">
                       <h4 class="neon-text-white">{product.name}</h4>
                       <p class="neon-text-cyan">R{product.price}</p>

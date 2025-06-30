@@ -19,7 +19,7 @@
   import { clearAllProductCache } from '$lib/services/productService';
   import Footer from '$lib/components/Footer.svelte';
   import { debounce } from '$lib/utils';
-  import { CATEGORY_ICONS, CATEGORY_BACKGROUNDS, CATEGORY_CONFIG } from '$lib/constants';
+  import { CATEGORY_ICONS, CATEGORY_BACKGROUNDS, CATEGORY_CONFIG, getProductImage } from '$lib/constants';
 
   // Landing page data
   let landingHero: any = null;
@@ -508,7 +508,7 @@
                     on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && handleShowDetails(product)}
                     aria-label="View details for {product.name}"
                   >
-                    <img src={product.image_url} alt={product.name} class="hero-product-image" />
+                    <img src={getProductImage(product.image_url, product.category)} alt={product.name} class="hero-product-image" />
                     <h4 class="neon-text-cyan">{product.name}</h4>
                     <p class="neon-text-white">R{product.price}</p>
                   </div>

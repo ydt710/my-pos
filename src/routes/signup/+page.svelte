@@ -1458,31 +1458,15 @@
       backdrop-filter: blur(5px);
     }
 
-    /* Camera Modal Styles */
-    .modal-backdrop {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: rgba(0, 0, 0, 0.8);
-      backdrop-filter: blur(5px);
-      z-index: 2000;
-    }
-
+    /* Camera Modal Specific Styles (extends global modal system) */
     .camera-modal {
       position: fixed;
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
-      padding: 1.5rem;
-      border-radius: 16px;
       z-index: 2001;
       width: 95vw;
       max-width: 500px;
-      border: 1px solid var(--border-neon);
-      backdrop-filter: blur(20px);
-      box-shadow: var(--shadow-neon), 0 8px 32px rgba(0, 242, 254, 0.2);
     }
 
     .close-btn {

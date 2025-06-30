@@ -8,9 +8,11 @@
   import { fade } from 'svelte/transition';
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
   import StarryBackground from '$lib/components/StarryBackground.svelte';
+  import DatePicker from '$lib/components/DatePicker.svelte';
 
   let user: any = null;
   let orders: Order[] = [];
+  let allOrders: Order[] = []; // Store all orders for filtering
   let loading = true;
   let error = '';
   let menuVisible = false;
@@ -19,6 +21,17 @@
   let showConfirmModal = false;
   let orderIdToDelete: string | null = null;
 
+  // Date filtering
+  let startDate = new Date();
+  let endDate = new Date();
+  let startDateStr = '';
+  let endDateStr = '';
+  let dateFilter: 'all' | 'today' | 'week' | 'month' | 'custom' = 'all';
+
+  // Set default date range
+  startDate.setDate(startDate.getDate() - 30); // 30 days ago
+  endDate = new Date(); // today
+
   onMount(async () => {
     const { data: { user: currentUser } } = await supabase.auth.getUser();
     if (!currentUser) {
@@ -26,6 +39,11 @@
       return;
     }
     user = currentUser;
+    
+    // Initialize date strings
+    startDateStr = startDate.toISOString().split('T')[0];
+    endDateStr = endDate.toISOString().split('T')[0];
+    
     await fetchOrders();
   });
 
@@ -67,15 +85,89 @@
 
       if (ordersError) throw ordersError;
 
-      orders = (ordersData || []).map(order => ({
+      allOrders = (ordersData || []).map(order => ({
         ...order,
         user: order.profiles || undefined
       }));
+      
+      // Apply current date filter
+      applyDateFilter();
     } catch (err) {
       console.error('Error fetching orders:', err);
       error = 'Failed to load orders. Please try again.';
     } finally {
       loading = false;
+    }
+  }
+
+  function applyDateFilter() {
+    const now = new Date();
+    let filterStartDate: Date | null = null;
+    let filterEndDate: Date | null = null;
+
+    switch (dateFilter) {
+      case 'today':
+        filterStartDate = new Date(now);
+        filterStartDate.setHours(0, 0, 0, 0);
+        filterEndDate = new Date(now);
+        filterEndDate.setHours(23, 59, 59, 999);
+        break;
+      case 'week':
+        filterStartDate = new Date(now);
+        filterStartDate.setDate(now.getDate() - 7);
+        filterStartDate.setHours(0, 0, 0, 0);
+        filterEndDate = new Date(now);
+        filterEndDate.setHours(23, 59, 59, 999);
+        break;
+      case 'month':
+        filterStartDate = new Date(now);
+        filterStartDate.setDate(now.getDate() - 30);
+        filterStartDate.setHours(0, 0, 0, 0);
+        filterEndDate = new Date(now);
+        filterEndDate.setHours(23, 59, 59, 999);
+        break;
+      case 'custom':
+        filterStartDate = new Date(startDate);
+        filterStartDate.setHours(0, 0, 0, 0);
+        filterEndDate = new Date(endDate);
+        filterEndDate.setHours(23, 59, 59, 999);
+        break;
+      case 'all':
+      default:
+        // Show all orders
+        orders = [...allOrders];
+        return;
+    }
+
+    if (filterStartDate && filterEndDate) {
+      orders = allOrders.filter(order => {
+        const orderDate = new Date(order.created_at);
+        return orderDate >= filterStartDate! && orderDate <= filterEndDate!;
+      });
+    }
+  }
+
+  function setDateFilter(filter: typeof dateFilter) {
+    dateFilter = filter;
+    applyDateFilter();
+  }
+
+  function handleDateStringChange(isStart: boolean, value: string) {
+    if (!value) return;
+    
+    const date = new Date(value + 'T00:00:00');
+    if (!isNaN(date.getTime())) {
+      if (isStart) {
+        startDate = date;
+        startDateStr = value;
+      } else {
+        endDate = date;
+        endDateStr = value;
+      }
+      
+      if (dateFilter === 'custom') {
+        applyDateFilter();
+      }
     }
   }
 
@@ -108,9 +200,10 @@
         })
         .eq('id', orderId);
       if (updateError) throw updateError;
+      // Remove from both arrays
       orders = orders.filter(o => o.id !== orderId);
+      allOrders = allOrders.filter(o => o.id !== orderId);
       showSnackbar('Order deleted (soft delete) and stock reapplied.');
-      fetchOrders();
     } catch (err) {
       console.error('Error deleting order:', err);
       error = 'Failed to delete order. Please try again.';
@@ -148,6 +241,77 @@
 
 <main class="orders-container">
   <h1>Your Orders</h1>
+
+  <!-- Date Filter Section -->
+  <div class="filters-section glass">
+    <div class="filter-header">
+      <h3 class="neon-text-cyan">Filter Orders</h3>
+    </div>
+    <div class="filter-controls">
+      <div class="filter-buttons">
+        <button 
+          class="btn btn-sm {dateFilter === 'all' ? 'btn-primary' : 'btn-secondary'}" 
+          on:click={() => setDateFilter('all')}
+        >
+          All Orders
+        </button>
+        <button 
+          class="btn btn-sm {dateFilter === 'today' ? 'btn-primary' : 'btn-secondary'}" 
+          on:click={() => setDateFilter('today')}
+        >
+          Today
+        </button>
+        <button 
+          class="btn btn-sm {dateFilter === 'week' ? 'btn-primary' : 'btn-secondary'}" 
+          on:click={() => setDateFilter('week')}
+        >
+          Last 7 Days
+        </button>
+        <button 
+          class="btn btn-sm {dateFilter === 'month' ? 'btn-primary' : 'btn-secondary'}" 
+          on:click={() => setDateFilter('month')}
+        >
+          Last 30 Days
+        </button>
+        <button 
+          class="btn btn-sm {dateFilter === 'custom' ? 'btn-primary' : 'btn-secondary'}" 
+          on:click={() => setDateFilter('custom')}
+        >
+          Custom Range
+        </button>
+      </div>
+      
+      {#if dateFilter === 'custom'}
+        <div class="custom-date-range">
+          <div class="date-inputs">
+            <label class="form-label">From:
+              <DatePicker 
+                bind:value={startDateStr} 
+                placeholder="Start date"
+                on:change={(e) => handleDateStringChange(true, e.detail.value)}
+              />
+            </label>
+            <label class="form-label">To:
+              <DatePicker 
+                bind:value={endDateStr} 
+                placeholder="End date"
+                on:change={(e) => handleDateStringChange(false, e.detail.value)}
+              />
+            </label>
+          </div>
+        </div>
+      {/if}
+    </div>
+    
+    <div class="filter-results">
+      <p class="neon-text-muted">
+        Showing {orders.length} of {allOrders.length} orders
+        {#if dateFilter !== 'all'}
+          <span class="filter-indicator">({dateFilter === 'custom' ? 'custom date range' : dateFilter})</span>
+        {/if}
+      </p>
+    </div>
+  </div>
 
   {#if error}
     <div class="error-message">{error}</div>
@@ -240,7 +404,8 @@
   h1 {
     text-align: center;
     margin-bottom: 2rem;
-    color: #333;
+    color: var(--text-primary);
+    text-shadow: 0 0 10px rgba(0, 240, 255, 0.5);
   }
 
   .orders-list {
@@ -250,10 +415,19 @@
   }
 
   .order-card {
-    background: white;
+    background: var(--bg-glass);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--border-primary);
     border-radius: 12px;
     padding: 1.5rem;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    box-shadow: var(--shadow-glass);
+    transition: var(--transition-fast);
+  }
+
+  .order-card:hover {
+    border-color: var(--neon-cyan);
+    box-shadow: var(--shadow-neon-cyan);
+    transform: translateY(-2px);
   }
 
   .order-header {
@@ -267,12 +441,13 @@
 
   .order-info h3 {
     margin: 0;
-    color: #333;
+    color: var(--neon-cyan);
     font-size: 1.2rem;
+    text-shadow: 0 0 8px rgba(0, 240, 255, 0.4);
   }
 
   .order-date {
-    color: #666;
+    color: var(--text-muted);
     font-size: 0.9rem;
     margin: 0.25rem 0 0;
   }
@@ -521,6 +696,144 @@
 
     h1 {
       font-size: 1.25rem;
+    }
+  }
+
+  /* Filter Section Styles */
+  .filters-section {
+    margin-bottom: 2rem;
+    padding: 1.5rem;
+    border-radius: 12px;
+  }
+
+  .filter-header {
+    margin-bottom: 1rem;
+  }
+
+  .filter-header h3 {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 600;
+  }
+
+  .filter-controls {
+    margin-bottom: 1rem;
+  }
+
+  .filter-buttons {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+  }
+
+  .custom-date-range {
+    margin-top: 1rem;
+    padding: 1rem;
+    background: var(--bg-glass-light);
+    border-radius: 8px;
+    border: 1px solid var(--border-primary);
+  }
+
+  .date-inputs {
+    display: flex;
+    gap: 1rem;
+    align-items: end;
+  }
+
+  .date-inputs label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    min-width: 150px;
+  }
+
+  .filter-results p {
+    margin: 0;
+    font-size: 0.9rem;
+  }
+
+  .filter-indicator {
+    font-weight: 500;
+    color: var(--neon-cyan);
+  }
+
+  /* Update other text colors for neon theme */
+  .item-details h4 {
+    color: var(--text-primary);
+  }
+
+  .item-quantity,
+  .item-price {
+    color: var(--text-muted);
+  }
+
+  .item-total {
+    color: var(--text-primary);
+    font-weight: 600;
+  }
+
+  .order-total {
+    color: var(--text-primary);
+  }
+
+  .order-item {
+    background: var(--bg-glass-light);
+    border: 1px solid var(--border-primary);
+  }
+
+  .empty-state {
+    background: var(--bg-glass);
+    border: 1px solid var(--border-primary);
+    backdrop-filter: blur(10px);
+  }
+
+  .empty-state p {
+    color: var(--text-muted);
+  }
+
+  .error-message {
+    background: rgba(220, 53, 69, 0.1);
+    color: #dc3545;
+    border: 1px solid #dc3545;
+  }
+
+  .loading {
+    color: var(--text-muted);
+  }
+
+  @media (max-width: 768px) {
+    .filters-section {
+      padding: 1rem;
+    }
+
+    .filter-buttons {
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .date-inputs {
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .date-inputs label {
+      min-width: auto;
+      width: 100%;
+    }
+
+    .custom-date-range {
+      padding: 0.75rem;
+    }
+  }
+
+  @media (max-width: 480px) {
+    .filter-header h3 {
+      font-size: 1rem;
+    }
+
+    .filter-results p {
+      font-size: 0.85rem;
     }
   }
 </style> 

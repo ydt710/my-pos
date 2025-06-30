@@ -84,6 +84,14 @@
   let rejectActualQty = 0;
   let rejectReason = '';
 
+  // Location management variables
+  let showLocationModal = false;
+  let newLocationName = '';
+  let addingLocation = false;
+  let locationToDelete: Location | null = null;
+  let showDeleteLocationModal = false;
+  let deletingLocation = false;
+
   // Realtime channel variables
   let stockLevelsChannel: any = null;
   let stockMovementsChannel: any = null;
@@ -393,6 +401,102 @@
       return a.name.localeCompare(b.name);
     });
   }
+
+  async function openLocationModal() {
+    newLocationName = '';
+    showLocationModal = true;
+  }
+
+  async function addLocation() {
+    if (!newLocationName.trim()) return;
+    
+    addingLocation = true;
+    error = '';
+    
+    try {
+      // Add the new location
+      const { data: newLocation, error: locationError } = await supabase
+        .from('stock_locations')
+        .insert([{ name: newLocationName.trim() }])
+        .select()
+        .single();
+      
+      if (locationError) throw locationError;
+      
+      // Create stock levels for all products at this new location with quantity 0
+      const { data: allProducts, error: productsError } = await supabase
+        .from('products')
+        .select('id');
+      
+      if (productsError) throw productsError;
+      
+      if (allProducts && allProducts.length > 0) {
+        const stockLevelEntries = allProducts.map(product => ({
+          product_id: product.id,
+          location_id: newLocation.id,
+          quantity: 0
+        }));
+        
+        const { error: stockError } = await supabase
+          .from('stock_levels')
+          .insert(stockLevelEntries);
+        
+        if (stockError) throw stockError;
+      }
+      
+      // Refresh data
+      await fetchData();
+      showLocationModal = false;
+      newLocationName = '';
+      
+    } catch (err) {
+      console.error('Error adding location:', err);
+      error = 'Failed to add location. Please try again.';
+    } finally {
+      addingLocation = false;
+    }
+  }
+
+  function openDeleteLocationModal(location: Location) {
+    locationToDelete = location;
+    showDeleteLocationModal = true;
+  }
+
+  async function deleteLocation() {
+    if (!locationToDelete) return;
+    
+    deletingLocation = true;
+    error = '';
+    
+    try {
+      // Delete stock levels for this location first
+      const { error: stockError } = await supabase
+        .from('stock_levels')
+        .delete()
+        .eq('location_id', locationToDelete.id);
+      
+      if (stockError) throw stockError;
+      
+      // Delete the location
+      const { error: locationError } = await supabase
+        .from('stock_locations')
+        .delete()
+        .eq('id', locationToDelete.id);
+      
+      if (locationError) throw locationError;
+      
+      // Refresh data
+      await fetchData();
+      showDeleteLocationModal = false;
+      locationToDelete = null;
+      
+    } catch (err) {
+      console.error('Error deleting location:', err);
+      error = 'Failed to delete location. Please try again.';
+    } finally {
+      deletingLocation = false;
+    }
+  }
 </script>
 
 <svelte:head>
@@ -405,13 +509,18 @@
   <div class="admin-container">
     <div class="admin-header">
       <h1 class="neon-text-cyan">Stock Management</h1>
-      <button class="btn btn-primary" on:click={fetchData} disabled={loading}>
-        {#if loading}
-          🔄 Refreshing...
-        {:else}
-          🔄 Refresh Data
+      <div class="flex gap-2">
+        {#if isAdmin}
+          <button class="btn btn-secondary" on:click={openLocationModal}>+ Add Location</button>
         {/if}
-      </button>
+        <button class="btn btn-primary" on:click={fetchData} disabled={loading}>
+          {#if loading}
+            🔄 Refreshing...
+          {:else}
+            🔄 Refresh Data
+          {/if}
+        </button>
+      </div>
     </div>
 
     {#if error}
@@ -517,6 +626,42 @@
             </div>
           {/if}
         </div>
+
+        {#if isAdmin}
+          <div class="glass mb-4">
+            <div class="card-header">
+              <h2 class="neon-text-cyan">Stock Locations</h2>
+            </div>
+            <div class="card-body">
+              <div class="responsive-table">
+                <table class="table-dark">
+                  <thead>
+                    <tr>
+                      <th>Location Name</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {#each locations as location}
+                      <tr class="hover-glow">
+                        <td class="neon-text-white">{location.name}</td>
+                        <td>
+                          {#if location.name !== 'facility' && location.name !== 'shop'}
+                            <button class="btn btn-danger btn-sm" on:click={() => openDeleteLocationModal(location)}>
+                              Delete
+                            </button>
+                          {:else}
+                            <span class="text-muted">Protected</span>
+                          {/if}
+                        </td>
+                      </tr>
+                    {/each}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        {/if}
 
         <div class="glass mb-4">
           <div class="card-header">
@@ -724,6 +869,48 @@
         </div>
       </div>
     {/if}
+
+    {#if showLocationModal}
+      <div class="modal-backdrop"></div>
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3 class="neon-text-cyan">Add New Location</h3>
+          <button class="modal-close" on:click={() => showLocationModal = false}>&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label for="new-location-name" class="form-label">Location Name</label>
+            <input id="new-location-name" type="text" bind:value={newLocationName} placeholder="Enter location name" class="form-control" />
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button on:click={addLocation} disabled={addingLocation || !newLocationName.trim()} class="btn btn-primary">
+            {addingLocation ? 'Adding...' : 'Add Location'}
+          </button>
+          <button on:click={() => showLocationModal = false} class="btn btn-secondary">Cancel</button>
+        </div>
+      </div>
+    {/if}
+
+    {#if showDeleteLocationModal && locationToDelete}
+      <div class="modal-backdrop"></div>
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3 class="neon-text-cyan">Delete Location</h3>
+          <button class="modal-close" on:click={() => showDeleteLocationModal = false}>&times;</button>
+        </div>
+        <div class="modal-body">
+          <p>Are you sure you want to delete the location "<strong>{locationToDelete.name}</strong>"?</p>
+          <p class="text-warning">This will also delete all stock levels for this location and cannot be undone.</p>
+        </div>
+        <div class="modal-actions">
+          <button on:click={deleteLocation} disabled={deletingLocation} class="btn btn-danger">
+            {deletingLocation ? 'Deleting...' : 'Delete Location'}
+          </button>
+          <button on:click={() => showDeleteLocationModal = false} class="btn btn-secondary">Cancel</button>
+        </div>
+      </div>
+    {/if}
   </div>
 </main>
 
@@ -756,6 +943,14 @@
 
   .text-red-400 {
     color: #f87171;
+  }
+
+  .text-warning {
+    color: #f59e0b;
+  }
+
+  .text-muted {
+    color: #9ca3af;
   }
 
   @media (max-width: 768px) {

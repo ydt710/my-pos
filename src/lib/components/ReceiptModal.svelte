@@ -396,25 +396,12 @@
 </div>
 
 <style>
-  .modal-backdrop {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.6);
-    z-index: 1000;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-  }
-
+  /* Component-specific modal overrides */
   .modal-content {
     background: white;
-    border-radius: 12px;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
     max-width: 500px;
     width: 95vw;
     max-height: 90vh;
-    display: flex;
-    flex-direction: column;
   }
 
   .modal-header {
@@ -591,31 +578,12 @@
     justify-content: center;
   }
 
-  .btn {
-    padding: 0.75rem 1.5rem;
-    border-radius: 6px;
-    border: none;
-    cursor: pointer;
-    font-weight: 500;
-    font-size: 1rem;
-    transition: all 0.2s;
-  }
-
+  /* Receipt-specific button overrides */
   .btn-primary {
     background: #2196f3;
-    color: white;
   }
 
   .btn-primary:hover {
     background: #1976d2;
-  }
-
-  .btn-secondary {
-    background: #6c757d;
-    color: white;
-  }
-
-  .btn-secondary:hover {
-    background: #545b62;
   }
 </style>

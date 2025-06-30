@@ -1349,10 +1349,7 @@
       gap: 0.5rem;
     }
 
-    .filter-btns .btn {
-      width: 100%;
-      text-align: center;
-    }
+
 
     .chart-wrapper {
       height: 250px;
