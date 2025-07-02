@@ -15,6 +15,7 @@ interface CacheEntry<T> {
 function createPersistentStore<T>(key: string, startValue: T) {
   const isBrowser = typeof window !== 'undefined';
   let initialValue = startValue;
+  let isInitialized = false;
 
   if (isBrowser) {
     const storedValue = localStorage.getItem(key);
@@ -32,8 +33,16 @@ function createPersistentStore<T>(key: string, startValue: T) {
 
   if (isBrowser) {
     store.subscribe(value => {
-      localStorage.setItem(key, JSON.stringify(value));
+      // Prevent syncing to localStorage during initial load to avoid reactive loops
+      if (isInitialized) {
+        localStorage.setItem(key, JSON.stringify(value));
+      }
     });
+    
+    // Mark as initialized after a tick to allow the initial subscription to complete
+    setTimeout(() => {
+      isInitialized = true;
+    }, 0);
   }
 
   return store;
@@ -104,15 +113,20 @@ export function getCachedSettings() {
 
 
 // --- Periodic Cleanup ---
-setInterval(() => {
-  profileCache.update(cache => cleanExpiredCache(cache, PROFILE_CACHE_DURATION));
-  creditLedgerCache.update(cache => cleanExpiredCache(cache, CREDIT_LEDGER_CACHE_DURATION));
+let cleanupInterval: NodeJS.Timeout | null = null;
 
-  const settings = get(settingsCache);
-  if (settings && !isCacheValid(settings.timestamp, SETTINGS_CACHE_DURATION)) {
-    settingsCache.set(null);
-  }
-}, 5 * 60 * 1000);
+// Only start cleanup in browser environment and prevent multiple intervals
+if (typeof window !== 'undefined') {
+  cleanupInterval = setInterval(() => {
+    profileCache.update(cache => cleanExpiredCache(cache, PROFILE_CACHE_DURATION));
+    creditLedgerCache.update(cache => cleanExpiredCache(cache, CREDIT_LEDGER_CACHE_DURATION));
+
+    const settings = get(settingsCache);
+    if (settings && !isCacheValid(settings.timestamp, SETTINGS_CACHE_DURATION)) {
+      settingsCache.set(null);
+    }
+  }, 5 * 60 * 1000);
+}
 
 // --- Derived Stores ---
 export const cachedProfiles = derived(profileCache, $cache =>

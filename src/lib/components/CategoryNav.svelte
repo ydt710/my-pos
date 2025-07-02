@@ -30,6 +30,7 @@
 
   let pendingTransfers = 0;
   let lowStockCount = 0;
+  let pendingOrdersCount = 0;
   let totalNotificationCount = 0;
   let showNotifications = false;
   let shopId = 'e0ff9565-e490-45e9-991f-298918e4514a'; // Shop location UUID
@@ -70,9 +71,48 @@
     }
   }
 
+  async function fetchPendingOrdersCount() {
+    try {
+      // Fetch pending orders for current user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        // Get the current user's profile
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('auth_user_id', user.id)
+          .maybeSingle();
+        
+        if (profile && !profileError) {
+          // Count pending orders for this user
+          const { count, error: ordersError } = await supabase
+            .from('orders')
+            .select('*', { count: 'exact', head: true })
+            .eq('user_id', profile.id)
+            .eq('status', 'pending')
+            .is('deleted_at', null);
+
+          if (ordersError) {
+            console.error('Error fetching pending orders count:', ordersError);
+            pendingOrdersCount = 0;
+          } else {
+            pendingOrdersCount = count || 0;
+          }
+        } else {
+          pendingOrdersCount = 0;
+        }
+      } else {
+        pendingOrdersCount = 0;
+      }
+    } catch (err) {
+      console.error('Error in fetchPendingOrdersCount:', err);
+      pendingOrdersCount = 0;
+    }
+  }
+
   async function fetchAllNotifications() {
-    await Promise.all([fetchPendingTransfers(), fetchLowStockCount()]);
-    totalNotificationCount = pendingTransfers + lowStockCount;
+    await Promise.all([fetchPendingTransfers(), fetchLowStockCount(), fetchPendingOrdersCount()]);
+    totalNotificationCount = pendingTransfers + lowStockCount + pendingOrdersCount;
   }
 
   function toggleNotifications() {
@@ -123,7 +163,7 @@
       isPosOrAdmin = profile?.role === 'pos' || profile?.is_admin === true;
     }
     await fetchAllNotifications();
-    // Subscribe to Realtime changes on stock_movements
+    // Subscribe to Realtime changes on stock_movements and orders
     transferChannel = supabase
       .channel('pending_stock_movements_nav')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'stock_movements' }, async (payload) => {
@@ -139,6 +179,13 @@
           rec.type === 'transfer' &&
           rec.to_location_id === shopId
         ) {
+          await fetchAllNotifications();
+        }
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, async (payload) => {
+        // Update for any changes to orders (especially status changes)
+        const rec = payload.new || payload.old;
+        if (rec && typeof rec === 'object' && 'status' in rec) {
           await fetchAllNotifications();
         }
       })
@@ -262,7 +309,7 @@
     left: 0;
     right: 0;
     z-index: 100; /* Lower z-index than notification dropdown */
-    overflow: hidden;
+   
   }
 
   .nav-container {
@@ -578,7 +625,8 @@
     z-index: 2;
   }
 
-  @media (max-width: 1024px) {
+  /* Tablet and small desktop */
+  @media (max-width: 1024px) and (min-width: 769px) {
     .category-button {
       width: 80px;
       height: 80px;
@@ -598,19 +646,63 @@
     }
   }
 
-  @media (max-width: 800px) {
+  /* Mobile Large (768px and below) */
+  @media (max-width: 768px) and (min-width: 641px) {
     .nav-container {
-      gap: 0.5rem;
-      padding: 0 0.5rem;
+      gap: 0.75rem;
+      padding: 0 0.75rem;
     }
 
     .nav-right {
       display: none; /* Hide nav-right on mobile to center categories */
     }
 
+    .category-button {
+      width: 75px;
+      height: 75px;
+    }
+
     .image-container {
-      width: 24px;
-      height: 24px;
+      width: 28px;
+      height: 28px;
+    }
+
+    .image-container i {
+      font-size: 1.3rem;
+    }
+
+    .name {
+      font-size: 0.65rem;
+    }
+
+    .logo {
+      height: 65px;
+    }
+
+    .category-btn-row {
+      gap: 0.6rem;
+    }
+  }
+
+  /* Mobile Medium (640px and below) */
+  @media (max-width: 640px) and (min-width: 481px) {
+    .nav-container {
+      gap: 0.6rem;
+      padding: 0 0.6rem;
+    }
+
+    .nav-right {
+      display: none; /* Hide nav-right on mobile to center categories */
+    }
+
+    .category-button {
+      width: 70px;
+      height: 70px;
+    }
+
+    .image-container {
+      width: 26px;
+      height: 26px;
     }
 
     .image-container i {
@@ -618,7 +710,7 @@
     }
 
     .name {
-      display: none;
+      font-size: 0.6rem;
     }
 
     .logo {
@@ -630,6 +722,7 @@
     }
   }
 
+  /* Mobile Small (480px and below) */
   @media (max-width: 480px) {
     .nav-container {
       gap: 0.25rem;
@@ -638,9 +731,7 @@
     }
 
     .nav-left {
-      position: absolute;
-      left: 0.5rem;
-      z-index: 10;
+      display: none; /* Hide logo on mobile - will be repositioned in hero section */
     }
 
     .nav-center {
@@ -653,8 +744,8 @@
     }
 
     .category-button {
-      width: 70px;
-      height: 70px;
+      width: 60px;
+      height: 60px;
     }
 
     .image-container {
@@ -663,11 +754,19 @@
     }
 
     .image-container i {
-      font-size: 2rem;
+      font-size: 1.1rem;
+    }
+
+    .name {
+      display: none;
     }
 
     .logo {
-      height: 50px; /* Smaller logo for mobile */
+      height: 50px;
+    }
+
+    .category-btn-row {
+      gap: 0.3rem;
     }
   }
 

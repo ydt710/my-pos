@@ -2,6 +2,8 @@
   import { onMount, onDestroy } from 'svelte';
   import { supabase } from '$lib/supabase';
   import { createEventDispatcher } from 'svelte';
+  import OrderDetailsModal from './OrderDetailsModal.svelte';
+  import type { Order } from '$lib/types/orders';
   
   export let visible = false;
   export let onClose: () => void;
@@ -10,18 +12,24 @@
   
   let pendingTransfers: any[] = [];
   let lowStockItems: any[] = [];
+  let pendingOrders: Order[] = [];
   let loading = true;
   let error = '';
   
+  // OrderDetailsModal state
+  let selectedOrder: Order | null = null;
+  let showOrderModal = false;
+  
   type NotificationItem = {
     id: string;
-    type: 'transfer' | 'low_stock';
+    type: 'transfer' | 'low_stock' | 'pending_order';
     title: string;
     description: string;
     time: string;
     icon: string;
     iconColor: string;
     urgent?: boolean;
+    order?: Order; // Add order data for pending orders
   };
   
   let notifications: NotificationItem[] = [];
@@ -63,6 +71,53 @@
       } else {
         lowStockItems = lowStockData || [];
       }
+
+      // Fetch pending orders for current user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        // Get the current user's profile
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('auth_user_id', user.id)
+          .maybeSingle();
+        
+        if (profile && !profileError) {
+          // Fetch pending orders for this user
+          const { data: ordersData, error: ordersError } = await supabase
+            .from('orders')
+            .select(`
+              *,
+              order_items (
+                *,
+                products:product_id (
+                  name,
+                  image_url
+                )
+              ),
+              profiles:user_id (
+                email,
+                display_name,
+                phone_number,
+                address
+              )
+            `)
+            .eq('user_id', profile.id)
+            .eq('status', 'pending')
+            .is('deleted_at', null)
+            .order('created_at', { ascending: false });
+
+          if (ordersError) {
+            console.error('Error fetching pending orders:', ordersError);
+            pendingOrders = [];
+          } else {
+            pendingOrders = (ordersData || []).map(order => ({
+              ...order,
+              user: order.profiles || undefined
+            }));
+          }
+        }
+      }
       
       // Combine into unified notification format
       buildNotificationsList();
@@ -89,6 +144,23 @@
         icon: 'fa-truck',
         iconColor: '#3b82f6', // blue
         urgent: false
+      });
+    });
+
+    // Add pending orders
+    pendingOrders.forEach(order => {
+      const itemCount = order.order_items?.length || 0;
+      const itemText = itemCount === 1 ? '1 item' : `${itemCount} items`;
+      allNotifications.push({
+        id: `order-${order.id}`,
+        type: 'pending_order',
+        title: `Order Ready for Collection`,
+        description: `Order #${order.order_number || order.id.slice(0, 8)} - ${itemText} - R${order.total.toFixed(2)}`,
+        time: formatTimeAgo(order.created_at),
+        icon: 'fa-shopping-bag',
+        iconColor: '#10b981', // green
+        urgent: true, // Mark as urgent since customer is waiting
+        order: order
       });
     });
     
@@ -121,10 +193,15 @@
       });
     });
     
-    // Sort by urgency (urgent first), then by type (transfers first)
+    // Sort by urgency (urgent first), then by type (pending orders first, then transfers, then stock)
     notifications = allNotifications.sort((a, b) => {
       if (a.urgent !== b.urgent) return a.urgent ? -1 : 1;
-      if (a.type !== b.type) return a.type === 'transfer' ? -1 : 1;
+      if (a.type !== b.type) {
+        if (a.type === 'pending_order') return -1;
+        if (b.type === 'pending_order') return 1;
+        if (a.type === 'transfer') return -1;
+        if (b.type === 'transfer') return 1;
+      }
       return 0;
     });
   }
@@ -148,18 +225,38 @@
     if (notification.type === 'transfer') {
       // Navigate to stock management page
       dispatch('navigate', { path: '/admin/stock-management' });
+      onClose();
     } else if (notification.type === 'low_stock') {
       // Navigate to admin products page
       dispatch('navigate', { path: '/admin' });
+      onClose();
+    } else if (notification.type === 'pending_order' && notification.order) {
+      // Open OrderDetailsModal
+      selectedOrder = notification.order;
+      showOrderModal = true;
+      // Don't close the notification dropdown yet - let user see the modal
     }
-    onClose();
+  }
+
+  function handleOrderModalClose() {
+    showOrderModal = false;
+    selectedOrder = null;
+    // Refresh notifications after closing modal
+    fetchNotifications();
+  }
+
+  function handleOrderStatusUpdate(orderId: string, status: any) {
+    // Refresh notifications to remove completed orders
+    fetchNotifications();
   }
   
   function getTotalCount(): number {
-    return pendingTransfers.length + Object.keys(lowStockItems.reduce((acc, item) => {
+    const uniqueLowStockCount = Object.keys(lowStockItems.reduce((acc, item) => {
       acc[item.product_id] = true;
       return acc;
     }, {})).length;
+    
+    return pendingTransfers.length + uniqueLowStockCount + pendingOrders.length;
   }
   
   onMount(() => {
@@ -176,6 +273,9 @@
           fetchNotifications();
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, () => {
+          fetchNotifications();
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
           fetchNotifications();
         })
         .subscribe();
@@ -265,6 +365,15 @@
       </div>
     {/if}
   </div>
+{/if}
+
+<!-- OrderDetailsModal for pending orders -->
+{#if showOrderModal && selectedOrder}
+  <OrderDetailsModal 
+    order={selectedOrder}
+    onClose={handleOrderModalClose}
+    onStatusUpdate={handleOrderStatusUpdate}
+  />
 {/if}
 
 <style>

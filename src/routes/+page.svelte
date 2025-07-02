@@ -51,6 +51,10 @@
   let posCheckComplete = false;
   let activeCategoryIcon: { icon: string; color: string } | null = null;
 
+  // Loading guards to prevent double execution
+  let isInitialized = false;
+  let isLoadingProducts = false;
+
   let productFilters = {
     search: '',
     category: '',
@@ -83,53 +87,22 @@
   // Function to load landing page data
   async function loadLandingPageData() {
     try {
-      // Load hero section
-      const { data: heroData } = await supabase
-        .from('landing_hero')
-        .select('*')
-        .limit(1)
-        .maybeSingle();
-      landingHero = heroData;
+      // Load all landing page data in parallel
+      const [heroResult, categoriesResult, storesResult, featuredResult, testimonialsResult, settingsResult] = await Promise.all([
+        supabase.from('landing_hero').select('*').limit(1).maybeSingle(),
+        supabase.from('landing_categories').select('*').limit(1).maybeSingle(),
+        supabase.from('landing_stores').select('*').limit(1).maybeSingle(),
+        supabase.from('landing_featured_products').select('*').limit(1).maybeSingle(),
+        supabase.from('landing_testimonials').select('*').limit(1).maybeSingle(),
+        supabase.from('settings').select('google_maps_embed_url').limit(1).maybeSingle()
+      ]);
 
-      // Load categories section
-      const { data: categoriesData } = await supabase
-        .from('landing_categories')
-        .select('*')
-        .limit(1)
-        .maybeSingle();
-      landingCategories = categoriesData;
-
-      // Load stores section
-      const { data: storesData } = await supabase
-        .from('landing_stores')
-        .select('*')
-        .limit(1)
-        .maybeSingle();
-      landingStores = storesData;
-
-      // Load featured products section
-      const { data: featuredData } = await supabase
-        .from('landing_featured_products')
-        .select('*')
-        .limit(1)
-        .maybeSingle();
-      landingFeaturedProducts = featuredData;
-
-      // Load testimonials section
-      const { data: testimonialsData } = await supabase
-        .from('landing_testimonials')
-        .select('*')
-        .limit(1)
-        .maybeSingle();
-      landingTestimonials = testimonialsData;
-
-      // Load Google Maps URL from settings
-      const { data: settingsData } = await supabase
-        .from('settings')
-        .select('google_maps_embed_url')
-        .limit(1)
-        .maybeSingle();
-      googleMapsUrl = settingsData?.google_maps_embed_url || 'https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3318.3044078274843!2d18.96933201180263!3d-33.72694127316965!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x1dcda8218f2d8a8b%3A0x65417bfb9430d0bf!2s7%20Mernoleon%20St%2C%20Lemoenkloof%2C%20Paarl%2C%207646!5e0!3m2!1sen!2sza!4v1750808736378!5m2!1sen!2sza';
+      landingHero = heroResult.data;
+      landingCategories = categoriesResult.data;
+      landingStores = storesResult.data;
+      landingFeaturedProducts = featuredResult.data;
+      landingTestimonials = testimonialsResult.data;
+      googleMapsUrl = settingsResult.data?.google_maps_embed_url || 'https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3318.3044078274843!2d18.96933201180263!3d-33.72694127316965!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x1dcda8218f2d8a8b%3A0x65417bfb9430d0bf!2s7%20Mernoleon%20St%2C%20Lemoenkloof%2C%20Paarl%2C%207646!5e0!3m2!1sen!2sza!4v1750808736378!5m2!1sen!2sza';
 
       // Load featured products if product IDs are specified
       if (landingFeaturedProducts?.product_ids?.length > 0) {
@@ -152,6 +125,96 @@
     }
   }
 
+  // Consolidated initialization function
+  async function initializeApp() {
+    if (isInitialized || loading) {
+      return; // Prevent double execution
+    }
+
+    loading = true;
+    isInitialized = true;
+
+    try {
+      // Initialize page size early
+      if (typeof window !== 'undefined') {
+        updatePageSize();
+        window.addEventListener('resize', handleResize);
+      }
+
+      // Load logo URL
+      const { data } = supabase.storage.from('route420').getPublicUrl('logo.webp');
+      logoUrl = data.publicUrl;
+
+      // Load user profile and landing page data in parallel
+      const [userResult, _] = await Promise.all([
+        supabase.auth.getUser(),
+        loadLandingPageData()
+      ]);
+
+      // Check for POS role
+      if (userResult.data?.user) {
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('auth_user_id', userResult.data.user.id)
+          .maybeSingle();
+        
+        if (profileError && profileError.code !== 'PGRST116' && profileError.code !== '406') {
+          console.error('Error fetching profile:', profileError);
+        }
+        
+        if (profile?.role === 'pos') {
+          isPosUser = true;
+        }
+      }
+      posCheckComplete = true;
+
+      // Load products and stock levels
+      await loadProductsAndStock();
+
+    } catch (err) {
+      console.error('Error during app initialization:', err);
+      error = 'Failed to load application data. Please try again.';
+    } finally {
+      loading = false;
+    }
+  }
+
+  // Separate function for loading products and stock
+  async function loadProductsAndStock() {
+    if (isLoadingProducts) {
+      return; // Prevent double execution
+    }
+
+    isLoadingProducts = true;
+    
+    try {
+      // Load all products
+      const { products: loadedProducts, error: loadError } = await loadAllProducts();
+      
+      if (loadError) {
+        error = loadError;
+        return;
+      }
+
+      allProducts = loadedProducts;
+
+      // Fetch stock levels if we have products
+      if (allProducts.length > 0) {
+        stockLevels = await getShopStockLevels(allProducts.map(prod => prod.id));
+      }
+      
+      // Initial filter and pagination
+      filterProducts();
+      
+    } catch (err) {
+      console.error('Error loading products:', err);
+      error = 'Failed to load products. Please try again.';
+    } finally {
+      isLoadingProducts = false;
+    }
+  }
+
   function loadMoreProducts() {
     // Only load more if there are more products to show
     if (currentPage * pageSize < products.length) {
@@ -162,6 +225,8 @@
 
   // Function to determine page size based on viewport width
   function updatePageSize() {
+    if (typeof window === 'undefined') return;
+    
     const width = window.innerWidth;
     if (width < 600) { // Mobile
       pageSize = 2;
@@ -253,62 +318,9 @@
     }, 200);
   }
 
-  onMount(async () => {
-    // Start loading immediately
-    loading = true;
-    
-    // Initialize page size early to prevent layout shifts
-    if (typeof window !== 'undefined') {
-      updatePageSize();
-      window.addEventListener('resize', handleResize);
-    }
-
-    try {
-      const { data } = supabase.storage.from('route420').getPublicUrl('logo.webp');
-      logoUrl = data.publicUrl;
-    } catch (err) {
-      console.error('Error getting logo URL:', err);
-    }
-
-    // Fetch current user's profile to check for POS role
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('auth_user_id', user.id)
-        .maybeSingle();
-      if (profileError && profileError.code !== 'PGRST116' && profileError.code !== '406') {
-        console.error('Error fetching profile:', profileError);
-      }
-      if (profile && profile.role === 'pos') {
-        isPosUser = true;
-      }
-    }
-    posCheckComplete = true;
-
-    // Load landing page data
-    await loadLandingPageData();
-
-    // Load all products once and manage them locally
-    const { products: loadedProducts, error: loadError } = await loadAllProducts();
-    
-    if (loadError) {
-      error = loadError;
-    } else {
-      allProducts = loadedProducts;
-
-      // Fetch stock levels just once after products are loaded
-      if (allProducts.length > 0) {
-        stockLevels = await getShopStockLevels(allProducts.map(prod => prod.id));
-      }
-      
-      // Manually trigger the first filter and pagination
-      filterProducts();
-    }
-    
-    // Complete loading only after everything is done
-    loading = false;
+  onMount(() => {
+    // Single initialization call with guard
+    initializeApp();
   });
 
   onDestroy(() => {
@@ -404,9 +416,7 @@
       clearAllProductCache(); // Clear cache before reloading products
       
       // Refresh products so product card updates
-      const { products: reloadedProducts } = await loadAllProducts(); 
-      allProducts = reloadedProducts;
-      filterProducts();
+      await loadProductsAndStock();
 
     } catch (error) {
       alert('Failed to submit review. Please try again.');
@@ -486,7 +496,10 @@
       <section class="hero-section">
         <div class="hero-content">
           <div class="hero-text">
-            <h1 class="neon-text-cyan hero-title">{landingHero.title}</h1>
+            <div class="hero-header-mobile">
+              <img class="mobile-hero-logo" src={logoUrl} alt="Logo" on:click={handleLogoClick} />
+              <h1 class="neon-text-cyan hero-title">{landingHero.title}</h1>
+            </div>
             {#if isPosUser}
               <p class="hero-subtitle neon-text-white">Welcome POS User</p>
             {/if}
@@ -1078,78 +1091,6 @@
     box-shadow: var(--shadow-neon-cyan);
   }
 
-  .map-trigger-dot {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: 30px;
-    height: 30px;
-    border-radius: 50%;
-    background: var(--neon-cyan);
-    border: none;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1rem;
-    color: var(--bg-primary);
-    box-shadow: 
-      0 0 20px var(--neon-cyan),
-      0 0 40px var(--neon-cyan);
-    animation: pulse-dot 2s ease-in-out infinite;
-    transition: var(--transition-fast);
-    z-index: 5;
-  }
-
-  .map-trigger-dot:hover {
-    transform: translate(-50%, -50%) scale(1.1);
-    box-shadow: 
-      0 0 30px var(--neon-cyan),
-      0 0 60px var(--neon-cyan);
-  }
-
-  @keyframes pulse-dot {
-    0%, 100% { 
-      box-shadow: 
-        0 0 20px var(--neon-cyan),
-        0 0 40px var(--neon-cyan);
-    }
-    50% { 
-      box-shadow: 
-        0 0 30px var(--neon-cyan),
-        0 0 60px var(--neon-cyan),
-        0 0 80px var(--neon-cyan);
-    }
-  }
-
-  .map-close-btn {
-    position: absolute;
-    top: 20px;
-    right: 20px;
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    background: var(--bg-glass);
-    border: 2px solid var(--neon-cyan);
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1.2rem;
-    color: var(--neon-cyan);
-    z-index: 20;
-    transition: var(--transition-fast);
-    backdrop-filter: blur(10px);
-  }
-
-  .map-close-btn:hover {
-    background: var(--neon-cyan);
-    color: var(--bg-primary);
-    transform: scale(1.1);
-    box-shadow: var(--shadow-neon-cyan);
-  }
-
   .map-fullscreen {
     position: absolute;
     top: 0; left: 0; right: 0; bottom: 0;
@@ -1395,6 +1336,36 @@
       grid-template-columns: 1fr;
       gap: 1rem;
       padding: 0 0.5rem 2rem 0.5rem;
+    }
+
+    .hero-header-mobile {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .mobile-hero-logo {
+      height: 60px;
+      width: auto;
+      cursor: pointer;
+      transition: transform 0.2s ease;
+    }
+
+    .mobile-hero-logo:hover {
+      transform: scale(1.05);
+    }
+  }
+
+  /* Hide mobile hero logo on desktop */
+  @media (min-width: 481px) {
+    .hero-header-mobile {
+      display: block; /* Normal flow on desktop */
+    }
+
+    .mobile-hero-logo {
+      display: none; /* Hide logo on desktop since it's in nav */
     }
   }
 

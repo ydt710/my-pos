@@ -15,6 +15,7 @@
   import { derived } from 'svelte/store';
   
   let loading = false;
+  let initializing = true; // Add loading state for initial auth check
   let error = '';
   let success = '';
   let paymentMethod = 'cash'; // Default payment method
@@ -78,6 +79,9 @@
 
     // Always keep selectedCustomer in sync with selectedPosUser for POS
     selectedCustomer = posUser;
+    
+    // Initialization complete
+    initializing = false;
   });
   
   // Redirect if cart is empty
@@ -402,20 +406,48 @@
 <div class="checkout-container">
   <h1>Checkout</h1>
   
-  {#if success}
-    <div class="success-overlay" transition:fade>
-      <div class="success-message" transition:slide>
-        {success}
-        <div class="success-icon">✓</div>
+  {#if initializing}
+    <div class="skeleton-checkout">
+      <div class="skeleton-section">
+        <div class="skeleton-line medium"></div>
+        <div class="skeleton-item">
+          <div class="skeleton-image"></div>
+          <div style="flex-grow: 1;">
+            <div class="skeleton-line short"></div>
+            <div class="skeleton-line medium"></div>
+          </div>
+        </div>
+        <div class="skeleton-item">
+          <div class="skeleton-image"></div>
+          <div style="flex-grow: 1;">
+            <div class="skeleton-line short"></div>
+            <div class="skeleton-line medium"></div>
+          </div>
+        </div>
+      </div>
+      <div class="skeleton-section">
+        <div class="skeleton-line short"></div>
+        <div class="skeleton-line long"></div>
+        <div class="skeleton-line medium"></div>
+        <div class="skeleton-line long"></div>
+        <div class="skeleton-line short"></div>
       </div>
     </div>
-  {/if}
-  
-  {#if error}
-    <div class="error-message" transition:fade>{error}</div>
-  {/if}
-  
-  <div class="checkout-content">
+  {:else}
+    {#if success}
+      <div class="success-overlay" transition:fade>
+        <div class="success-message" transition:slide>
+          {success}
+          <div class="success-icon">✓</div>
+        </div>
+      </div>
+    {/if}
+    
+    {#if error}
+      <div class="error-message" transition:fade>{error}</div>
+    {/if}
+    
+    <div class="checkout-content">
     <div class="order-review">
       <h2>Order Review</h2>
       <div class="cart-items">
@@ -670,6 +702,7 @@
       </button>
     </div>
   </div>
+  {/if}
 </div>
 
 {#if showReceiptModal && completedOrder}
@@ -945,6 +978,26 @@
     margin: 1rem 0;
   }
   
+  .loading-overlay {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 400px;
+    backdrop-filter: blur(10px);
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+  }
+
+  .loading-content {
+    text-align: center;
+    color: #666;
+  }
+
+  .loading-content p {
+    margin-top: 1rem;
+    font-size: 1.1rem;
+  }
+  
   .selected-customer-info {
     background: rgba(248, 249, 250, 0.9);
     border: 1px solid rgba(0, 0, 0, 0.1);
@@ -1005,5 +1058,65 @@
     gap: 0.5rem;
     font-weight: 500;
     cursor: pointer;
+  }
+
+  /* Professional skeleton loader */
+  .skeleton-checkout {
+    display: grid;
+    grid-template-columns: 1fr 400px;
+    gap: 2rem;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  .skeleton-section {
+    backdrop-filter: blur(10px);
+    border-radius: 16px;
+    padding: 1.5rem;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+  }
+
+  .skeleton-line {
+    height: 20px;
+    background: linear-gradient(90deg, rgba(255,255,255,0.1) 25%, rgba(255,255,255,0.2) 50%, rgba(255,255,255,0.1) 75%);
+    background-size: 200% 100%;
+    border-radius: 4px;
+    margin-bottom: 1rem;
+    animation: shimmer 2s infinite;
+  }
+
+  .skeleton-line.short { width: 60%; }
+  .skeleton-line.medium { width: 80%; }
+  .skeleton-line.long { width: 100%; }
+
+  .skeleton-item {
+    display: flex;
+    align-items: center;
+    padding: 1rem;
+    background: rgba(255, 255, 255, 0.5);
+    border-radius: 8px;
+    margin-bottom: 0.5rem;
+  }
+
+  .skeleton-image {
+    width: 80px;
+    height: 80px;
+    background: linear-gradient(90deg, rgba(255,255,255,0.1) 25%, rgba(255,255,255,0.2) 50%, rgba(255,255,255,0.1) 75%);
+    background-size: 200% 100%;
+    border-radius: 8px;
+    margin-right: 1rem;
+    animation: shimmer 2s infinite;
+  }
+
+  @keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+
+  @media (max-width: 800px) {
+    .skeleton-checkout {
+      grid-template-columns: 1fr;
+    }
   }
 </style> 

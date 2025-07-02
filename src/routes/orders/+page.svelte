@@ -9,6 +9,7 @@
   import ConfirmModal from '$lib/components/ConfirmModal.svelte';
   import StarryBackground from '$lib/components/StarryBackground.svelte';
   import DatePicker from '$lib/components/DatePicker.svelte';
+  import { getProductImage } from '$lib/constants';
 
   let user: any = null;
   let orders: Order[] = [];
@@ -69,7 +70,8 @@
             *,
             products:product_id (
               name,
-              image_url
+              image_url,
+              category
             )
           ),
           profiles:user_id (
@@ -338,7 +340,7 @@
           <div class="order-items">
             {#each order.order_items ?? [] as item}
               <div class="order-item">
-                <img src={item.product?.image_url} alt={item.product?.name} />
+                                  <img src={getProductImage(item.product?.image_url, (item.product as any)?.category || 'flower')} alt={item.product?.name} />
                 <div class="item-details">
                   <h4>{item.product?.name}</h4>
                   <p class="item-quantity">Quantity: {item.quantity}</p>
